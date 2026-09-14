@@ -1,0 +1,194 @@
+<?php
+
+use App\Http\Controllers\Admin\CompanyController as AdminCompanyController;
+use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\App\CategoryController;
+use App\Http\Controllers\App\PaymentChannelController;
+use App\Http\Controllers\App\CustodyController;
+use App\Http\Controllers\App\CustomerController;
+use App\Http\Controllers\App\DashboardController;
+use App\Http\Controllers\App\EquipmentPurchaseController;
+use App\Http\Controllers\App\ExpenseController;
+use App\Http\Controllers\App\InventoryPurchaseController;
+use App\Http\Controllers\App\ItemController;
+use App\Http\Controllers\App\PaymentController;
+use App\Http\Controllers\App\ProfileController;
+use App\Http\Controllers\App\ReportController;
+use App\Http\Controllers\App\SaleController;
+use App\Http\Controllers\App\UserController as AppUserController;
+use App\Http\Controllers\App\VendorController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+
+// ══════════════════════════════════════════════════════════════════
+//  Maliyat Docs — Main Route File
+//
+//  This file completely replaces InPractice's route file (Cases,
+//  Forum, Job Club, Freelance, Surveys, Share Knowledge — none of
+//  that applies to a bookkeeping app). See CHANGELOG note in the
+//  project docs for what was here before.
+//
+//  Structure:
+//    /                  → redirects by role (guest/super_admin/company)
+//    /register          → public company sign-up (creates Company +
+//                          its first company_admin)
+//    /admin/*           → super_admin only  (EnsureAdmin middleware,
+//                          aliased 'admin' — see bootstrap/app.php)
+//    /app/*             → company_admin + employee (EnsureMember
+//                          middleware, aliased 'member' — same file,
+//                          repurposed; see its own doc comment)
+//    auth.php           → login, register (POST), password reset,
+//                          email verification (Breeze, unchanged)
+// ══════════════════════════════════════════════════════════════════
+
+// ── Root → role-based redirect ──────────────────────────────────
+Route::get('/', function () {
+    if (auth()->check()) {
+        $user = auth()->user();
+
+        if ($user->isSuperAdmin()) {
+            return redirect()->route('admin.dashboard');
+        }
+
+        if (! $user->hasVerifiedEmail()) {
+            return redirect()->route('verification.notice');
+        }
+
+        return redirect()->route('app.dashboard');
+    }
+
+    return redirect()->route('login');
+})->name('home');
+
+// ── Register — GET page comes from RegisteredUserController (auth.php);
+//    POST /register is also owned by auth.php (guest + throttle) ──────
+
+// ══════════════════════════════════════════════════════════════════
+//  ADMIN ROUTES (super_admin) — Prefix: /admin — Name: admin.*
+// ══════════════════════════════════════════════════════════════════
+Route::middleware(['auth', 'verified', 'admin'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+        Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
+
+        Route::get('/companies', [AdminCompanyController::class, 'index'])->name('companies.index');
+        Route::post('/companies', [AdminCompanyController::class, 'store'])->name('companies.store');
+        Route::patch('/companies/{company}/toggle-active', [AdminCompanyController::class, 'toggleActive'])
+            ->name('companies.toggle-active');
+    });
+
+// ══════════════════════════════════════════════════════════════════
+//  APP ROUTES (company_admin + employee) — Prefix: /app — Name: app.*
+// ══════════════════════════════════════════════════════════════════
+Route::middleware(['auth', 'verified', 'member'])
+    ->prefix('app')
+    ->name('app.')
+    ->group(function () {
+
+        Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+        // ── Lookups / quick-add (Customers, Vendors, Categories, Items) ──
+        Route::get('/customers', [CustomerController::class, 'index'])->name('customers.index');
+        Route::post('/customers', [CustomerController::class, 'store'])->name('customers.store');
+        Route::patch('/customers/{customer}', [CustomerController::class, 'update'])->name('customers.update');
+
+        Route::get('/vendors', [VendorController::class, 'index'])->name('vendors.index');
+        Route::post('/vendors', [VendorController::class, 'store'])->name('vendors.store');
+        Route::patch('/vendors/{vendor}', [VendorController::class, 'update'])->name('vendors.update');
+
+        Route::get('/categories', [CategoryController::class, 'index'])->name('categories.index');
+        Route::post('/categories', [CategoryController::class, 'store'])->name('categories.store');
+        Route::patch('/categories/{category}', [CategoryController::class, 'update'])->name('categories.update');
+
+        Route::get('/payment-channels', [PaymentChannelController::class, 'index'])->name('payment-channels.index');
+        Route::post('/payment-channels', [PaymentChannelController::class, 'store'])->name('payment-channels.store');
+        Route::patch('/payment-channels/{paymentChannel}', [PaymentChannelController::class, 'update'])->name('payment-channels.update');
+
+        Route::get('/items', [ItemController::class, 'index'])->name('items.index');
+        Route::post('/items', [ItemController::class, 'store'])->name('items.store');
+
+        // ── Sales ──────────────────────────────────────────────────
+        Route::get('/sales', [SaleController::class, 'index'])->name('sales.index');
+        Route::post('/sales', [SaleController::class, 'store'])->name('sales.store');
+        Route::put('/sales/{sale}', [SaleController::class, 'update'])->name('sales.update');
+        Route::delete('/sales/{sale}', [SaleController::class, 'destroy'])->name('sales.destroy');
+
+        // ── Expenses (one-off + recurring) ──────────────────────────
+        Route::get('/expenses', [ExpenseController::class, 'index'])->name('expenses.index');
+        Route::post('/expenses', [ExpenseController::class, 'store'])->name('expenses.store');
+        Route::put('/expenses/{expense}', [ExpenseController::class, 'update'])->name('expenses.update');
+        Route::delete('/expenses/{expense}', [ExpenseController::class, 'destroy'])->name('expenses.destroy');
+        Route::post('/expenses/recurring', [ExpenseController::class, 'storeRecurring'])->name('expenses.recurring.store');
+        Route::delete('/expenses/recurring/{recurringId}', [ExpenseController::class, 'cancelRecurring'])
+            ->name('expenses.recurring.cancel');
+
+        // ── Inventory Purchase ──────────────────────────────────────
+        Route::get('/inventory-purchases', [InventoryPurchaseController::class, 'index'])->name('inventory-purchases.index');
+        Route::post('/inventory-purchases', [InventoryPurchaseController::class, 'store'])->name('inventory-purchases.store');
+        Route::put('/inventory-purchases/{inventoryPurchase}', [InventoryPurchaseController::class, 'update'])->name('inventory-purchases.update');
+        Route::delete('/inventory-purchases/{inventoryPurchase}', [InventoryPurchaseController::class, 'destroy'])->name('inventory-purchases.destroy');
+
+        // ── Equipment & Vehicles ─────────────────────────────────────
+        Route::get('/equipment-purchases', [EquipmentPurchaseController::class, 'index'])->name('equipment-purchases.index');
+        Route::post('/equipment-purchases', [EquipmentPurchaseController::class, 'store'])->name('equipment-purchases.store');
+        Route::put('/equipment-purchases/{equipmentPurchase}', [EquipmentPurchaseController::class, 'update'])->name('equipment-purchases.update');
+        Route::delete('/equipment-purchases/{equipmentPurchase}', [EquipmentPurchaseController::class, 'destroy'])->name('equipment-purchases.destroy');
+
+        // ── Custody (عهدة) ───────────────────────────────────────────
+        Route::get('/custodies', [CustodyController::class, 'index'])->name('custodies.index');
+        Route::post('/custodies', [CustodyController::class, 'store'])->name('custodies.store');
+        Route::put('/custodies/{custody}', [CustodyController::class, 'update'])->name('custodies.update');
+        Route::delete('/custodies/{custody}', [CustodyController::class, 'destroy'])->name('custodies.destroy');
+        Route::patch('/custodies/{custody}/settle', [CustodyController::class, 'settle'])->name('custodies.settle');
+
+        // ── Receive / Pay Money ──────────────────────────────────────
+        Route::get('/payments', [PaymentController::class, 'page'])->name('payments.index');
+        Route::get('/payments/open-invoices', [PaymentController::class, 'openInvoices'])->name('payments.open-invoices');
+        Route::get('/payments/open-bills', [PaymentController::class, 'openBills'])->name('payments.open-bills');
+        Route::post('/payments/receive', [PaymentController::class, 'storeReceipt'])->name('payments.receive');
+        Route::post('/payments/pay', [PaymentController::class, 'storePayment'])->name('payments.pay');
+        // Remove a single payment — used by the edit view of a sale
+        // or bill when a payment entered at creation time was wrong.
+        Route::delete('/payments/{payment}', [PaymentController::class, 'destroy'])->name('payments.destroy');
+
+        // ── Reports ───────────────────────────────────────────────────
+        Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+        Route::get('/reports/ledger', [ReportController::class, 'ledger'])->name('reports.ledger');
+        Route::get('/reports/profit-loss', [ReportController::class, 'profitAndLoss'])->name('reports.profit-loss');
+        Route::get('/reports/customer-statement/{customer?}', [ReportController::class, 'customerStatement'])
+            ->name('reports.customer-statement');
+        Route::get('/reports/supplier-statement/{vendor?}', [ReportController::class, 'supplierStatement'])
+            ->name('reports.supplier-statement');
+        Route::get('/reports/inventory-statement', [ReportController::class, 'inventoryStatement'])
+            ->name('reports.inventory-statement');
+        Route::get('/reports/cash-flow', [ReportController::class, 'cashFlow'])->name('reports.cash-flow');
+
+        // ── Team (company_admin manages employees) ───────────────────
+        Route::get('/team', [AppUserController::class, 'index'])->name('team.index');
+        Route::post('/team', [AppUserController::class, 'store'])->name('team.store');
+        Route::patch('/team/{user}/toggle-active', [AppUserController::class, 'toggleActive'])->name('team.toggle-active');
+
+        // ── Profile & Preferences ─────────────────────────────────────
+        Route::get('/profile', [ProfileController::class, 'index'])->name('profile.index');
+        Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::patch('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
+
+        // Called by the theme/locale toggles — idempotent, one field, no page reload needed.
+        Route::patch('/preferences/theme', function (Request $request) {
+            $request->validate(['theme' => ['required', 'string', 'in:light,dark']]);
+            $request->user()->update(['theme' => $request->theme]);
+
+            return back();
+        })->name('preferences.theme');
+
+        Route::patch('/preferences/locale', function (Request $request) {
+            $request->validate(['locale' => ['required', 'string', 'in:en,ar']]);
+            $request->user()->update(['language' => $request->locale]);
+
+            return back();
+        })->name('preferences.locale');
+    });
+
+// ── Auth Routes (Breeze) ───────────────────────────────────────
+require __DIR__.'/auth.php';

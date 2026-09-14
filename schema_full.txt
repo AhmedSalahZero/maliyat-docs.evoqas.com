@@ -1,0 +1,505 @@
+
+=== cache ===
+  key  |  varchar(255)  |  NOT NULL
+  value  |  mediumtext  |  NOT NULL
+  expiration  |  int  |  NOT NULL
+
+=== cache_locks ===
+  key  |  varchar(255)  |  NOT NULL
+  owner  |  varchar(255)  |  NOT NULL
+  expiration  |  int  |  NOT NULL
+
+=== case_member_solutions ===
+  id  |  bigint unsigned  |  NOT NULL
+  case_id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  content  |  text  |  NOT NULL
+  avg_rating  |  decimal(3,2)  |  NOT NULL DEFAULT '0.00'
+  ratings_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== case_progress ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  case_id  |  bigint unsigned  |  NOT NULL
+  status  |  enum('started','completed')  |  NOT NULL DEFAULT 'started'
+  solution_revealed  |  tinyint(1)  |  NOT NULL DEFAULT '0'
+  completed_at  |  timestamp  |  NULL
+  case_rating  |  tinyint unsigned  |  NULL
+  case_rated_at  |  timestamp  |  NULL
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== case_sectors ===
+  id  |  bigint unsigned  |  NOT NULL
+  case_id  |  bigint unsigned  |  NOT NULL
+  sector_id  |  bigint unsigned  |  NOT NULL
+
+=== case_solution_ratings ===
+  id  |  bigint unsigned  |  NOT NULL
+  solution_id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  rating  |  tinyint unsigned  |  NOT NULL
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== cases ===
+  id  |  bigint unsigned  |  NOT NULL
+  hub_id  |  bigint unsigned  |  NOT NULL
+  created_by  |  bigint unsigned  |  NOT NULL
+  topic_slug  |  varchar(255)  |  NOT NULL
+  topic_name_en  |  varchar(255)  |  NOT NULL
+  topic_name_ar  |  varchar(255)  |  NOT NULL
+  layer  |  enum('generic','sector_specific')  |  NOT NULL DEFAULT 'generic'
+  difficulty  |  enum('beginner','intermediate','advanced')  |  NOT NULL DEFAULT 'beginner'
+  title_en  |  varchar(255)  |  NOT NULL
+  subtitle_en  |  varchar(255)  |  NULL
+  situation_en  |  text  |  NOT NULL
+  challenge_questions_en  |  json  |  NOT NULL
+  solution_en  |  longtext  |  NOT NULL
+  bigger_lesson_en  |  text  |  NOT NULL
+  skills_taught_en  |  json  |  NOT NULL
+  title_ar  |  varchar(255)  |  NULL
+  subtitle_ar  |  varchar(255)  |  NULL
+  situation_ar  |  text  |  NULL
+  challenge_questions_ar  |  json  |  NULL
+  solution_ar  |  longtext  |  NULL
+  bigger_lesson_ar  |  text  |  NULL
+  skills_taught_ar  |  json  |  NULL
+  case_data  |  json  |  NULL
+  read_time_minutes  |  tinyint unsigned  |  NOT NULL DEFAULT '10'
+  status  |  enum('draft','review','published','archived')  |  NOT NULL DEFAULT 'draft'
+  published_at  |  timestamp  |  NULL
+  sort_order  |  smallint unsigned  |  NOT NULL DEFAULT '0'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== cv_profiles ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  job_title  |  varchar(255)  |  NOT NULL
+  current_industry  |  varchar(255)  |  NOT NULL
+  years_experience  |  tinyint unsigned  |  NOT NULL
+  experience_level  |  enum('student','fresh','junior','mid','senior')  |  NOT NULL
+  skills  |  json  |  NOT NULL
+  hub_ids  |  json  |  NOT NULL
+  education_level  |  varchar(255)  |  NOT NULL
+  education_field  |  varchar(255)  |  NULL
+  location_country  |  varchar(255)  |  NOT NULL DEFAULT 'Egypt'
+  location_city  |  varchar(255)  |  NULL
+  summary  |  text  |  NULL
+  preferred_sectors  |  json  |  NULL
+  job_type_preference  |  varchar(255)  |  NULL
+  open_to_relocation  |  tinyint(1)  |  NOT NULL DEFAULT '0'
+  is_visible  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== document_ratings ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  document_id  |  bigint unsigned  |  NOT NULL
+  rating  |  tinyint unsigned  |  NOT NULL
+  comment  |  text  |  NULL
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== documents ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  hub_id  |  bigint unsigned  |  NOT NULL
+  original_filename  |  varchar(255)  |  NOT NULL
+  stored_filename  |  varchar(255)  |  NOT NULL
+  file_path  |  varchar(255)  |  NOT NULL
+  file_type  |  varchar(10)  |  NOT NULL
+  file_size  |  bigint unsigned  |  NOT NULL
+  title_en  |  varchar(255)  |  NOT NULL
+  title_ar  |  varchar(255)  |  NULL
+  description_en  |  text  |  NULL
+  description_ar  |  text  |  NULL
+  language  |  varchar(2)  |  NOT NULL DEFAULT 'en'
+  document_category  |  varchar(255)  |  NOT NULL
+  tags  |  json  |  NULL
+  sector_id  |  bigint unsigned  |  NULL
+  visibility  |  enum('all','hub')  |  NOT NULL DEFAULT 'all'
+  status  |  enum('pending','approved','rejected')  |  NOT NULL DEFAULT 'pending'
+  download_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  rating_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  rating_average  |  decimal(3,2)  |  NOT NULL DEFAULT '0.00'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== email_verification_codes ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  code_hash  |  varchar(255)  |  NOT NULL
+  attempts  |  tinyint unsigned  |  NOT NULL DEFAULT '0'
+  expires_at  |  timestamp  |  NOT NULL
+  verified_at  |  timestamp  |  NULL
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== failed_jobs ===
+  id  |  bigint unsigned  |  NOT NULL
+  uuid  |  varchar(255)  |  NOT NULL
+  connection  |  text  |  NOT NULL
+  queue  |  text  |  NOT NULL
+  payload  |  longtext  |  NOT NULL
+  exception  |  longtext  |  NOT NULL
+  failed_at  |  timestamp  |  NOT NULL DEFAULT 'CURRENT_TIMESTAMP'
+
+=== forum_likes ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  likeable_type  |  varchar(255)  |  NOT NULL
+  likeable_id  |  bigint unsigned  |  NOT NULL
+  created_at  |  timestamp  |  NOT NULL DEFAULT 'CURRENT_TIMESTAMP'
+
+=== forum_posts ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  hub_id  |  bigint unsigned  |  NOT NULL
+  post_type  |  enum('question','knowledge_share')  |  NOT NULL DEFAULT 'question'
+  source_url  |  varchar(2048)  |  NULL
+  source_label  |  varchar(50)  |  NULL
+  title  |  varchar(255)  |  NOT NULL
+  body  |  longtext  |  NOT NULL
+  language  |  varchar(2)  |  NOT NULL DEFAULT 'en'
+  posted_as_nickname  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  visibility  |  enum('all','hub')  |  NOT NULL DEFAULT 'all'
+  tags  |  json  |  NULL
+  status  |  enum('active','closed','removed')  |  NOT NULL DEFAULT 'active'
+  reply_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  like_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  view_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  is_pinned  |  tinyint(1)  |  NOT NULL DEFAULT '0'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== forum_replies ===
+  id  |  bigint unsigned  |  NOT NULL
+  forum_post_id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  parent_reply_id  |  bigint unsigned  |  NULL
+  body  |  longtext  |  NOT NULL
+  posted_as_nickname  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  status  |  enum('active','removed')  |  NOT NULL DEFAULT 'active'
+  is_best_answer  |  tinyint(1)  |  NOT NULL DEFAULT '0'
+  like_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  avg_rating  |  decimal(3,2)  |  NOT NULL DEFAULT '0.00'
+  ratings_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== forum_reply_ratings ===
+  id  |  bigint unsigned  |  NOT NULL
+  forum_reply_id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  rating  |  tinyint  |  NOT NULL
+  created_at  |  timestamp  |  NOT NULL DEFAULT 'CURRENT_TIMESTAMP'
+
+=== freelance_briefs ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  hub_id  |  bigint unsigned  |  NOT NULL
+  title  |  varchar(255)  |  NOT NULL
+  description  |  text  |  NOT NULL
+  required_skills  |  json  |  NULL
+  preferred_sector  |  varchar(255)  |  NULL
+  duration_estimate  |  varchar(255)  |  NULL
+  timeline  |  varchar(255)  |  NULL
+  budget_min_egp  |  int unsigned  |  NULL
+  budget_max_egp  |  int unsigned  |  NULL
+  budget_is_visible  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  status  |  enum('open','in_progress','closed')  |  NOT NULL DEFAULT 'open'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== freelance_matches ===
+  id  |  bigint unsigned  |  NOT NULL
+  freelance_brief_id  |  bigint unsigned  |  NULL
+  freelance_profile_id  |  bigint unsigned  |  NOT NULL
+  seeker_user_id  |  bigint unsigned  |  NOT NULL
+  provider_user_id  |  bigint unsigned  |  NOT NULL
+  status  |  enum('pending','interested','declined','connected')  |  NOT NULL DEFAULT 'pending'
+  seeker_consented  |  tinyint(1)  |  NOT NULL DEFAULT '0'
+  provider_consented  |  tinyint(1)  |  NOT NULL DEFAULT '0'
+  connected_at  |  timestamp  |  NULL
+  seeker_message  |  text  |  NULL
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== freelance_profiles ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  hub_id  |  bigint unsigned  |  NOT NULL
+  headline  |  varchar(255)  |  NOT NULL
+  description  |  text  |  NOT NULL
+  services  |  json  |  NOT NULL
+  sector_expertise  |  json  |  NULL
+  experience_level  |  varchar(255)  |  NOT NULL
+  availability  |  enum('weekends','evenings','full','unavailable')  |  NOT NULL DEFAULT 'weekends'
+  rate_min_egp  |  int unsigned  |  NULL
+  rate_max_egp  |  int unsigned  |  NULL
+  rate_is_visible  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  review_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  rating_average  |  decimal(3,2)  |  NOT NULL DEFAULT '0.00'
+  is_active  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  linkedin_url  |  varchar(255)  |  NULL
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== hubs ===
+  id  |  bigint unsigned  |  NOT NULL
+  slug  |  varchar(255)  |  NOT NULL
+  name_en  |  varchar(255)  |  NOT NULL
+  name_ar  |  varchar(255)  |  NOT NULL
+  description_en  |  text  |  NULL
+  description_ar  |  text  |  NULL
+  icon  |  varchar(255)  |  NULL
+  color  |  varchar(255)  |  NULL
+  sort_order  |  tinyint unsigned  |  NOT NULL DEFAULT '0'
+  is_active  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== job_batches ===
+  id  |  varchar(255)  |  NOT NULL
+  name  |  varchar(255)  |  NOT NULL
+  total_jobs  |  int  |  NOT NULL
+  pending_jobs  |  int  |  NOT NULL
+  failed_jobs  |  int  |  NOT NULL
+  failed_job_ids  |  longtext  |  NOT NULL
+  options  |  mediumtext  |  NULL
+  cancelled_at  |  int  |  NULL
+  created_at  |  int  |  NOT NULL
+  finished_at  |  int  |  NULL
+
+=== job_listings ===
+  id  |  bigint unsigned  |  NOT NULL
+  posted_by  |  bigint unsigned  |  NOT NULL
+  hub_id  |  bigint unsigned  |  NOT NULL
+  job_title  |  varchar(255)  |  NOT NULL
+  company_name  |  varchar(255)  |  NOT NULL
+  industry  |  varchar(255)  |  NOT NULL
+  location_city  |  varchar(255)  |  NULL
+  job_type  |  enum('full_time','part_time','contract','internship')  |  NOT NULL
+  description  |  text  |  NOT NULL
+  required_skills  |  json  |  NULL
+  min_experience_years  |  tinyint unsigned  |  NOT NULL DEFAULT '0'
+  salary_range  |  varchar(255)  |  NULL
+  status  |  enum('active','filled','closed')  |  NOT NULL DEFAULT 'active'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== job_notifications ===
+  id  |  bigint unsigned  |  NOT NULL
+  job_listing_id  |  bigint unsigned  |  NOT NULL
+  cv_profile_id  |  bigint unsigned  |  NOT NULL
+  professional_user_id  |  bigint unsigned  |  NOT NULL
+  employer_user_id  |  bigint unsigned  |  NOT NULL
+  message  |  text  |  NULL
+  status  |  enum('pending','accepted','declined','connected')  |  NOT NULL DEFAULT 'pending'
+  professional_consented  |  tinyint(1)  |  NOT NULL DEFAULT '0'
+  employer_consented  |  tinyint(1)  |  NOT NULL DEFAULT '0'
+  connected_at  |  timestamp  |  NULL
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== jobs ===
+  id  |  bigint unsigned  |  NOT NULL
+  queue  |  varchar(255)  |  NOT NULL
+  payload  |  longtext  |  NOT NULL
+  attempts  |  tinyint unsigned  |  NOT NULL
+  reserved_at  |  int unsigned  |  NULL
+  available_at  |  int unsigned  |  NOT NULL
+  created_at  |  int unsigned  |  NOT NULL
+
+=== migrations ===
+  id  |  int unsigned  |  NOT NULL
+  migration  |  varchar(255)  |  NOT NULL
+  batch  |  int  |  NOT NULL
+
+=== notifications ===
+  id  |  char(36)  |  NOT NULL
+  notifiable_type  |  varchar(255)  |  NOT NULL
+  notifiable_id  |  bigint unsigned  |  NOT NULL
+  type  |  varchar(255)  |  NOT NULL
+  data  |  json  |  NOT NULL
+  read_at  |  timestamp  |  NULL
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== password_reset_tokens ===
+  email  |  varchar(255)  |  NOT NULL
+  token  |  varchar(255)  |  NOT NULL
+  created_at  |  timestamp  |  NULL
+
+=== question_bank_items ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NULL
+  question_bank_section_id  |  bigint unsigned  |  NULL
+  question_en  |  text  |  NOT NULL
+  question_ar  |  text  |  NULL
+  type  |  enum('multiple_choice','multi_select','rating','text','yes_no')  |  NOT NULL
+  options_en  |  json  |  NULL
+  options_ar  |  json  |  NULL
+  rating_min  |  tinyint unsigned  |  NOT NULL DEFAULT '1'
+  rating_max  |  tinyint unsigned  |  NOT NULL DEFAULT '5'
+  is_required  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  placeholder_en  |  varchar(255)  |  NULL
+  placeholder_ar  |  varchar(255)  |  NULL
+  usage_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== question_bank_sections ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NULL
+  name_en  |  varchar(255)  |  NOT NULL
+  name_ar  |  varchar(255)  |  NULL
+  color  |  varchar(20)  |  NOT NULL DEFAULT 'teal'
+  sort_order  |  tinyint unsigned  |  NOT NULL DEFAULT '0'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== reviews ===
+  id  |  bigint unsigned  |  NOT NULL
+  freelance_match_id  |  bigint unsigned  |  NOT NULL
+  reviewer_user_id  |  bigint unsigned  |  NOT NULL
+  freelance_profile_id  |  bigint unsigned  |  NOT NULL
+  rating  |  tinyint unsigned  |  NOT NULL
+  comment  |  text  |  NULL
+  posted_as_nickname  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== sectors ===
+  id  |  bigint unsigned  |  NOT NULL
+  slug  |  varchar(255)  |  NOT NULL
+  name_en  |  varchar(255)  |  NOT NULL
+  name_ar  |  varchar(255)  |  NOT NULL
+  sort_order  |  tinyint unsigned  |  NOT NULL DEFAULT '0'
+  is_active  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== sessions ===
+  id  |  varchar(255)  |  NOT NULL
+  user_id  |  bigint unsigned  |  NULL
+  ip_address  |  varchar(45)  |  NULL
+  user_agent  |  text  |  NULL
+  payload  |  longtext  |  NOT NULL
+  last_activity  |  int  |  NOT NULL
+
+=== survey_audience ===
+  id  |  bigint unsigned  |  NOT NULL
+  survey_id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  has_responded  |  tinyint(1)  |  NOT NULL DEFAULT '0'
+
+=== survey_questions ===
+  id  |  bigint unsigned  |  NOT NULL
+  survey_id  |  bigint unsigned  |  NOT NULL
+  question_en  |  text  |  NOT NULL
+  question_ar  |  text  |  NULL
+  type  |  enum('multiple_choice','multi_select','rating','text','yes_no')  |  NOT NULL
+  options_en  |  json  |  NULL
+  options_ar  |  json  |  NULL
+  rating_min  |  tinyint unsigned  |  NOT NULL DEFAULT '1'
+  rating_max  |  tinyint unsigned  |  NOT NULL DEFAULT '5'
+  is_required  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  sort_order  |  tinyint unsigned  |  NOT NULL DEFAULT '0'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== survey_responses ===
+  id  |  bigint unsigned  |  NOT NULL
+  survey_id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NULL
+  respondent_name  |  varchar(255)  |  NULL
+  respondent_title  |  varchar(255)  |  NULL
+  respondent_company  |  varchar(255)  |  NULL
+  respondent_gender  |  enum('male','female','prefer_not_to_say')  |  NULL
+  respondent_age  |  tinyint unsigned  |  NULL
+  ip_address  |  varchar(45)  |  NULL
+  answers  |  json  |  NOT NULL
+  submitted_at  |  timestamp  |  NOT NULL DEFAULT 'CURRENT_TIMESTAMP'
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== surveys ===
+  id  |  bigint unsigned  |  NOT NULL
+  created_by  |  bigint unsigned  |  NOT NULL
+  title_en  |  varchar(255)  |  NOT NULL
+  title_ar  |  varchar(255)  |  NULL
+  description_en  |  text  |  NULL
+  description_ar  |  text  |  NULL
+  language  |  varchar(2)  |  NOT NULL DEFAULT 'en'
+  audience  |  enum('all','hub','custom')  |  NOT NULL DEFAULT 'all'
+  hub_id  |  bigint unsigned  |  NULL
+  anonymous_responses  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  show_results_to_members  |  tinyint(1)  |  NOT NULL DEFAULT '0'
+  closes_at  |  timestamp  |  NULL
+  status  |  enum('draft','active','closed')  |  NOT NULL DEFAULT 'draft'
+  response_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  link_token  |  varchar(64)  |  NULL
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== user_hubs ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  hub_id  |  bigint unsigned  |  NOT NULL
+  is_primary  |  tinyint(1)  |  NOT NULL DEFAULT '0'
+  joined_at  |  timestamp  |  NOT NULL DEFAULT 'CURRENT_TIMESTAMP'
+
+=== user_login_activities ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  login_at  |  timestamp  |  NOT NULL
+  activity_date  |  date  |  NOT NULL
+  type  |  varchar(20)  |  NOT NULL
+  source  |  varchar(32)  |  NULL
+  created_at  |  timestamp  |  NOT NULL DEFAULT 'CURRENT_TIMESTAMP'
+
+=== user_suggestions ===
+  id  |  bigint unsigned  |  NOT NULL
+  user_id  |  bigint unsigned  |  NOT NULL
+  body  |  text  |  NOT NULL
+  read_at  |  timestamp  |  NULL
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
+
+=== users ===
+  id  |  bigint unsigned  |  NOT NULL
+  name  |  varchar(255)  |  NOT NULL
+  nickname  |  varchar(255)  |  NOT NULL
+  email  |  varchar(255)  |  NOT NULL
+  email_verified_at  |  timestamp  |  NULL
+  password  |  varchar(255)  |  NOT NULL
+  remember_token  |  varchar(100)  |  NULL
+  role  |  enum('admin','member')  |  NOT NULL DEFAULT 'member'
+  profession  |  varchar(255)  |  NULL
+  experience_level  |  enum('student','fresh','junior','mid','senior','senior_10','senior_15','senior_20','veteran')  |  NOT NULL DEFAULT 'fresh'
+  sector  |  varchar(255)  |  NULL
+  bio  |  text  |  NULL
+  avatar  |  varchar(255)  |  NULL
+  language  |  enum('en','ar')  |  NOT NULL DEFAULT 'en'
+  theme  |  enum('navy','dark')  |  NOT NULL DEFAULT 'navy'
+  highly_rated_solutions_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  highly_rated_replies_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  show_real_name  |  tinyint(1)  |  NOT NULL DEFAULT '0'
+  notify_jobs  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  notify_freelance  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  notify_forum  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  notify_surveys  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  notify_documents  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  is_active  |  tinyint(1)  |  NOT NULL DEFAULT '1'
+  last_login_at  |  timestamp  |  NULL
+  last_activity_at  |  timestamp  |  NULL
+  login_count  |  int unsigned  |  NOT NULL DEFAULT '0'
+  phone  |  varchar(255)  |  NULL
+  created_at  |  timestamp  |  NULL
+  updated_at  |  timestamp  |  NULL
