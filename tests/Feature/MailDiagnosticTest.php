@@ -117,6 +117,32 @@ class MailDiagnosticTest extends TestCase
         $this->assertStringContainsString('sends nothing', $template);
     }
 
+    /**
+     * The image host is the one setting that is wrong by DEFAULT on
+     * every development machine and silently correct-looking.
+     */
+    public function test_it_warns_when_email_images_point_somewhere_unreachable(): void
+    {
+        config(['mail.asset_url' => 'http://maliyat-docs.test']);
+
+        $this->artisan('mail:diagnose')
+            ->expectsOutputToContain('broken image')
+            ->assertSuccessful();
+    }
+
+    public function test_it_stays_quiet_when_the_image_host_is_public(): void
+    {
+        config([
+            'mail.default'    => 'smtp',
+            'mail.asset_url'  => 'https://maliyat-docs.evoqas.com',
+            'mail.mailers.smtp.password' => 'set',
+        ]);
+
+        $this->artisan('mail:diagnose')
+            ->doesntExpectOutputToContain('broken image')
+            ->assertSuccessful();
+    }
+
     public function test_the_mail_config_reads_the_modern_keys(): void
     {
         $config = file_get_contents(config_path('mail.php'));

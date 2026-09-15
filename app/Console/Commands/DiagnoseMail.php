@@ -53,6 +53,7 @@ class DiagnoseMail extends Command
             ['verify_peer', config('mail.mailers.smtp.verify_peer') ? 'true' : 'false'],
             ['from address', config('mail.from.address')],
             ['from name', config('mail.from.name')],
+            ['image host', config('mail.asset_url') ?: '(unset)'],
             ['QUEUE_CONNECTION', config('queue.default')],
             ['verification enabled', AuthVerification::enabled() ? 'yes' : 'NO — no codes are ever sent'],
         ]);
@@ -102,6 +103,23 @@ class DiagnoseMail extends Command
 
         if (config('mail.default') === 'smtp' && ! config('mail.mailers.smtp.password')) {
             $problems[] = 'SMTP is selected but no password is set.';
+        }
+
+        // An <img> in an email is fetched by the recipient's mail
+        // client, from wherever they are. A host only this machine
+        // can resolve produces a broken image for every recipient
+        // forever, and nothing reports it — the mail sends fine.
+        $host = parse_url((string) config('mail.asset_url'), PHP_URL_HOST) ?: '';
+
+        $unreachable = $host === ''
+            || str_ends_with($host, '.test')
+            || str_ends_with($host, '.local')
+            || str_ends_with($host, 'localhost')
+            || filter_var($host, FILTER_VALIDATE_IP) !== false;
+
+        if ($unreachable) {
+            $problems[] = "Email images point at \"{$host}\", which nobody outside this machine can reach — "
+                .'every recipient sees a broken image. Set MAIL_ASSET_URL to the site\'s public address.';
         }
 
         if (! $problems) {

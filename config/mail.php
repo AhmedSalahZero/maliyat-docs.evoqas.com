@@ -117,4 +117,24 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Where email images are served from
+    |--------------------------------------------------------------------------
+    |
+    | An <img> in an email is fetched by the RECIPIENT'S mail client,
+    | from wherever they are. So the URL has to be reachable from the
+    | public internet — which APP_URL is not obliged to be, and on a
+    | development machine (maliyat-docs.test, localhost, 127.0.0.1)
+    | definitely is not.
+    |
+    | Getting this wrong produces a broken-image icon in every email
+    | the product ever sends, and nothing in the app reports it: the
+    | mail goes out fine, the image simply never loads for anyone but
+    | the developer. Set it to the site's real public address.
+    |
+    */
+
+    'asset_url' => env('MAIL_ASSET_URL', env('APP_URL')),
+
 ];
