@@ -1589,6 +1589,15 @@ body.lang-ar .ip-login__label { letter-spacing: 0; font-family: 'Cairo', sans-se
     margin-top: var(--space-1);
 }
 
+/* The requirements, shown before the user can fail them. Occupies
+   the same slot as the error so the field does not jump when one
+   replaces the other. */
+.ip-login__hint {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    margin-top: var(--space-1);
+}
+
 .ip-login__submit {
     font-size: var(--text-md);
     letter-spacing: 0.02em;

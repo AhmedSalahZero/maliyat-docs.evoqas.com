@@ -32,7 +32,7 @@ class ResetPasswordNotification extends Notification implements ShouldQueue
 
         return (new MailMessage)
             ->subject(__('emails.reset_password.subject', [], $locale))
-            ->view('emails.reset-password', [
+            ->view(['emails.reset-password', 'emails.text.reset-password'], [
                 'user'           => $notifiable,
                 'url'            => $url,
                 'expireMinutes'  => $expireMinutes,

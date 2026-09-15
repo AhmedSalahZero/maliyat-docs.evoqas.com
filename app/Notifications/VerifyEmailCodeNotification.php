@@ -23,7 +23,7 @@ class VerifyEmailCodeNotification extends Notification
 
         return (new MailMessage)
             ->subject(__('emails.verify_code.subject', [], $locale))
-            ->view('emails.verify-email-code', [
+            ->view(['emails.verify-email-code', 'emails.text.verify-email-code'], [
                 'user'           => $notifiable,
                 'code'           => $this->plainCode,
                 'expiresMinutes' => $minutes,

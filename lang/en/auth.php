@@ -53,7 +53,11 @@ return [
     'new_password'         => 'New Password',
     'confirm_new_password' => 'Confirm New Password',
     'reset_email_not_found' => 'We could not find an account with that email address.',
-    'password_confirmed'    => 'Password confirmed.',
+    // Shown when the two password boxes disagree. It used to read
+    // "Password confirmed." — the message for the OPPOSITE outcome,
+    // so somebody who mistyped their confirmation was told they had
+    // succeeded while the form refused to submit.
+    'password_confirmed'    => 'The two passwords do not match.',
 
     // ── Verification Codes (OTP) ──────────────────────────────
     // Referenced from App\Services\Auth\EmailVerificationService and

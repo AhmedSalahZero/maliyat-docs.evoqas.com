@@ -36,7 +36,7 @@ class TrialEndingNotification extends Notification implements ShouldQueue
 
         return (new MailMessage)
             ->subject(__('emails.trial_ending.subject', ['days' => $this->daysLeft], $locale))
-            ->view('emails.trial-ending', [
+            ->view(['emails.trial-ending', 'emails.text.trial-ending'], [
                 'user'      => $notifiable,
                 'company'   => $this->company,
                 'daysLeft'  => $this->daysLeft,

@@ -53,7 +53,11 @@ return [
     'new_password'         => 'كلمة المرور الجديدة',
     'confirm_new_password' => 'تأكيد كلمة المرور الجديدة',
     'reset_email_not_found' => 'لم نجد حسابًا مرتبطًا بهذا البريد الإلكتروني.',
-    'password_confirmed'    => 'تم تأكيد كلمة المرور.',
+    // Shown when the two password boxes disagree. It used to read
+    // "Password confirmed." — the message for the OPPOSITE outcome,
+    // so somebody who mistyped their confirmation was told they had
+    // succeeded while the form refused to submit.
+    'password_confirmed'    => 'كلمتا المرور غير متطابقتين.',
 
     // ── Verification Codes (OTP) ──────────────────────────────
     // مستخدمة في EmailVerificationService وشاشات التحقق.

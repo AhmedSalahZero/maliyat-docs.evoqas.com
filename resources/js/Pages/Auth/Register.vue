@@ -7,9 +7,11 @@
 import { ref, computed, onMounted } from 'vue';
 import { Head, Link, useForm }      from '@inertiajs/vue3';
 import { useAuthStore }             from '@/Stores/useAuthStore';
+import { useAuthTranslations }      from '@/Composables/useAuthTranslations';
 import PasswordInput                from '@/Components/PasswordInput.vue';
 
 const authStore = useAuthStore();
+const { t } = useAuthTranslations();
 
 const CURRENCIES = ['EGP', 'SAR', 'AED', 'USD', 'KWD'];
 
@@ -254,7 +256,13 @@ onMounted(() => {
                             autocomplete="new-password"
                             required
                         />
-                        <p v-if="form.errors.password" class="ip-login__error">{{ form.errors.password }}</p>
+                        <!-- The rules, said up front rather than
+                             discovered by failing. The placeholder
+                             only mentioned the length, so the letter
+                             and number requirements were invisible
+                             until the form refused to submit. -->
+                        <p v-if="!form.errors.password" class="ip-login__hint">{{ t('password_rule_hint') }}</p>
+                        <p v-else class="ip-login__error">{{ form.errors.password }}</p>
                     </div>
 
                     <!-- Confirm password -->
