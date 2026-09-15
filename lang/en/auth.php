@@ -37,6 +37,8 @@ return [
     'account_inactive'     => 'Your account is not active. Please contact support.',
 
     // ── Failed Messages ───────────────────────────────────────
+    'blocked_submission' => 'Something blocked that submission. Please reload the page and try again.',
+
     'failed'               => 'These credentials do not match our records.',
     'throttle'             => 'Too many login attempts. Please try again in :seconds seconds.',
     'password_incorrect'   => 'The provided password is incorrect.',

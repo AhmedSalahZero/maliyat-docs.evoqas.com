@@ -22,7 +22,13 @@ const form = useForm({
     password:              '',
     password_confirmation: '',
     _hp: '',
-    _ft: 0,
+    // Stamped when the component is created, not in onMounted — a
+    // zero here fails validation, and the error lands on a field the
+    // form cannot show. Setting it at creation means it is never
+    // zero by the time anything can submit. onMounted refreshes it
+    // so the "too fast" window is measured from when the page was
+    // actually usable.
+    _ft: Date.now(),
 });
 
 const isDark  = computed(() => authStore.isDark);
@@ -42,6 +48,25 @@ function toggleLocale() {
     authStore.locale = next;
     form.language = next;
 }
+
+// The fields this form actually draws an error message under. Any
+// error that comes back for a key NOT in this list has nowhere to
+// appear, and the user would press Create Account and see the page
+// sit there unchanged — which is exactly what the hidden anti-bot
+// fields (_hp, _ft) used to do.
+const VISIBLE_FIELDS = [
+    'name', 'company_name', 'email', 'currency',
+    'password', 'password_confirmation',
+];
+
+// A catch-all rather than a list of the two known offenders: a rule
+// added to the request later gets surfaced automatically instead of
+// silently doing nothing.
+const unboundError = computed(() => {
+    const orphan = Object.keys(form.errors).find((field) => !VISIBLE_FIELDS.includes(field));
+
+    return orphan ? form.errors[orphan] : null;
+});
 
 function submit() {
     form.post(route('register'), {
@@ -146,6 +171,10 @@ onMounted(() => {
                 <form @submit.prevent="submit" class="ip-register__form" novalidate>
 
                     <!-- Full name -->
+                    <p v-if="unboundError" class="ip-register__form-error" role="alert">
+                        {{ unboundError }}
+                    </p>
+
                     <div class="ip-form-group">
                         <label class="ip-login__label" for="name">
                             {{ locale === 'ar' ? 'الاسم الكامل' : 'Full Name' }}
@@ -244,11 +273,33 @@ onMounted(() => {
                         <p v-if="form.errors.password_confirmation" class="ip-login__error">{{ form.errors.password_confirmation }}</p>
                     </div>
 
-                    <!-- Honeypot -->
+                    <!-- Honeypot. A bot fills every field it finds;
+                         a person never sees this one.
+
+                         It used to be name="website", which browsers
+                         and password managers autofill from a saved
+                         profile without asking — so a real person
+                         could be rejected as a bot by their own
+                         browser being helpful. The name is now one
+                         nothing autofills, and autocomplete is
+                         refused three ways because browsers disagree
+                         about which one they honour. -->
                     <div class="ip-register__hp-wrap" aria-hidden="true">
-                        <input v-model="form._hp" type="text" name="website" tabindex="-1" autocomplete="off" class="ip-register__hp-field" />
+                        <input
+                            v-model="form._hp"
+                            type="text"
+                            name="mdx_leave_blank"
+                            tabindex="-1"
+                            autocomplete="off"
+                            autocorrect="off"
+                            autocapitalize="off"
+                            spellcheck="false"
+                            data-lpignore="true"
+                            data-1p-ignore="true"
+                            data-form-type="other"
+                            class="ip-register__hp-field"
+                        />
                     </div>
-                    <input type="hidden" v-model="form._ft" />
 
                     <!-- Email verification notice -->
                     <div class="ip-register__verify-note">
@@ -590,6 +641,18 @@ onMounted(() => {
     margin-bottom: var(--space-2);
 }
 .ip-register__verify-note svg { color: var(--color-info); margin-top: 1px; }
+.ip-register__form-error {
+    margin: 0 0 16px;
+    padding: 11px 14px;
+    border: 1.5px solid var(--color-danger, #DC2626);
+    border-inline-start-width: 4px;
+    border-radius: 10px;
+    background: var(--color-danger-soft, rgba(220, 38, 38, 0.08));
+    color: var(--color-danger-dark, #991B1B);
+    font-size: 13.5px;
+    line-height: 1.5;
+}
+
 .ip-register__hp-wrap {
     position: absolute;
     left: -9999px;
