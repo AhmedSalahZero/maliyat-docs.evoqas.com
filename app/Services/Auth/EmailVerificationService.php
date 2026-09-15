@@ -158,6 +158,28 @@ class EmailVerificationService
         return true;
     }
 
+    /**
+     * Send the code immediately, not through the queue.
+     *
+     * notifyNow() is deliberate and it is the right call here: the
+     * person is sitting on the verification screen waiting for a
+     * six-digit number. A queued notification would sit in the jobs
+     * table until a worker picked it up, so on any install without a
+     * running worker the code would simply never arrive — and the
+     * screen would still say it had been sent.
+     *
+     * The consequence to know: NOTHING about this flow ever touches
+     * the queue. An empty jobs table, an empty failed_jobs table and
+     * silent worker logs are all correct here, not evidence that
+     * sending failed. Where the mail actually went is decided by
+     * MAIL_MAILER alone — with the `log` driver it is written to
+     * storage/logs/laravel.log rather than delivered anywhere.
+     *
+     * A failure is rethrown rather than swallowed: the caller has
+     * just written a code to the database, and telling somebody a
+     * code is on its way when the send threw is worse than showing
+     * them an error.
+     */
     private function dispatchVerificationMail(User $user, string $plainCode): void
     {
         try {

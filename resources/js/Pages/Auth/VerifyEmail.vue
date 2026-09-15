@@ -87,22 +87,28 @@ function resend() {
         </div>
 
         <form class="ip-login__form" @submit.prevent="submit">
+            <!-- The address the code went to.
+                 
+                 This used to be an editable field, which asked the
+                 person a question the app had already answered: the
+                 server knows who just registered and passes the
+                 address in. An editable box invites them to change
+                 it, and changing it cannot do what they would expect
+                 — the code was already sent to the original address.
+                 
+                 Shown, not asked. The value still travels with the
+                 submission — Inertia posts the form object, not the
+                 DOM — because after signing up nobody is logged in
+                 yet and the server needs to know which pending
+                 account this is. -->
             <div class="ip-form-group">
-                <label class="ip-login__label" for="email">{{ t('email') }}</label>
-                <div class="ip-login__input-wrap">
-                    <svg class="ip-login__input-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <span class="ip-login__label">{{ t('code_sent_to') }}</span>
+                <p class="ip-verify-address">
+                    <svg class="ip-verify-address__icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
                     </svg>
-                    <input
-                        id="email"
-                        v-model="form.email"
-                        type="email"
-                        class="ip-login__input"
-                        :class="{ 'ip-login__input--error': form.errors.email }"
-                        required
-                        autocomplete="username"
-                    />
-                </div>
+                    <span class="ip-verify-address__value" dir="ltr">{{ form.email }}</span>
+                </p>
                 <p v-if="form.errors.email" class="ip-login__error">{{ form.errors.email }}</p>
             </div>
 

@@ -38,8 +38,32 @@ onMounted(() => {
              HEADER — brand (left) + theme/locale controls (right)
         ════════════════════════════════════════════════════════════ -->
         <header class="ip-shell__header">
+            <!-- The product's own logo.
+                 
+                 This read "InPractice" — hardcoded, from the project
+                 this codebase was built out of. It sat in the header
+                 of every auth screen except Login and Register, which
+                 carry their own layout: so forgot-password, reset,
+                 verify-email and confirm-password all showed a
+                 customer the name of a different product, on the one
+                 page they reach before they have an account.
+                 
+                 The square icon, not the full logo: the full lockup
+                 is portrait (409x610) and belongs in Login's tall
+                 hero panel, not in a header bar. Two files because
+                 the mark needs contrast in both themes. -->
             <Link :href="route('home')" class="ip-shell__brand">
-                In<span>Practice</span>
+                <img
+                    :src="isDark ? '/images/logo-icon-light.png' : '/images/logo-icon-dark.png'"
+                    alt=""
+                    aria-hidden="true"
+                    class="ip-shell__brand-icon"
+                    width="197"
+                    height="197"
+                />
+                <span class="ip-shell__brand-name">
+                    {{ locale === 'ar' ? 'ماليات دوكس' : 'Maliyat Docs' }}
+                </span>
             </Link>
 
             <div class="ip-shell__controls">
@@ -126,14 +150,35 @@ onMounted(() => {
 }
 
 .ip-shell__brand {
-    font-size: var(--text-lg);
-    font-weight: var(--fw-bold);
-    color: var(--color-text-primary);
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
     text-decoration: none;
-    letter-spacing: -0.01em;
+    color: var(--color-text-primary);
+    min-width: 0;
 }
 
-.ip-shell__brand span { color: var(--color-primary); }
+.ip-shell__brand-icon {
+    height: 30px;
+    width: 30px;
+    flex-shrink: 0;
+    display: block;
+}
+
+.ip-shell__brand-name {
+    font-size: var(--text-lg);
+    font-weight: var(--fw-bold);
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+}
+
+html[dir="rtl"] .ip-shell__brand-name,
+body.lang-ar .ip-shell__brand-name { font-family: 'Cairo', sans-serif; letter-spacing: 0; }
+
+@media (max-width: 480px) {
+    .ip-shell__brand-icon { height: 26px; width: 26px; }
+    .ip-shell__brand-name { font-size: var(--text-md); }
+}
 
 .ip-shell__controls {
     display: flex;
