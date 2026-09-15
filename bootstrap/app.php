@@ -9,6 +9,8 @@ use App\Http\Middleware\TrackDailyUserAccess;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
+use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -73,6 +75,36 @@ return Application::configure(basePath: dirname(__DIR__))
 
     })
     ->withExceptions(function (Exceptions $exceptions) {
+
+        // ── Rate limiting has to be VISIBLE ────────────────────
         //
+        // Every auth route is throttled, which is right — but a
+        // throttled request returns a bare 429 HTML error page, and
+        // that is not an Inertia response. The page the person is
+        // looking at therefore does nothing at all: no message, no
+        // movement, no explanation. They try again, which burns
+        // another attempt, which extends the lockout.
+        //
+        // Registration is where this bites hardest. Somebody whose
+        // first attempt failed for any reason retries a few times,
+        // silently exhausts five attempts a minute, and from then on
+        // the form is dead in a way that looks identical to the
+        // original fault — so they cannot tell whether the problem
+        // was fixed.
+        //
+        // Sent back as a normal validation error instead, which the
+        // form already knows how to display, and carrying the wait
+        // so the message is actionable rather than just apologetic.
+        $exceptions->render(function (ThrottleRequestsException $e, Request $request) {
+            if (! $request->header('X-Inertia')) {
+                return null; // let the framework answer a plain request
+            }
+
+            $seconds = (int) ($e->getHeaders()['Retry-After'] ?? 60);
+
+            return back()->withErrors([
+                'email' => __('auth.throttle_requests', ['seconds' => $seconds]),
+            ]);
+        });
     })
     ->create();

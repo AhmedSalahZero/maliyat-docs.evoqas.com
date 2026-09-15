@@ -40,6 +40,10 @@ return [
     'blocked_submission' => 'تعذّر إرسال النموذج. يرجى تحديث الصفحة والمحاولة مرة أخرى.',
 
     'failed'               => 'بيانات الاعتماد هذه لا تطابق سجلاتنا.',
+    // Used for ANY throttled auth route, not just sign-in — see the
+    // ThrottleRequestsException handler in bootstrap/app.php.
+    'throttle_requests' => 'محاولات كثيرة جداً. يرجى الانتظار :seconds ثانية ثم المحاولة مرة أخرى.',
+
     'throttle'             => 'محاولات تسجيل دخول كثيرة جداً. يرجى المحاولة مرة أخرى بعد :seconds ثانية.',
     'password_incorrect'   => 'كلمة المرور المدخلة غير صحيحة.',
 

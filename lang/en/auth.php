@@ -40,6 +40,10 @@ return [
     'blocked_submission' => 'Something blocked that submission. Please reload the page and try again.',
 
     'failed'               => 'These credentials do not match our records.',
+    // Used for ANY throttled auth route, not just sign-in — see the
+    // ThrottleRequestsException handler in bootstrap/app.php.
+    'throttle_requests' => 'Too many attempts. Please wait :seconds seconds and try again.',
+
     'throttle'             => 'Too many login attempts. Please try again in :seconds seconds.',
     'password_incorrect'   => 'The provided password is incorrect.',
 
