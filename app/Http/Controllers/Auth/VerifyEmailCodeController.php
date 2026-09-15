@@ -31,9 +31,7 @@ class VerifyEmailCodeController extends Controller
                 : redirect()->route('app.dashboard');
         }
 
-        $email = $request->user()?->email
-            ?? $request->session()->get('email')
-            ?? $request->query('email');
+        $email = AuthVerification::pendingEmail($request);
 
         return Inertia::render('Auth/VerifyEmail', [
             'status' => session('status'),
@@ -54,6 +52,10 @@ class VerifyEmailCodeController extends Controller
         Auth::login($user);
         $request->session()->regenerate();
 
+        // Nothing left to verify — the session should stop pointing
+        // at this account.
+        AuthVerification::forgetPendingEmail($request);
+
         return redirect()
             ->route('app.dashboard')
             ->with('status', 'email-verified');
@@ -68,6 +70,10 @@ class VerifyEmailCodeController extends Controller
         $user = $request->resolveUser();
 
         $this->verificationService->issueAndSend($user);
+
+        // back() is a fresh request, so the screen it returns to has
+        // to be able to find the address again.
+        AuthVerification::rememberPendingEmail($request, $user->email);
 
         return back()->with('status', 'verification-code-sent');
     }

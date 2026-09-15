@@ -101,7 +101,16 @@ function resend() {
                  DOM — because after signing up nobody is logged in
                  yet and the server needs to know which pending
                  account this is. -->
-            <div class="ip-form-group">
+            <!-- If the address is genuinely unknown — somebody
+                 opened this URL cold, with no sign-up or sign-in
+                 behind it — there is nothing to verify and nothing
+                 to resend to. Say so and point at sign-in, rather
+                 than showing a form with a dead button on it. -->
+            <div v-if="!form.email" class="ip-login__status ip-login__status--warn">
+                {{ t('verify_unknown_address') }}
+            </div>
+
+            <div v-else class="ip-form-group">
                 <span class="ip-login__label">{{ t('code_sent_to') }}</span>
                 <p class="ip-verify-address">
                     <svg class="ip-verify-address__icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -112,7 +121,7 @@ function resend() {
                 <p v-if="form.errors.email" class="ip-login__error">{{ form.errors.email }}</p>
             </div>
 
-            <div class="ip-form-group">
+            <div v-if="form.email" class="ip-form-group">
                 <label class="ip-login__label">{{ t('verification_code') }}</label>
                 <div class="ip-verify-digits" @paste="onPaste">
                     <input
@@ -133,6 +142,7 @@ function resend() {
             </div>
 
             <button
+                v-if="form.email"
                 type="submit"
                 class="ip-btn ip-btn--primary ip-btn--full ip-login__submit"
                 :disabled="form.processing || form.code.length < codeLength"
@@ -140,11 +150,11 @@ function resend() {
                 {{ t('verify_submit') }}
             </button>
 
-            <div class="ip-login__row-actions">
+            <div v-if="form.email" class="ip-login__row-actions">
                 <button
                     type="button"
                     class="ip-login__link-btn"
-                    :disabled="resendForm.processing || !form.email"
+                    :disabled="resendForm.processing"
                     @click="resend"
                 >
                     {{ t('verify_resend') }}

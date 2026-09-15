@@ -58,14 +58,20 @@ class RegisteredUserController extends Controller
                 ->with('status', __('auth.registration_complete'));
         }
 
-        // Do not log in until email is verified — redirect to OTP screen
+        // Do not log in until email is verified — redirect to OTP screen.
+        //
+        // The address is remembered in the session rather than only
+        // flashed: flashed data is gone after one request, so the
+        // verification screen knew who it was for the first time it
+        // rendered and never again. See AuthVerification.
+        AuthVerification::rememberPendingEmail($request, $user->email);
+
         $status = AuthVerification::sendOnRegister()
             ? 'verification-code-sent'
             : 'verify-email-check';
 
         return redirect()
             ->route('verification.notice')
-            ->with('email', $user->email)
             ->with('status', $status);
     }
 }

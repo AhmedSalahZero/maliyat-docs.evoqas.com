@@ -57,6 +57,12 @@ class LoginRequest extends FormRequest
 
             $codeSent = app(EmailVerificationService::class)->sendForLogin($user);
 
+            // The other way onto the verification screen. Remembering
+            // it here means the screen works the same whether someone
+            // arrived by signing up or by signing in to an account
+            // that was never verified.
+            \App\Support\AuthVerification::rememberPendingEmail($this, $user->email);
+
             throw ValidationException::withMessages([
                 'needs_verification'     => '1',
                 'verification_code_sent' => $codeSent ? '1' : '0',
