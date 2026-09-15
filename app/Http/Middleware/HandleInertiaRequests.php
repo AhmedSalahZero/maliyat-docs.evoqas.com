@@ -50,6 +50,16 @@ class HandleInertiaRequests extends Middleware
             'translations' => [
                 'auth' => Lang::get('auth'),
             ],
+
+            // Who to contact to renew. Read by the trial countdown in
+            // AppLayout — there is no self-service billing page, so a
+            // banner saying "your access ends in 3 days" has to say
+            // who to talk to or it is a dead end. Either key may be
+            // null; the banner renders whichever exists.
+            'support' => [
+                'email' => config('subscription.support_email'),
+                'phone' => config('subscription.support_phone'),
+            ],
         ];
     }
 
@@ -72,7 +82,7 @@ class HandleInertiaRequests extends Middleware
                 'role'       => $user->role,
                 'company_id' => $user->company_id,
                 'company'    => $user->company_id
-                    ? $user->company?->only(['id', 'name', 'name_ar', 'currency'])
+                    ? $this->resolveCompany($user)
                     : null,
                 'theme'       => $user->theme ?? 'light',
                 'locale'      => $user->language,
@@ -80,6 +90,30 @@ class HandleInertiaRequests extends Middleware
                 'is_active'   => $user->is_active,
                 'login_count' => (int) $user->login_count,
             ],
+        ];
+    }
+
+    /**
+     * The company as the frontend needs it, including how much of the
+     * free trial is left.
+     *
+     * `trial_days_left` is what drives the countdown banner in
+     * AppLayout. It is null for a company with no expiry (one that
+     * has paid), so the banner simply never renders for them.
+     */
+    private function resolveCompany(\App\Models\User $user): ?array
+    {
+        $company = $user->company;
+
+        if (! $company) {
+            return null;
+        }
+
+        return [
+            ...$company->only(['id', 'name', 'name_ar', 'currency']),
+            'trial_ends_at'   => $company->trial_ends_at?->toDateString(),
+            'trial_days_left' => $company->daysUntilExpiry(),
+            'trial_expiring'  => $company->isExpiringSoon(),
         ];
     }
 }

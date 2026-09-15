@@ -35,4 +35,17 @@ class Vendor extends Model
     {
         return $this->hasMany(Custody::class, 'holder_id');
     }
+
+    /**
+     * Payments logged against this supplier with no bill behind them
+     * — Pay Money's "or log a generic payment", tagged with a
+     * vendor. Same reasoning as Customer::standalonePayments():
+     * money that really moved between the company and this supplier
+     * belongs on their statement whether or not a bill was raised
+     * for it first.
+     */
+    public function standalonePayments(): HasMany
+    {
+        return $this->hasMany(Payment::class)->whereNull('payable_type');
+    }
 }

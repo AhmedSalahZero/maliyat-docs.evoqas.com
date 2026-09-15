@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\ActivityController as AdminActivityController;
 use App\Http\Controllers\Admin\CompanyController as AdminCompanyController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\App\CategoryController;
@@ -11,9 +12,11 @@ use App\Http\Controllers\App\EquipmentPurchaseController;
 use App\Http\Controllers\App\ExpenseController;
 use App\Http\Controllers\App\InventoryPurchaseController;
 use App\Http\Controllers\App\ItemController;
+use App\Http\Controllers\App\OpeningBalanceController;
 use App\Http\Controllers\App\PaymentController;
 use App\Http\Controllers\App\ProfileController;
 use App\Http\Controllers\App\ReportController;
+use App\Http\Controllers\App\ReportExportController;
 use App\Http\Controllers\App\SaleController;
 use App\Http\Controllers\App\UserController as AppUserController;
 use App\Http\Controllers\App\VendorController;
@@ -66,7 +69,7 @@ Route::get('/', function () {
 // ══════════════════════════════════════════════════════════════════
 //  ADMIN ROUTES (super_admin) — Prefix: /admin — Name: admin.*
 // ══════════════════════════════════════════════════════════════════
-Route::middleware(['auth', 'verified', 'admin'])
+Route::middleware(['auth', 'verified', 'admin', 'no-duplicate'])
     ->prefix('admin')
     ->name('admin.')
     ->group(function () {
@@ -76,12 +79,16 @@ Route::middleware(['auth', 'verified', 'admin'])
         Route::post('/companies', [AdminCompanyController::class, 'store'])->name('companies.store');
         Route::patch('/companies/{company}/toggle-active', [AdminCompanyController::class, 'toggleActive'])
             ->name('companies.toggle-active');
+
+        // Who is using the app, one row per person per day — see
+        // ActivityController for why it is deduped that way.
+        Route::get('/activity', [AdminActivityController::class, 'index'])->name('activity.index');
     });
 
 // ══════════════════════════════════════════════════════════════════
 //  APP ROUTES (company_admin + employee) — Prefix: /app — Name: app.*
 // ══════════════════════════════════════════════════════════════════
-Route::middleware(['auth', 'verified', 'member'])
+Route::middleware(['auth', 'verified', 'member', 'no-duplicate'])
     ->prefix('app')
     ->name('app.')
     ->group(function () {
@@ -107,6 +114,7 @@ Route::middleware(['auth', 'verified', 'member'])
 
         Route::get('/items', [ItemController::class, 'index'])->name('items.index');
         Route::post('/items', [ItemController::class, 'store'])->name('items.store');
+        Route::patch('/items/{item}', [ItemController::class, 'update'])->name('items.update');
 
         // ── Sales ──────────────────────────────────────────────────
         Route::get('/sales', [SaleController::class, 'index'])->name('sales.index');
@@ -148,8 +156,10 @@ Route::middleware(['auth', 'verified', 'member'])
         Route::get('/payments/open-bills', [PaymentController::class, 'openBills'])->name('payments.open-bills');
         Route::post('/payments/receive', [PaymentController::class, 'storeReceipt'])->name('payments.receive');
         Route::post('/payments/pay', [PaymentController::class, 'storePayment'])->name('payments.pay');
-        // Remove a single payment — used by the edit view of a sale
-        // or bill when a payment entered at creation time was wrong.
+        // Correct or remove a single payment — used by the edit view
+        // of a sale or bill when a payment entered at creation time
+        // was wrong.
+        Route::patch('/payments/{payment}', [PaymentController::class, 'update'])->name('payments.update');
         Route::delete('/payments/{payment}', [PaymentController::class, 'destroy'])->name('payments.destroy');
 
         // ── Reports ───────────────────────────────────────────────────
@@ -164,9 +174,49 @@ Route::middleware(['auth', 'verified', 'member'])
             ->name('reports.inventory-statement');
         Route::get('/reports/cash-flow', [ReportController::class, 'cashFlow'])->name('reports.cash-flow');
 
+        // ── Report exports (Excel / PDF, {format} is "excel" or "pdf") ──
+        Route::get('/reports/ledger/export/{format}', [ReportExportController::class, 'ledger'])
+            ->name('reports.ledger.export');
+        Route::get('/reports/profit-loss/export/{format}', [ReportExportController::class, 'profitAndLoss'])
+            ->name('reports.profit-loss.export');
+        Route::get('/reports/customer-statement/{customer}/export/{format}', [ReportExportController::class, 'customerStatement'])
+            ->name('reports.customer-statement.export');
+        Route::get('/reports/supplier-statement/{vendor}/export/{format}', [ReportExportController::class, 'supplierStatement'])
+            ->name('reports.supplier-statement.export');
+        Route::get('/reports/inventory-statement/export/{format}', [ReportExportController::class, 'inventoryStatement'])
+            ->name('reports.inventory-statement.export');
+        Route::get('/reports/cash-flow/export/{format}', [ReportExportController::class, 'cashFlow'])
+            ->name('reports.cash-flow.export');
+
+        // ── External Audit (for the company's auditor) ──────────────
+        //  The Trial Balance and the Journal behind one entry point,
+        //  with a toggle inside — they are read together, so they are
+        //  reached together. ?view=journal picks the second half.
+        //  See ReportController::externalAudit().
+        Route::get('/reports/external-audit', [ReportController::class, 'externalAudit'])
+            ->name('reports.external-audit');
+
+        // The two links these replaced. Kept as redirects so an
+        // auditor's bookmark, or a link in an old email, still lands
+        // on the right half rather than a 404.
+        Route::get('/reports/trial-balance', fn () => redirect()->route('app.reports.external-audit', ['view' => 'trial-balance'] + request()->query()))
+            ->name('reports.trial-balance');
+        Route::get('/reports/journal', fn () => redirect()->route('app.reports.external-audit', ['view' => 'journal'] + request()->query()))
+            ->name('reports.journal');
+        Route::get('/reports/trial-balance/export/{format}', [ReportExportController::class, 'trialBalance'])
+            ->name('reports.trial-balance.export');
+        Route::get('/reports/journal/export/{format}', [ReportExportController::class, 'journal'])
+            ->name('reports.journal.export');
+
+        // ── Opening Balances (one-time setup, company_admin) ────────
+        Route::get('/opening-balance', [OpeningBalanceController::class, 'index'])->name('opening-balance.index');
+        Route::post('/opening-balance', [OpeningBalanceController::class, 'store'])->name('opening-balance.store');
+        Route::delete('/opening-balance', [OpeningBalanceController::class, 'reset'])->name('opening-balance.reset');
+
         // ── Team (company_admin manages employees) ───────────────────
         Route::get('/team', [AppUserController::class, 'index'])->name('team.index');
         Route::post('/team', [AppUserController::class, 'store'])->name('team.store');
+        Route::patch('/team/{user}', [AppUserController::class, 'update'])->name('team.update');
         Route::patch('/team/{user}/toggle-active', [AppUserController::class, 'toggleActive'])->name('team.toggle-active');
 
         // ── Profile & Preferences ─────────────────────────────────────
@@ -175,19 +225,24 @@ Route::middleware(['auth', 'verified', 'member'])
         Route::patch('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
 
         // Called by the theme/locale toggles — idempotent, one field, no page reload needed.
+        //
+        // Exempt from the duplicate guard: switching dark -> light ->
+        // dark inside a few seconds sends the same body twice on
+        // purpose, and there is nothing to double-record — the value
+        // is simply set to what it already was.
         Route::patch('/preferences/theme', function (Request $request) {
             $request->validate(['theme' => ['required', 'string', 'in:light,dark']]);
             $request->user()->update(['theme' => $request->theme]);
 
             return back();
-        })->name('preferences.theme');
+        })->name('preferences.theme')->withoutMiddleware('no-duplicate');
 
         Route::patch('/preferences/locale', function (Request $request) {
             $request->validate(['locale' => ['required', 'string', 'in:en,ar']]);
             $request->user()->update(['language' => $request->locale]);
 
             return back();
-        })->name('preferences.locale');
+        })->name('preferences.locale')->withoutMiddleware('no-duplicate');
     });
 
 // ── Auth Routes (Breeze) ───────────────────────────────────────

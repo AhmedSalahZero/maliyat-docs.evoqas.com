@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests\App;
 
+use App\Http\Requests\Concerns\GuardsDocumentTotal;
+use App\Http\Requests\Concerns\GuardsStockLevels;
+use App\Support\FinancialRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -14,6 +17,8 @@ use Illuminate\Validation\Rule;
 // ══════════════════════════════════════════════════════════════════
 class StoreSaleRequest extends FormRequest
 {
+    use GuardsDocumentTotal, GuardsStockLevels;
+
     public function authorize(): bool
     {
         return (bool) $this->user()?->company_id;
@@ -28,20 +33,20 @@ class StoreSaleRequest extends FormRequest
                 'required',
                 Rule::exists('customers', 'id')->where('company_id', $companyId),
             ],
-            'date' => ['required', 'date'],
+            'date' => ['required', ...FinancialRules::date()],
 
             'lines'              => ['required', 'array', 'min:1'],
             'lines.*.item_id'    => ['nullable', Rule::exists('items', 'id')->where('company_id', $companyId)],
-            'lines.*.qty'        => ['required', 'numeric', 'min:0.01'],
-            'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
+            'lines.*.qty'        => ['required', ...FinancialRules::qty()],
+            'lines.*.unit_price' => ['required', ...FinancialRules::amount(0)],
 
             'vat_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
 
             'mode'       => ['required', Rule::in(['now', 'later', 'partial', 'installment'])],
             'method'     => ['nullable', Rule::in(['cash', 'bank', 'visa', 'instapay', 'wallet'])],
             'payment_channel_id' => ['nullable', Rule::exists('payment_channels', 'id')->where('company_id', $companyId)],
-            'amount_now' => ['required_if:mode,partial', 'nullable', 'numeric', 'min:0.01'],
-            'due_date'   => ['nullable', 'date', 'after_or_equal:date'],
+            'amount_now' => ['required_if:mode,partial', 'nullable', ...FinancialRules::amount()],
+            'due_date'   => ['nullable', 'date', 'after_or_equal:date', 'before_or_equal:'.FinancialRules::latestAllowedDueDate()],
             'due_in_days'=> ['nullable', 'integer', 'min:1', 'max:365'],
 
             // Only used when mode = 'installment' — see
@@ -49,5 +54,29 @@ class StoreSaleRequest extends FormRequest
             'installment_count'         => ['required_if:mode,installment', 'nullable', 'integer', 'min:2', 'max:60'],
             'installment_interval_days' => ['required_if:mode,installment', 'nullable', 'integer', 'min:1', 'max:365'],
         ];
+    }
+
+    /**
+     * Checks that need the lines added up first — see
+     * GuardsDocumentTotal.
+     */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+
+            $subtotal = $this->documentLineTotal();
+            $this->rejectTotalAboveCeiling($validator, $subtotal);
+
+            $vatRate = (float) ($this->input('vat_rate') ?? 0);
+            $total   = round($subtotal + round($subtotal * $vatRate / 100, 2), 2);
+            $this->rejectAmountNowAboveTotal($validator, $total);
+
+            // Last, so a line already rejected for a bad quantity is
+            // not also told it is out of stock.
+            $this->rejectOversellingStock($validator, null);
+        });
     }
 }

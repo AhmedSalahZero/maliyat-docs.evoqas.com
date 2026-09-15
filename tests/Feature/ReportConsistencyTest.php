@@ -1,0 +1,443 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Account;
+use App\Models\Category;
+use App\Models\Company;
+use App\Models\Custody;
+use App\Models\Customer;
+use App\Models\InventoryPurchase;
+use App\Models\Item;
+use App\Models\JournalLine;
+use App\Models\Sale;
+use App\Models\User;
+use App\Models\Vendor;
+use App\Services\JournalService;
+use App\Services\Reports\ReportDataService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Tests\TestCase;
+
+// ══════════════════════════════════════════════════════════════════
+//  The reports have to agree with each other.
+//
+//  Every other test in this suite checks one feature against figures
+//  worked out by hand. That catches a broken feature, but it cannot
+//  catch a feature that is individually correct and collectively
+//  wrong — two reports drifting apart, each self-consistent, each
+//  answering the same question differently.
+//
+//  This file runs ONE realistic month of trading through the app and
+//  then asks whether the ledger, the statements, the cash flow and
+//  the stock report still describe the same business. These are
+//  accounting identities: if any of them fails, a number somewhere
+//  is wrong no matter how confidently it is displayed.
+//
+//    Accounts Receivable      == what every customer statement says
+//    Accounts Payable         == what every supplier statement says
+//    Cash + Bank              == cash flow's net movement
+//    Inventory (asset)        == the stock report's valuation
+//    Custody Advances         == floats handed out but not settled
+//    debits                   == credits
+//
+//  The scenario deliberately mixes the paths that have caused
+//  trouble: a cash sale and a credit sale, a partial payment, a bill
+//  settled in instalments, a petty-cash float, a capital purchase,
+//  and a correction to a record from an earlier month.
+// ══════════════════════════════════════════════════════════════════
+class ReportConsistencyTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private Company $company;
+
+    private User $admin;
+
+    private Customer $acme;
+
+    private Customer $beta;
+
+    private Vendor $supplier;
+
+    private Vendor $employee;
+
+    private Item $widget;
+
+    private Category $expenseCategory;
+
+    private Category $equipmentCategory;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->company = Company::factory()->create();
+        $this->admin   = User::factory()->companyAdmin($this->company)->create();
+
+        app(JournalService::class)->seedChartOfAccounts($this->company);
+        Category::seedDefaults($this->company->id);
+
+        $this->actingAs($this->admin);
+
+        $this->acme     = Customer::create(['company_id' => $this->company->id, 'name' => 'Acme']);
+        $this->beta     = Customer::create(['company_id' => $this->company->id, 'name' => 'Beta']);
+        $this->supplier = Vendor::create(['company_id' => $this->company->id, 'name' => 'Supplier']);
+        $this->employee = Vendor::create(['company_id' => $this->company->id, 'name' => 'Employee']);
+
+        $this->widget = Item::create([
+            'company_id'     => $this->company->id,
+            'name'           => 'Widget',
+            'qty_per_uom'    => 1,
+            'base_unit_name' => 'pc',
+        ]);
+
+        $this->expenseCategory = Category::query()->where('company_id', $this->company->id)
+            ->where('kind', 'expense')->firstOrFail();
+        $this->equipmentCategory = Category::query()->where('company_id', $this->company->id)
+            ->where('kind', 'equipment')->firstOrFail();
+
+        $this->tradeForAMonth();
+    }
+
+    /**
+     * Cache::flush() between steps because the duplicate-submission
+     * guard fingerprints a few seconds of identical bodies, and a
+     * scripted month moves faster than a person does.
+     */
+    private function submit(string $url, array $data): void
+    {
+        $this->post($url, $data)->assertSessionHasNoErrors();
+        Cache::flush();
+    }
+
+    private function tradeForAMonth(): void
+    {
+        // Bought 100 widgets at 10 — 1,000 owed to the supplier.
+        $this->submit('/app/inventory-purchases', [
+            'vendor_id' => $this->supplier->id,
+            'date'      => '2026-03-01',
+            'lines'     => [['item_id' => $this->widget->id, 'qty' => 100, 'qty_per_uom' => 1, 'unit_price' => 10]],
+            'vat_rate'  => 0,
+            'mode'      => 'later',
+        ]);
+
+        // Sold 30 at 25 to Acme — 750, paid cash on the spot.
+        $this->submit('/app/sales', [
+            'customer_id' => $this->acme->id,
+            'date'        => '2026-03-05',
+            'lines'       => [['item_id' => $this->widget->id, 'qty' => 30, 'unit_price' => 25]],
+            'vat_rate'    => 0,
+            'mode'        => 'now',
+            'method'      => 'cash',
+        ]);
+
+        // Sold 20 at 25 to Beta — 500 on credit.
+        $this->submit('/app/sales', [
+            'customer_id' => $this->beta->id,
+            'date'        => '2026-03-08',
+            'lines'       => [['item_id' => $this->widget->id, 'qty' => 20, 'unit_price' => 25]],
+            'vat_rate'    => 0,
+            'mode'        => 'later',
+        ]);
+
+        // Beta pays 200 of the 500.
+        $this->submit('/app/payments/receive', [
+            'sale_id' => Sale::query()->where('customer_id', $this->beta->id)->firstOrFail()->id,
+            'date'    => '2026-03-12',
+            'amount'  => 200,
+            'method'  => 'bank',
+        ]);
+
+        // Rent 400, paid cash.
+        $this->submit('/app/expenses', [
+            'vendor_id'   => $this->supplier->id,
+            'category_id' => $this->expenseCategory->id,
+            'date'        => '2026-03-10',
+            'amount'      => 400,
+            'mode'        => 'now',
+            'method'      => 'cash',
+        ]);
+
+        // 600 off the stock bill.
+        $this->submit('/app/payments/pay', [
+            'payable_type' => 'inventory_purchase',
+            'payable_id'   => InventoryPurchase::query()->firstOrFail()->id,
+            'date'         => '2026-03-15',
+            'amount'       => 600,
+            'method'       => 'bank',
+        ]);
+
+        // A 300 float to an employee, settled at 250 five days later.
+        $this->submit('/app/custodies', [
+            'holder_id' => $this->employee->id,
+            'amount'    => 300,
+            'method'    => 'cash',
+            'given_at'  => '2026-03-20',
+        ]);
+
+        $this->patch('/app/custodies/'.Custody::query()->firstOrFail()->id.'/settle', [
+            'settlement_date' => '2026-03-25',
+            'lines'           => [['category_id' => $this->expenseCategory->id, 'amount' => 250]],
+        ])->assertSessionHasNoErrors();
+        Cache::flush();
+
+        // A van on credit — a capital purchase, not an expense.
+        $this->submit('/app/equipment-purchases', [
+            'vendor_id'   => $this->supplier->id,
+            'category_id' => $this->equipmentCategory->id,
+            'name'        => 'Van',
+            'date'        => '2026-03-18',
+            'qty'         => 1,
+            'unit_price'  => 5000,
+            'mode'        => 'later',
+        ]);
+    }
+
+    private function reports(): ReportDataService
+    {
+        return app(ReportDataService::class);
+    }
+
+    /** Net movement on one ledger account: debits minus credits. */
+    private function ledger(string $code): float
+    {
+        $account = Account::query()
+            ->where('company_id', $this->company->id)
+            ->where('code', $code)
+            ->first();
+
+        if (! $account) {
+            return 0.0;
+        }
+
+        return round(
+            JournalLine::query()->where('account_id', $account->id)->get()
+                ->sum(fn (JournalLine $line) => (float) $line->debit - (float) $line->credit),
+            2
+        );
+    }
+
+    // ── The books balance ────────────────────────────────────────
+
+    public function test_the_trial_balance_balances(): void
+    {
+        $trialBalance = $this->reports()->trialBalance('2026-03-31');
+
+        $this->assertTrue($trialBalance['is_balanced']);
+        $this->assertEquals(7050.00, $trialBalance['total_debit']);
+        $this->assertEquals(7050.00, $trialBalance['total_credit']);
+    }
+
+    // ── Each identity, with the figure worked out by hand ────────
+
+    /**
+     * Acme paid in full; Beta owes 500 less the 200 they paid.
+     */
+    public function test_receivables_match_the_customer_statements(): void
+    {
+        $fromStatements = round(
+            $this->reports()->customerStatement($this->acme->fresh())['balance']
+            + $this->reports()->customerStatement($this->beta->fresh())['balance'],
+            2
+        );
+
+        $this->assertEquals(300.00, $fromStatements, 'Beta still owes 300');
+        $this->assertEquals($this->ledger(Account::ACCOUNTS_RECEIVABLE), $fromStatements);
+    }
+
+    /**
+     * 1,000 stock less 600 paid, plus 400 rent already settled, plus
+     * the 5,000 van still owed.
+     */
+    public function test_payables_match_the_supplier_statement(): void
+    {
+        $fromStatement = $this->reports()->supplierStatement($this->supplier->fresh())['balance'];
+
+        $this->assertEquals(5400.00, $fromStatement);
+        $this->assertEquals(-$this->ledger(Account::ACCOUNTS_PAYABLE), $fromStatement);
+    }
+
+    /**
+     * In: 750 cash from Acme + 200 from Beta + 50 float returned.
+     * Out: 400 rent + 600 to the supplier + 300 float.
+     */
+    public function test_cash_on_the_books_matches_the_cash_flow_report(): void
+    {
+        $cashFlow = $this->reports()->cashFlow('2026-03-01', '2026-03-31');
+
+        $this->assertEquals(1000.00, $cashFlow['cash_in']);
+        $this->assertEquals(1300.00, $cashFlow['cash_out']);
+
+        $this->assertEquals(
+            round($cashFlow['cash_in'] - $cashFlow['cash_out'], 2),
+            round($this->ledger(Account::CASH) + $this->ledger(Account::BANK), 2),
+            'The ledger and the cash flow report disagree about how much money moved'
+        );
+    }
+
+    /**
+     * Bought 100 at 10, sold 50 — 50 left at a weighted average of 10.
+     */
+    public function test_the_stock_report_matches_the_inventory_account(): void
+    {
+        $inventory = $this->reports()->inventoryStatement();
+        $row       = collect($inventory['items'])->firstWhere('id', $this->widget->id);
+
+        $this->assertEquals(50.0, $row['current_stock']);
+        $this->assertEquals(10.0, $row['avg_purchase_cost']);
+        $this->assertEquals(500.00, $inventory['total_stock_value']);
+
+        $this->assertEquals(
+            $this->ledger(Account::INVENTORY_ASSET),
+            $inventory['total_stock_value'],
+            'The stock report and the ledger disagree about what the stock is worth'
+        );
+    }
+
+    /**
+     * Every float has been settled, so the company is holding no
+     * advances — the account must be flat, not merely small.
+     */
+    public function test_a_settled_float_leaves_no_advance_outstanding(): void
+    {
+        $this->assertEquals(0.00, $this->ledger(Account::CUSTODY_ADVANCES));
+    }
+
+    public function test_cost_of_goods_sold_is_what_the_sold_stock_cost(): void
+    {
+        $this->assertEquals(500.00, $this->ledger(Account::COST_OF_GOODS_SOLD), '50 widgets at 10');
+    }
+
+    public function test_revenue_is_the_two_invoices_not_the_cash(): void
+    {
+        $this->assertEquals(-1250.00, $this->ledger(Account::SALES_REVENUE), '750 + 500, credit balance');
+    }
+
+    // ── The P&L ──────────────────────────────────────────────────
+
+    /**
+     * 750 from Acme + 200 from Beta. The 50 of float coming back is
+     * NOT revenue, and this is the figure that used to include it.
+     */
+    public function test_income_excludes_returned_petty_cash(): void
+    {
+        $profitAndLoss = $this->reports()->profitAndLoss('2026-03-01', '2026-03-31');
+
+        $this->assertEquals(950.00, $profitAndLoss['income_received']);
+    }
+
+    /**
+     * KNOWN GAP — pinned deliberately, not endorsed.
+     *
+     * The headline "expenses paid" counts every payment that left the
+     * company, which includes the 600 paid for STOCK. The category
+     * breakdown underneath reads the expenses table and the custody
+     * settlements, so it does not. The two halves of one report
+     * therefore disagree by exactly the amount spent on inventory
+     * and equipment.
+     *
+     * Buying stock is not an expense — it is swapping cash for goods
+     * you still own, which is why the ledger correctly books it to
+     * Inventory (see the stock test above). The same is true of the
+     * van. Custody used to sit in this same hole and was lifted out
+     * of it; inventory and equipment have not been, because changing
+     * the treatment moves every profit figure the owner has already
+     * read and that is a decision to take deliberately rather than
+     * as a side effect.
+     *
+     * This test exists so the gap is visible and measured. If the
+     * treatment is ever corrected, this test fails loudly and should
+     * be replaced with an equality assertion — which is the point.
+     */
+    public function test_the_headline_and_the_breakdown_disagree_by_the_capital_spend(): void
+    {
+        $profitAndLoss = $this->reports()->profitAndLoss('2026-03-01', '2026-03-31');
+
+        $headline  = $profitAndLoss['expenses_paid'];
+        $breakdown = round(collect($profitAndLoss['expenses_by_category'])->sum('total'), 2);
+
+        $this->assertEquals(1250.00, $headline, 'rent 400 + stock payment 600 + float spend 250');
+        $this->assertEquals(650.00, $breakdown, 'rent 400 + float spend 250 — no stock');
+
+        $this->assertEquals(
+            600.00,
+            round($headline - $breakdown, 2),
+            'The gap is exactly the money paid for stock. If this changes, the P&L treatment changed with it.'
+        );
+    }
+
+    // ── Corrections must not disturb any of the above ────────────
+
+    /**
+     * The reversal-date fix, checked the only way that really counts:
+     * correct a record and confirm every identity still holds.
+     */
+    public function test_correcting_a_sale_leaves_every_report_agreeing(): void
+    {
+        $sale = Sale::query()->where('customer_id', $this->beta->id)->firstOrFail();
+
+        // Beta's invoice was really 20 at 30, not 20 at 25.
+        $this->put("/app/sales/{$sale->id}", [
+            'customer_id' => $this->beta->id,
+            'date'        => '2026-03-08',
+            'lines'       => [['item_id' => $this->widget->id, 'qty' => 20, 'unit_price' => 30]],
+            'vat_rate'    => 0,
+        ])->assertSessionHasNoErrors();
+
+        $trialBalance = $this->reports()->trialBalance('2026-03-31');
+        $this->assertTrue($trialBalance['is_balanced'], 'The books stopped balancing after a correction');
+
+        // 500 became 600, so Beta owes 100 more.
+        $this->assertEquals(400.00, $this->ledger(Account::ACCOUNTS_RECEIVABLE));
+        $this->assertEquals(
+            $this->ledger(Account::ACCOUNTS_RECEIVABLE),
+            round($this->reports()->customerStatement($this->acme->fresh())['balance']
+                + $this->reports()->customerStatement($this->beta->fresh())['balance'], 2)
+        );
+
+        // Revenue follows the correction and does not double up.
+        $this->assertEquals(-1350.00, $this->ledger(Account::SALES_REVENUE), '750 + 600');
+
+        // And the correction stayed inside March rather than leaking
+        // into the month it was made in.
+        $march = $this->reports()->trialBalance('2026-03-31');
+        $april = $this->reports()->trialBalance('2026-04-30');
+        $this->assertEquals($march['total_debit'], $april['total_debit'], 'Something landed outside March');
+    }
+
+    public function test_deleting_a_sale_leaves_every_report_agreeing(): void
+    {
+        $sale = Sale::query()->where('customer_id', $this->beta->id)->firstOrFail();
+
+        $this->delete("/app/sales/{$sale->id}")->assertSessionHasNoErrors();
+
+        $this->assertTrue($this->reports()->trialBalance('2026-03-31')['is_balanced']);
+
+        // Beta's debt is gone, Acme's nil balance remains.
+        $this->assertEquals(0.00, $this->ledger(Account::ACCOUNTS_RECEIVABLE));
+
+        // The 20 widgets go back on the shelf.
+        $inventory = $this->reports()->inventoryStatement();
+        $this->assertEquals(70.0, collect($inventory['items'])->firstWhere('id', $this->widget->id)['current_stock']);
+        $this->assertEquals(
+            $this->ledger(Account::INVENTORY_ASSET),
+            $inventory['total_stock_value'],
+            'Deleting a sale left the stock report and the ledger disagreeing'
+        );
+    }
+
+    /**
+     * A date range must not change what the books say — only which
+     * slice of them is shown.
+     */
+    public function test_a_narrowed_statement_still_agrees_with_the_ledger(): void
+    {
+        $whole  = $this->reports()->customerStatement($this->beta->fresh());
+        $window = $this->reports()->customerStatement($this->beta->fresh(), '2026-03-10', '2026-03-31');
+
+        $this->assertEquals($whole['balance'], $window['balance'], 'The closing balance changed with the range');
+        $this->assertEquals(500.00, $window['opening_balance'], 'Beta owed 500 coming into 10 March');
+        $this->assertEquals(300.00, $window['balance']);
+    }
+}

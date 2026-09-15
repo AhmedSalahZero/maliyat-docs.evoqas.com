@@ -5,6 +5,7 @@ namespace App\Http\Controllers\App;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\App\StorePaymentOutRequest;
 use App\Http\Requests\App\StoreReceiptRequest;
+use App\Http\Requests\App\UpdatePaymentRequest;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\EquipmentPurchase;
@@ -309,6 +310,60 @@ class PaymentController extends Controller
      * @param  Expense|InventoryPurchase|EquipmentPurchase  $bill
      */
     /**
+     * Correct a payment in place — its date, amount, method or
+     * channel.
+     *
+     * The ledger is kept honest the same way editing an invoice is:
+     * the entry this payment produced is reversed, then a fresh one is
+     * posted from the corrected figures. Nothing is edited in the
+     * general ledger itself, so the trail shows the original, its
+     * reversal, and the correction.
+     *
+     * Which record the payment settles is NOT editable — see
+     * UpdatePaymentRequest for why.
+     */
+    public function update(UpdatePaymentRequest $request, Payment $payment): RedirectResponse
+    {
+        $data = $request->validated();
+
+        DB::transaction(function () use ($payment, $data) {
+            $this->journal->reverseEntriesFor($payment);
+
+            $payment->update([
+                'date'               => $data['date'],
+                'amount'             => $data['amount'],
+                'method'             => $data['method'],
+                'payment_channel_id' => $data['payment_channel_id'] ?? null,
+            ]);
+
+            $this->repost($payment->fresh());
+        });
+
+        return back()->with('success', 'Payment updated.');
+    }
+
+    /**
+     * Post the ledger entry a payment should have, given what it is.
+     *
+     * The four shapes here mirror how the payment was posted when it
+     * was first recorded, so a corrected payment lands on exactly the
+     * same accounts as the original did.
+     */
+    private function repost(Payment $payment): void
+    {
+        $isBill = in_array($payment->payable_type, [
+            Expense::class, InventoryPurchase::class, EquipmentPurchase::class,
+        ], true);
+
+        match (true) {
+            $payment->payable_type === Sale::class => $this->journal->postSaleReceipt($payment),
+            $isBill                                => $this->journal->postBillPayment($payment),
+            $payment->direction === 'in'           => $this->journal->postStandaloneReceipt($payment),
+            default                                => $this->journal->postStandalonePayment($payment),
+        };
+    }
+
+    /**
      * Remove one payment from a record.
      *
      * Reached from the edit view of a sale/expense/purchase, where a
@@ -322,6 +377,8 @@ class PaymentController extends Controller
      */
     public function destroy(Payment $payment): RedirectResponse
     {
+        $this->authorizeDelete();
+
         DB::transaction(function () use ($payment) {
             $this->journal->reverseEntriesFor($payment);
             $payment->delete();

@@ -7,9 +7,8 @@
 //  Card grid linking to App\Http\Controllers\App\ReportController's
 //  six report methods (ledger/profit-loss/customer-statement/
 //  supplier-statement/inventory-statement/cash-flow) — all of
-//  which already compute real data server-side; only the page
-//  that renders each one is still a placeholder (see
-//  Reports/Ledger.vue etc. and ComingNextPanel.vue).
+//  which compute their data server-side and now each have a real
+//  page rendering it.
 // ══════════════════════════════════════════════════════════════════
 
 import { Head, Link } from '@inertiajs/vue3';

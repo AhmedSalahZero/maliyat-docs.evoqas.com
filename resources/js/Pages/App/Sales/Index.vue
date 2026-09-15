@@ -25,6 +25,7 @@ import { ref, computed } from 'vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import FormInstructions from '@/Components/App/FormInstructions.vue';
 import AppIcon from '@/Components/App/AppIcon.vue';
 import ComboSelect from '@/Components/App/ComboSelect.vue';
 import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
@@ -32,6 +33,8 @@ import EditPaymentsPanel from '@/Components/App/EditPaymentsPanel.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
 import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { scrollToForm } from '@/Composables/useScrollToForm';
+import { usePermissions } from '@/Composables/usePermissions';
 
 const props = defineProps({
     customers: { type: Array, required: true },
@@ -42,6 +45,13 @@ const props = defineProps({
 
 const page = usePage();
 const { t, locale } = useAppTranslations();
+
+// The form card, so pressing Edit can bring the FORM into view
+// rather than the top of the document — see useScrollToForm.
+const formCard = ref(null);
+
+// Delete is company-admin only — mirrors Controller::authorizeDelete().
+const { canDelete } = usePermissions();
 
 const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
 
@@ -187,8 +197,9 @@ function startEdit(sale) {
         ? sale.lines.map((l) => ({ item_id: l.item_id, qty: l.qty, unit_price: l.unit_price }))
         : [{ item_id: null, qty: null, unit_price: null }];
     form.vat_rate = sale.vat_rate;
+    form.due_date = editingSale.value?.due_date ?? null;
     form.clearErrors();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToForm(formCard);
 }
 
 function cancelEdit() {
@@ -225,6 +236,7 @@ function doSubmitEdit(saleId) {
         date: data.date,
         vat_rate: data.vat_rate,
         lines: data.lines.filter((line) => line.item_id && Number(line.qty) > 0),
+            due_date: data.due_date || null,
     })).put(route('app.sales.update', saleId), {
         preserveScroll: true,
         onSuccess: () => cancelEdit(),
@@ -285,13 +297,20 @@ function onConfirmDialogConfirm() {
             <h1>{{ t('action_sale_title') }}</h1>
         </div>
 
-        <div class="card">
+        <FormInstructions
+            v-if="!editingSale"
+            form-key="sale"
+            :steps="['howto_sale_1', 'howto_sale_2', 'howto_sale_3', 'howto_sale_4', 'howto_sale_5', 'howto_sale_6']"
+            tip-key="howto_sale_tip"
+        />
+
+        <div ref="formCard" class="card card--in">
             <div v-if="editingSale" class="alert info">{{ t('editingBanner') }}</div>
 
             <div class="field-row" style="margin-bottom: 4px;">
                 <div class="field">
                     <label>{{ t('dateLbl') }}</label>
-                    <input v-model="form.date" type="date" :max="todayIso()" style="min-width: 0; width: 160px;">
+                    <input v-model="form.date" type="date" :max="todayIso()" class="inp-date" style="width: 15rem;">
                 </div>
             </div>
             <div v-if="form.errors.date" class="form-error">{{ form.errors.date }}</div>
@@ -384,27 +403,27 @@ function onConfirmDialogConfirm() {
 
                 <div v-else-if="form.mode === 'later'" class="paymode-sub">
                     <span>{{ t('dueInLbl') }}</span>
-                    <input v-model.number="form.due_in_days" type="number" style="width: 60px;">
+                    <input v-model.number="form.due_in_days" type="number" class="inp-days">
                     <span>{{ t('daysLbl') }}</span>
                 </div>
 
                 <div v-else-if="form.mode === 'partial'" class="paymode-sub">
                     <span>{{ t('amountNowLbl') }}</span>
                     <span class="muted-inline">{{ currency }}</span>
-                    <input v-model.number="form.amount_now" type="number" step="0.01" style="width: 100px;">
+                    <input v-model.number="form.amount_now" type="number" step="0.01" class="inp-money">
                     <PaymentMethodField v-model="form.method" v-model:channel-id="form.payment_channel_id"
                         :channels="channelList" :creating-channel="creatingChannel" @create-channel="createChannel" />
                     <span>{{ t('remainderDueLbl') }}</span>
-                    <input v-model.number="form.due_in_days" type="number" style="width: 60px;">
+                    <input v-model.number="form.due_in_days" type="number" class="inp-days">
                     <span>{{ t('daysLbl') }}</span>
                 </div>
                 <div v-if="form.errors.amount_now" class="form-error">{{ form.errors.amount_now }}</div>
 
                 <div v-if="form.mode === 'installment'" class="paymode-sub">
                     <span>{{ t('numInstallmentsLbl') }}</span>
-                    <input v-model.number="form.installment_count" type="number" min="2" style="width: 55px;">
+                    <input v-model.number="form.installment_count" type="number" min="2" class="inp-count">
                     <span>{{ t('everyDaysLbl') }}</span>
-                    <input v-model.number="form.installment_interval_days" type="number" min="1" style="width: 60px;">
+                    <input v-model.number="form.installment_interval_days" type="number" min="1" class="inp-days">
                     <span>{{ t('daysLbl') }}</span>
                 </div>
                 <div v-if="form.errors.installment_count" class="form-error">{{ form.errors.installment_count }}</div>
@@ -415,6 +434,20 @@ function onConfirmDialogConfirm() {
                     </li>
                 </ul>
             </div>
+
+            <!-- Due date, edit only. On a NEW record the date is
+                 implied by the payment mode above ("due in 30 days"),
+                 but once the record exists that mode is history — what
+                 remains is a concrete date, and it has to be
+                 correctable. -->
+            <div v-if="editingSale" class="field-row edit-due">
+                <div class="field">
+                    <label for="edit-due-date">{{ t('dueDateLbl') }}</label>
+                    <input id="edit-due-date" v-model="form.due_date" type="date" class="inp-date" style="width: 15rem;">
+                    <p class="form-hint">{{ t('dueDateNoneHint') }}</p>
+                </div>
+            </div>
+            <div v-if="form.errors.due_date" class="form-error">{{ form.errors.due_date }}</div>
 
             <!-- Payments on the saved record. The mode picker above is
                  creation-only by design (it describes how a NEW record
@@ -462,7 +495,7 @@ function onConfirmDialogConfirm() {
                     <div>
                         <span class="amt">{{ currency }} {{ money(sale.amount) }}</span>
                         <button type="button" class="btn btn-ghost btn-sm" @click="startEdit(sale)">{{ t('editBtn') }}</button>
-                        <button type="button" class="btn btn-ghost btn-sm" style="color: var(--color-danger);" @click="confirmDelete(sale)">{{ t('deleteBtn') }}</button>
+                        <button v-if="canDelete" type="button" class="btn btn-ghost btn-sm" style="color: var(--color-danger);" @click="confirmDelete(sale)">{{ t('deleteBtn') }}</button>
                     </div>
                 </div>
             </div>

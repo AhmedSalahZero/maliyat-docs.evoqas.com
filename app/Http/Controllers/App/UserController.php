@@ -5,6 +5,7 @@ namespace App\Http\Controllers\App;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\App\StoreEmployeeRequest;
+use App\Http\Requests\App\UpdateEmployeeRequest;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
@@ -45,6 +46,42 @@ class UserController extends Controller
         ]);
 
         return back()->with('success', 'Employee account created.');
+    }
+
+    /**
+     * Correct an employee's name or email, and optionally reset their
+     * password. Previously the only thing an admin could do to an
+     * existing employee was switch them off — a misspelt email meant
+     * deleting the account and starting again.
+     *
+     * The role is deliberately not editable: promoting an employee to
+     * company_admin is a permission change, not a correction, and
+     * belongs behind its own explicit action.
+     */
+    public function update(UpdateEmployeeRequest $request, User $user): RedirectResponse
+    {
+        // UpdateEmployeeRequest::authorize() already confirmed the
+        // caller is a company_admin over someone in their own company.
+        // Repeated here so the rule survives anyone later calling this
+        // method from somewhere that doesn't use that request.
+        abort_unless(
+            auth()->user()->isCompanyAdmin() && $user->company_id === auth()->user()->company_id,
+            403
+        );
+
+        $data = $request->validated();
+
+        $user->update([
+            'name'  => $data['name'],
+            'email' => $data['email'],
+        ]);
+
+        // Empty means "leave the password alone" — see the request.
+        if (! empty($data['password'])) {
+            $user->update(['password' => $data['password']]);
+        }
+
+        return back()->with('success', 'Employee updated.');
     }
 
     public function toggleActive(User $user): RedirectResponse

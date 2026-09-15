@@ -51,8 +51,17 @@ class Custody extends Model
      * itself write to the payments table — the caller records the
      * original hand-out and any leftover/extra cash movement there,
      * same as the prototype's cash-flow logic.
+     *
+     * $date is WHEN the settlement happened, and the caller must
+     * pass it. It used to be hard-coded to today, with no field for
+     * it on the form at all — so a custody handed out in July and
+     * squared up in July, but keyed into the app in September,
+     * pushed its returned cash into September while the hand-out
+     * stayed in July. One event, split across two months, in a
+     * report nobody would think to double-check. Same family of
+     * problem as the reversal dates in JournalService::reverse().
      */
-    public function settle(array $lines): void
+    public function settle(array $lines, string $date): void
     {
         $this->settlementLines()->delete();
 
@@ -68,7 +77,7 @@ class Custody extends Model
 
         $this->update([
             'settled' => true,
-            'settlement_date' => now()->toDateString(),
+            'settlement_date' => $date,
             'settlement_total' => $total,
             'leftover_returned' => max($this->amount - $total, 0),
             'extra_reimbursed' => max($total - $this->amount, 0),

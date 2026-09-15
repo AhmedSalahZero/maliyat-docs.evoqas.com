@@ -18,6 +18,7 @@
 import { computed, ref } from 'vue';
 import { Head, useForm, usePage, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import FormInstructions from '@/Components/App/FormInstructions.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import { useAppTranslations } from '@/Composables/useAppTranslations';
 
@@ -30,7 +31,12 @@ const page = usePage();
 
 const isCompanyAdmin = computed(() => page.props.auth?.user?.role === 'company_admin');
 
+// One form for both adding a colleague and correcting one.
+// `editingId` is null while adding and holds a user id while editing;
+// the fields are the same either way, except that a blank password
+// when editing means "leave it alone" rather than "no password".
 const showAddForm = ref(false);
+const editingId = ref(null);
 
 const form = useForm({
     name: '',
@@ -39,6 +45,8 @@ const form = useForm({
     password_confirmation: '',
 });
 
+const formOpen = computed(() => showAddForm.value || editingId.value !== null);
+
 const countLabel = computed(() =>
     props.employees.length === 1
         ? t('team_count_one')
@@ -46,21 +54,41 @@ const countLabel = computed(() =>
 );
 
 function openAddForm() {
+    editingId.value = null;
     form.reset();
     form.clearErrors();
     showAddForm.value = true;
 }
 
-function closeAddForm() {
+function openEditForm(member) {
     showAddForm.value = false;
+    form.reset();
+    form.clearErrors();
+    form.name = member.name;
+    form.email = member.email;
+    editingId.value = member.id;
+}
+
+function closeForm() {
+    showAddForm.value = false;
+    editingId.value = null;
     form.reset();
     form.clearErrors();
 }
 
 function submit() {
+    if (editingId.value !== null) {
+        form.patch(route('app.team.update', editingId.value), {
+            preserveScroll: true,
+            onSuccess: () => closeForm(),
+        });
+
+        return;
+    }
+
     form.post(route('app.team.store'), {
         preserveScroll: true,
-        onSuccess: () => closeAddForm(),
+        onSuccess: () => closeForm(),
     });
 }
 
@@ -117,7 +145,7 @@ function formatLastLogin(value) {
                 <p class="team__count">{{ countLabel }}</p>
             </div>
             <button
-                v-if="isCompanyAdmin && !showAddForm"
+                v-if="isCompanyAdmin && !formOpen"
                 type="button"
                 class="btn btn-primary"
                 @click="openAddForm"
@@ -126,9 +154,17 @@ function formatLastLogin(value) {
             </button>
         </div>
 
-        <!-- ── Add employee ──────────────────────────────────── -->
-        <div v-if="showAddForm" class="card">
-            <h2 class="team__heading">{{ t('team_add_heading') }}</h2>
+        <FormInstructions
+            form-key="team"
+            :steps="['howto_team_1', 'howto_team_2', 'howto_team_3', 'howto_team_4']"
+            tip-key="howto_team_tip"
+        />
+
+        <!-- ── Add or correct a colleague ────────────────────── -->
+        <div v-if="formOpen" class="card">
+            <h2 class="team__heading">
+                {{ editingId !== null ? t('team_edit_heading') : t('team_add_heading') }}
+            </h2>
 
             <form @submit.prevent="submit">
                 <div class="field">
@@ -144,9 +180,19 @@ function formatLastLogin(value) {
                 <div v-if="form.errors.email" class="form-error">{{ form.errors.email }}</div>
 
                 <div class="field">
-                    <label for="team-password">{{ t('team_password') }}</label>
-                    <input id="team-password" v-model="form.password" type="password" autocomplete="new-password" required>
-                    <p class="form-hint">{{ t('profile_password_hint') }}</p>
+                    <label for="team-password">
+                        {{ editingId !== null ? t('team_new_password') : t('team_password') }}
+                    </label>
+                    <input
+                        id="team-password"
+                        v-model="form.password"
+                        type="password"
+                        autocomplete="new-password"
+                        :required="editingId === null"
+                    >
+                    <p class="form-hint">
+                        {{ editingId !== null ? t('team_password_optional') : t('profile_password_hint') }}
+                    </p>
                 </div>
                 <div v-if="form.errors.password" class="form-error">{{ form.errors.password }}</div>
 
@@ -157,15 +203,15 @@ function formatLastLogin(value) {
                         v-model="form.password_confirmation"
                         type="password"
                         autocomplete="new-password"
-                        required
+                        :required="editingId === null || Boolean(form.password)"
                     >
                 </div>
 
                 <div class="team__actions">
                     <button type="submit" class="btn btn-primary" :disabled="form.processing">
-                        {{ t('team_create') }}
+                        {{ editingId !== null ? t('profile_save') : t('team_create') }}
                     </button>
-                    <button type="button" class="btn btn-ghost" @click="closeAddForm">
+                    <button type="button" class="btn btn-ghost" @click="closeForm">
                         {{ t('team_cancel') }}
                     </button>
                 </div>
@@ -198,6 +244,14 @@ function formatLastLogin(value) {
                             </span>
                         </td>
                         <td>
+                            <button
+                                v-if="isCompanyAdmin"
+                                type="button"
+                                class="btn btn-ghost btn-sm"
+                                @click="openEditForm(member)"
+                            >
+                                {{ t('editBtn') }}
+                            </button>
                             <button
                                 v-if="isCompanyAdmin"
                                 type="button"

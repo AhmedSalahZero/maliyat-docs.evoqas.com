@@ -57,6 +57,7 @@ class ExpenseController extends Controller
             ->through(fn (Expense $expense) => [
                 'id'               => $expense->id,
                 'date'             => $expense->date->toDateString(),
+                'due_date'    => $expense->due_date?->toDateString(),
                 'vendor_id'        => $expense->vendor_id,
                 'vendor'           => $expense->vendor?->name,
                 'category_id'      => $expense->category_id,
@@ -73,6 +74,9 @@ class ExpenseController extends Controller
                     'date'   => $payment->date->toDateString(),
                     'amount' => (float) $payment->amount,
                     'method' => $payment->method,
+                    // Needed so the edit form can prefill the bank /
+                    // operator the payment actually went through.
+                    'payment_channel_id' => $payment->payment_channel_id,
                 ])->values(),
                 'is_recurring'     => $expense->isRecurring(),
                 'recurring_id'     => $expense->recurring_id,
@@ -151,6 +155,8 @@ class ExpenseController extends Controller
                 'category_id' => $data['category_id'],
                 'date'        => $data['date'],
                 'amount'      => $data['amount'],
+                // Correctable now — see the note in the Update*Request.
+                'due_date'    => array_key_exists('due_date', $data) ? $data['due_date'] : $expense->due_date,
             ]);
 
             $this->journal->postExpenseInvoice($expense->fresh());
@@ -166,6 +172,8 @@ class ExpenseController extends Controller
      */
     public function destroy(Expense $expense): RedirectResponse
     {
+        $this->authorizeDelete();
+
         DB::transaction(function () use ($expense) {
             $this->journal->reverseAllForPayable($expense);
             $expense->payments()->delete();
@@ -188,6 +196,8 @@ class ExpenseController extends Controller
      */
     public function cancelRecurring(string $recurringId): RedirectResponse
     {
+        $this->authorizeDelete();
+
         $cancelled = $this->recurringExpenses->cancelRemaining($recurringId);
 
         return back()->with('success', "{$cancelled} upcoming occurrence(s) cancelled.");

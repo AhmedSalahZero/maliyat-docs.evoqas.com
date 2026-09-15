@@ -16,10 +16,12 @@ class Payment extends Model
         'company_id', 'payable_type', 'payable_id',
         'date', 'amount', 'method', 'payment_channel_id', 'direction',
         'customer_id', 'vendor_id', 'category_id', 'note',
+        'is_opening_balance',
     ];
 
     protected $casts = [
         'date' => 'date',
+        'is_opening_balance' => 'boolean',
     ];
 
     public function payable(): MorphTo

@@ -14,20 +14,26 @@ Artisan::command('inspire', function () {
 //  NOTE — none of this runs until the server's own cron calls
 //  Laravel's scheduler once a minute:
 //      * * * * * cd /path/to/app && php artisan schedule:run >> /dev/null 2>&1
-//  Without that single crontab line the schedule below is inert.
+//  Without that single crontab line the schedule below is inert,
+//  with no error and no warning.
+//
+//  That silent-failure risk is why DEPRECIATION IS NO LONGER HERE.
+//  It is now driven by the app itself — see PostDueDepreciation,
+//  registered in bootstrap/app.php — which catches a company up on
+//  the first page it opens each day and needs no server setup at
+//  all. `php artisan depreciation:run` still exists for manual
+//  sweeps, and is safe to add back to a crontab if you have one:
+//  both paths share DepreciationService and its per-company lock,
+//  so neither can post the same month twice.
 // ══════════════════════════════════════════════════════════════════
 
-// Straight-line monthly depreciation for equipment and vehicles.
+// Warn company admins whose free trial is about to end.
 //
-// Run daily rather than monthly on purpose: the command works out
-// which whole months have elapsed since each asset's last posting
-// and catches up on all of them, so a day the server was down
-// simply gets made up the next day. A monthly-only schedule would
-// silently skip that period entirely.
-//
-// withoutOverlapping guards the case where a long catch-up run is
-// still going when the next day's run fires.
-Schedule::command('depreciation:run')
-    ->dailyAt('02:00')
+// Daily, and early — before the working day starts — so the customer
+// has the whole day to act on it. The command's own
+// expiry_notified_at guard is what stops a daily schedule turning
+// into a daily email for the entire final week.
+Schedule::command('subscriptions:notify-expiring')
+    ->dailyAt('07:00')
     ->withoutOverlapping()
     ->runInBackground();

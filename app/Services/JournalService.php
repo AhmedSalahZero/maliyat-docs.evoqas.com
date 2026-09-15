@@ -219,6 +219,60 @@ class JournalService
         ]);
     }
 
+    // ── Opening balances ─────────────────────────────────────────
+    //  One rule for all five of these: the "real" side of the entry
+    //  is whatever asset/liability the line represents (Cash, Bank,
+    //  Accounts Receivable, Inventory, Equipment, Accounts Payable)
+    //  — the OTHER side is always Owner's Equity, never Revenue, an
+    //  expense account, or a fresh Accounts Payable. That's what
+    //  makes entering an opening balance different from entering a
+    //  normal sale/bill: nothing here is new income, a new expense,
+    //  or a new debt to a real supplier — it's simply recognising a
+    //  balance that already existed on day one. See
+    //  OpeningBalanceService for what creates the Sale/Expense/
+    //  InventoryPurchase/EquipmentPurchase/Payment rows these post
+    //  against.
+
+    public function postOpeningBalanceCash(Payment $payment): void
+    {
+        $this->post($payment->company_id, $payment->date->toDateString(), 'Opening balance — cash & bank', $payment, [
+            ['account' => $this->cashAccountFor($payment->method), 'debit' => (float) $payment->amount],
+            ['account' => Account::OWNERS_EQUITY, 'credit' => (float) $payment->amount],
+        ]);
+    }
+
+    public function postOpeningBalanceReceivable(Sale $sale): void
+    {
+        $this->post($sale->company_id, $sale->date->toDateString(), 'Opening balance — customer owes', $sale, [
+            ['account' => Account::ACCOUNTS_RECEIVABLE, 'debit' => (float) $sale->amount],
+            ['account' => Account::OWNERS_EQUITY, 'credit' => (float) $sale->amount],
+        ]);
+    }
+
+    public function postOpeningBalancePayable(Expense $expense): void
+    {
+        $this->post($expense->company_id, $expense->date->toDateString(), 'Opening balance — owed to supplier', $expense, [
+            ['account' => Account::OWNERS_EQUITY, 'debit' => (float) $expense->amount],
+            ['account' => Account::ACCOUNTS_PAYABLE, 'credit' => (float) $expense->amount],
+        ]);
+    }
+
+    public function postOpeningBalanceInventory(InventoryPurchase $purchase): void
+    {
+        $this->post($purchase->company_id, $purchase->date->toDateString(), 'Opening balance — starting stock', $purchase, [
+            ['account' => Account::INVENTORY_ASSET, 'debit' => (float) $purchase->amount],
+            ['account' => Account::OWNERS_EQUITY, 'credit' => (float) $purchase->amount],
+        ]);
+    }
+
+    public function postOpeningBalanceEquipment(EquipmentPurchase $purchase): void
+    {
+        $this->post($purchase->company_id, $purchase->date->toDateString(), 'Opening balance — already-owned equipment', $purchase, [
+            ['account' => Account::EQUIPMENT_ASSET, 'debit' => (float) $purchase->amount],
+            ['account' => Account::OWNERS_EQUITY, 'credit' => (float) $purchase->amount],
+        ]);
+    }
+
     // ── Custody ──────────────────────────────────────────────────
 
     public function postCustodyGiven(Custody $custody): void
@@ -357,6 +411,17 @@ class JournalService
      * — used for voiding/correcting instead of ever editing or
      * deleting a posted entry. See JournalEntry::reverses()/
      * reversedBy() for how the link between the two is tracked.
+     *
+     * The reversal carries the ORIGINAL entry's date, not today's.
+     * That matters more than it looks: correcting a March invoice
+     * posts the correction back in March, so if the reversal landed
+     * in September instead, March would keep the original figure AND
+     * gain the corrected one — the month would read as the sum of
+     * both. Dating the reversal with its original means the two
+     * cancel inside the period they belong to, and every closed
+     * month keeps reporting the same total no matter when somebody
+     * fixes a typo. The audit trail is unaffected: created_at still
+     * records when the correction was actually made.
      */
     public function reverse(JournalEntry $entry, ?string $memo = null): JournalEntry
     {
@@ -365,7 +430,7 @@ class JournalService
         return DB::transaction(function () use ($entry, $memo) {
             $reversal = JournalEntry::create([
                 'company_id'  => $entry->company_id,
-                'date'        => now()->toDateString(),
+                'date'        => $entry->date->toDateString(),
                 'memo'        => $memo ?? "Reversal of: {$entry->memo}",
                 'source_type' => $entry->source_type,
                 'source_id'   => $entry->source_id,

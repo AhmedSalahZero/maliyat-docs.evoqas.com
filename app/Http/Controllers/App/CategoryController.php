@@ -47,7 +47,12 @@ class CategoryController extends Controller
 
         $category = Category::create($data);
 
-        if ($request->wantsJson()) {
+        // Two real callers: the sentence form's ComboSelect via plain
+        // axios (no X-Inertia header, wants JSON), and the standalone
+        // Items & Categories page's own "Add new category" form via
+        // an Inertia form post (X-Inertia header present, wants the
+        // usual redirect-back).
+        if (! $request->header('X-Inertia')) {
             return response()->json($category, 201);
         }
 
@@ -55,13 +60,19 @@ class CategoryController extends Controller
     }
 
     /**
-     * Fix a typo without leaving the page (pencil icon next to any
-     * Category combo). JSON-only, same as CustomerController::update().
+     * Fix a typo without leaving the page — the pencil icon next to
+     * any Category combo calls this via plain axios (JSON back); the
+     * standalone Items & Categories page's inline editor calls it as
+     * an Inertia form (redirect back instead).
      */
-    public function update(UpdateCategoryRequest $request, Category $category): JsonResponse
+    public function update(UpdateCategoryRequest $request, Category $category): RedirectResponse|JsonResponse
     {
         $category->update($request->validated());
 
-        return response()->json($category);
+        if (! $request->header('X-Inertia')) {
+            return response()->json($category);
+        }
+
+        return back()->with('success', 'Category updated.');
     }
 }

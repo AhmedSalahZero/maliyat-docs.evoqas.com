@@ -128,64 +128,76 @@
    ============================================================ */
 [data-theme="dark"] {
 
-    --color-bg:             #0F1524;
-    --color-surface:        #171F32;
-    --color-surface-alt:    #1D2740;
-    --color-surface-sunken: #0B1120;
+    /* Lifted off near-black onto a genuine navy. The old #0F1524 read
+       as "lights off"; these carry visible blue at every layer, and
+       each step up (bg → surface → alt) is a clear, even lift rather
+       than three shades of almost the same thing. */
+    --color-bg:             #16203A;
+    --color-surface:        #1E2B4A;
+    --color-surface-alt:    #27375C;
+    --color-surface-sunken: #111A30;
 
-    --color-primary:        #5C8CF0;
-    --color-primary-light:  #7CA4F4;
-    --color-primary-dark:   #3D6BD1;
-    --color-primary-soft:   #1D2C4F;
+    /* Brighter, cleaner blue — the old one sat too close to the
+       surface it had to stand on, so buttons and links went muddy. */
+    --color-primary:        #7AA5FF;
+    --color-primary-light:  #9CBCFF;
+    --color-primary-dark:   #5583E6;
+    --color-primary-soft:   #26365E;
 
-    --color-header-bg:      #171F32;
-    --color-header-text:    #F2F5FB;
-    --color-header-accent:  #5C8CF0;
-    --color-header-border:  #262F48;
+    --color-header-bg:      #1E2B4A;
+    --color-header-text:    #FFFFFF;
+    --color-header-accent:  #7AA5FF;
+    --color-header-border:  #30406A;
 
-    --color-accent-green:      #34C878;
-    --color-accent-green-soft: #133423;
-    --color-accent-amber:      #F5A623;
-    --color-accent-amber-soft: #3A2C10;
-    --color-accent-cyan:       #34C3E8;
-    --color-accent-cyan-soft:  #10333C;
-    --color-accent-red:        #F05263;
-    --color-accent-red-soft:   #3B1A20;
+    /* The four colours text is allowed to take in dark mode:
+       white, green, cyan, amber. Each is tuned to clear AA contrast
+       on --color-surface rather than reused from the light theme,
+       where they sit on white and can afford to be much darker. */
+    --color-accent-green:      #4ADE80;
+    --color-accent-green-soft: #075825;
+    --color-accent-amber:      #FBBF24;
+    --color-accent-amber-soft: #3B2F0E;
+    --color-accent-cyan:       #4DD8F0;
+    --color-accent-cyan-soft:  #10333F;
+    --color-accent-red:        #FF7A85;
+    --color-accent-red-soft:   #3E1C22;
 
-    --color-success:       #34C878;
-    --color-success-dark:  #7BE3AA;
-    --color-success-soft:  #133423;
-    --color-danger:        #F05263;
-    --color-danger-dark:   #FF95A0;
-    --color-danger-soft:   #3B1A20;
-    --color-warning:       #F5A623;
-    --color-warning-dark:  #FFC968;
-    --color-warning-soft:  #3A2C10;
-    --color-info:          #34C3E8;
-    --color-info-dark:     #8FE0F4;
-    --color-info-soft:     #10333C;
+    --color-success:       #4ADE80;
+    --color-success-dark:  #86EFAC;
+    --color-success-soft:  #16351F;
+    --color-danger:        #FF7A85;
+    --color-danger-dark:   #FFA8AF;
+    --color-danger-soft:   #3E1C22;
+    --color-warning:       #FBBF24;
+    --color-warning-dark:  #FCD34D;
+    --color-warning-soft:  #3B2F0E;
+    --color-info:          #4DD8F0;
+    --color-info-dark:     #8FE8F8;
+    --color-info-soft:     #10333F;
 
-    --color-text-primary:    #F2F5FB;
-    --color-text-secondary:  #B7C0D6;
-    --color-text-muted:      #7C86A0;
-    --color-text-inverse:    #0F1524;
-    --color-text-on-primary: #FFFFFF;
+    /* Plain white for body copy — #F2F5FB was a grey that read as
+       slightly dirty against the lifted navy. */
+    --color-text-primary:    #FFFFFF;
+    --color-text-secondary:  #C5D0E6;
+    --color-text-muted:      #8A96B4;
+    --color-text-inverse:    #16203A;
+    --color-text-on-primary: #10203F;
 
-    --color-border:         #262F48;
-    --color-border-light:   #1D2740;
-    --color-border-input:   #33405F;
-    --color-border-focus:   #5C8CF0;
-    --color-field-border:   #3F5490;
+    --color-border:         #30406A;
+    --color-border-light:   #27375C;
+    --color-border-input:   #3D4F7D;
+    --color-border-focus:   #7AA5FF;
+    --color-field-border:   #4A5F96;
 
-    --color-nav-bg:          #171F32;
-    --color-nav-icon:        #7C86A0;
-    --color-nav-icon-active: #5C8CF0;
-    --color-nav-label:       #7C86A0;
-    --color-nav-label-active:#7CA4F4;
+    --color-nav-bg:          #1E2B4A;
+    --color-nav-icon:        #8A96B4;
+    --color-nav-icon-active: #7AA5FF;
+    --color-nav-label:       #8A96B4;
+    --color-nav-label-active:#9CBCFF;
 
-    --color-money-in:  #34C878;
-    --color-money-out: #F05263;
-    --color-money-due: #FFC968;
+    --color-money-in:  #4ADE80;
+    --color-money-out: #FF7A85;
+    --color-money-due: #FBBF24;
 
     --shadow-card:    0 1px 8px rgba(0, 0, 0, 0.35);
     --shadow-raised:  0 2px 12px rgba(0, 0, 0, 0.40);
@@ -217,6 +229,13 @@
     --header-height: 64px;
     --bottomnav-height: 64px;
     --app-max-width: 1080px;
+
+    /* One neutral chevron used by every custom-styled <select> —
+       fixed mid-gray rather than a theme color so it reads clearly
+       against both the light and dark surface without needing a
+       separate asset per theme (data-URIs can't reference CSS
+       custom properties for their internal fill). */
+    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%238993A6' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 /* Smooth theme transition when the user toggles Light/Dark */
@@ -345,7 +364,27 @@ table.lines input, table.lines select,
 @media (min-width: 768px) { .app-main { padding: 32px 32px 48px; } }
 
 .page-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
-.page-header h1 { color: var(--color-primary-dark); }
+.page-header h1 {
+    color: var(--color-primary-dark);
+    position: relative;
+    padding-inline-start: 12px;
+}
+/* A short coloured bar on the leading edge of the page title —
+   the same device as the card rules, one level up. */
+.page-header h1::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: 0;
+    top: 0.18em;
+    bottom: 0.18em;
+    width: 4px;
+    border-radius: 2px;
+    background: linear-gradient(
+        to bottom,
+        var(--color-primary),
+        var(--color-accent-green)
+    );
+}
 .page-header .today { font-family: var(--font-mono); font-size: 12px; color: var(--color-text-muted); }
 
 /* ============================================================
@@ -374,6 +413,23 @@ table.lines input, table.lines select,
         align-items: stretch;
     }
 }
+
+/* The desktop tab strip is DESKTOP-only. AppLayout's comment always
+   claimed app.css hid it on mobile, but no rule ever did — so phones
+   were carrying two full rows of tabs at the top *and* the bottom
+   nav, two navigation systems competing for the smallest screen.
+   Hidden by default, shown from the tablet breakpoint up. */
+.app-header__stepnav { display: none; }
+
+@media (min-width: 768px) {
+    .app-header__stepnav {
+        display: block;
+        width: 100%;
+        max-width: var(--app-max-width);
+        margin: 0 auto;
+        padding: 0 20px 4px;
+    }
+}
 .app-header__inner {
     width: 100%;
     max-width: var(--app-max-width);
@@ -389,18 +445,12 @@ table.lines input, table.lines select,
 .app-header__logo {
     width: 34px;
     height: 34px;
-    border-radius: var(--radius-md);
-    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-family: var(--font-heading);
-    font-weight: 700;
-    font-size: 15px;
-    box-shadow: var(--shadow-button);
+    object-fit: contain;
     flex-shrink: 0;
 }
+/* Name + company badge now sit on one row instead of stacking,
+   which is what was costing the header an extra line of height. */
+.app-header__name-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .app-header__title { font-family: var(--font-heading); font-weight: 700; font-size: 18px; color: var(--color-header-accent); line-height: 1; }
 .app-header__company {
     display: inline-flex;
@@ -410,7 +460,8 @@ table.lines input, table.lines select,
     color: var(--color-text-secondary);
     background: var(--color-surface-alt);
     border-radius: var(--radius-pill);
-    padding: 5px 12px;
+    padding: 3px 10px;
+    line-height: 1;
 }
 .app-header__actions { display: flex; align-items: center; gap: 10px; }
 
@@ -475,6 +526,20 @@ table.lines input, table.lines select,
 /* ============================================================
    9. BOTTOM NAVIGATION (Mobile PWA chrome)
    ============================================================ */
+/* How much bottom chrome PwaInstallBanner has to clear (it reads
+   this as --pwa-banner-offset).
+
+   Declared on :root, not on .app-shell — the banner is mounted as a
+   SIBLING of the Inertia app (see app.js), so it is not a descendant
+   of the shell and would never inherit a value set there. :has()
+   lets the root still react to whether the shell — and therefore the
+   mobile bottom nav — is on the page. */
+:root { --pwa-banner-offset: calc(16px + env(safe-area-inset-bottom, 0px)); }
+:root:has(.app-shell) { --pwa-banner-offset: calc(var(--bottomnav-height) + 16px + env(safe-area-inset-bottom, 0px)); }
+@media (min-width: 768px) {
+    :root:has(.app-shell) { --pwa-banner-offset: calc(24px + env(safe-area-inset-bottom, 0px)); }
+}
+
 .bottom-nav {
     position: fixed;
     bottom: 0;
@@ -514,16 +579,20 @@ table.lines input, table.lines select,
     background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
     display: flex; align-items: center; justify-content: center;
     box-shadow: var(--shadow-button);
-    color: #fff;
+    color: var(--color-text-on-primary);
 }
 @media (min-width: 768px) { .bottom-nav { display: none; } }
 
 /* ============================================================
    10. STEP NAV — entry / report tabs (top of each workflow)
    ============================================================ */
-.step-nav { display: flex; margin-top: 20px; overflow-x: auto; padding-bottom: 4px; gap: 0; scrollbar-width: none; }
+/* Trimmed from margin-top:20px/gap:8px/dot 34px/font 11px-two-line —
+   that combination was the bulk of the header's height. Rows are
+   now tighter and labels sit on a single line so the strip reads
+   as a compact toolbar, not a second hero section. */
+.step-nav { display: flex; margin-top: 8px; overflow-x: auto; padding-bottom: 2px; gap: 0; scrollbar-width: none; }
 .step-nav::-webkit-scrollbar { display: none; }
-.step-nav + .step-nav { margin-top: 10px; }
+.step-nav + .step-nav { margin-top: 4px; }
 
 .step {
     flex: 1 0 auto;
@@ -531,7 +600,7 @@ table.lines input, table.lines select,
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     font-family: inherit;
     background: none;
     border: none;
@@ -544,7 +613,7 @@ table.lines input, table.lines select,
 .step:not(:first-child)::before {
     content: '';
     position: absolute;
-    top: 17px;
+    top: 13px;
     inset-inline-start: -50%;
     width: 100%;
     height: 2px;
@@ -552,7 +621,7 @@ table.lines input, table.lines select,
     z-index: 0;
 }
 .step-dot {
-    width: 34px; height: 34px; border-radius: 50%;
+    width: 26px; height: 26px; border-radius: 50%;
     background: var(--color-surface);
     border: 2px solid var(--color-border-input);
     display: flex; align-items: center; justify-content: center;
@@ -561,17 +630,63 @@ table.lines input, table.lines select,
     z-index: 1;
     flex-shrink: 0;
 }
-.step-dot svg { width: 16px; height: 16px; }
+.step-dot svg { width: 13px; height: 13px; }
 .step.active .step-dot {
     background: var(--color-primary);
     border-color: var(--color-primary);
-    color: #fff;
+    color: var(--color-text-on-primary);
     box-shadow: 0 2px 6px rgba(45, 108, 223, 0.35);
 }
 .step:hover:not(.active) .step-dot { border-color: var(--color-primary); color: var(--color-primary-dark); }
-.step-label { font-size: 11px; line-height: 1.3; text-align: center; max-width: 86px; }
+.step-label { font-size: 10.5px; line-height: 1.2; text-align: center; white-space: nowrap; }
 .step.active .step-label { color: var(--color-primary-dark); font-weight: 600; }
 .step:hover:not(.active) .step-label { color: var(--color-primary-dark); }
+
+/* ── Installed app (webview) only ──────────────────────────────────
+   Inside a standalone PWA window there is no browser chrome to share
+   the screen with, but there is also no browser UI to lean on — the
+   window is the whole app, so the tab strip has to earn its height.
+   Here the tabs lie in a ROW (icon beside label) instead of stacked,
+   which roughly halves the strip.
+
+   This is deliberately scoped to display-mode: standalone. In an
+   ordinary browser tab the stacked stepper is the intended design
+   and stays untouched.
+
+   The connector rule below matters: .step::before draws a 2px line
+   at a fixed offset to join the dots in the STACKED layout. Laid out
+   in a row that same line runs straight through the labels, which is
+   exactly what it looked like — text with a stripe through it. ── */
+@media (display-mode: standalone), (display-mode: minimal-ui), (display-mode: window-controls-overlay) {
+    .app-header { --header-height: 56px; }
+
+    .step-nav { margin-top: 10px; padding-bottom: 2px; gap: 8px; }
+    .step-nav + .step-nav { margin-top: 4px; }
+
+    .step {
+        flex: 0 0 auto;
+        min-width: 0;
+        flex-direction: row;
+        gap: 7px;
+        white-space: nowrap;
+        border-radius: var(--radius-pill);
+        /* After the base rule's `padding: 0 4px`, so this is the one
+           that applies — the earlier attempt declared padding BEFORE
+           it and was silently overridden. */
+        padding: 5px 12px;
+    }
+
+    /* The stepper connector belongs to the stacked layout only. */
+    .step:not(:first-child)::before { content: none; }
+
+    .step-dot { width: 26px; height: 26px; }
+    .step-dot svg { width: 15px; height: 15px; }
+
+    .step-label { font-size: 11.5px; text-align: start; max-width: none; flex-shrink: 0; }
+
+    /* With a smaller dot the active state needs the pill to carry it. */
+    .step.active { background: var(--color-primary-soft); }
+}
 
 /* ============================================================
    11. CARDS
@@ -589,6 +704,119 @@ table.lines input, table.lines select,
 }
 .card--tight { padding: 18px 20px; }
 .card--raised { box-shadow: var(--shadow-raised); }
+
+/* ── Colour by meaning ────────────────────────────────────────────
+   The app was reading as blue-on-white throughout, which made every
+   card look like every other card. A card carries a coloured rule on
+   its leading edge that says what KIND of thing it holds — money in,
+   money out, stock, something needing attention — so the page can be
+   scanned before it is read.
+
+   Deliberately one 3px rule per card, not a tint plus a border plus
+   a shadow: the colour has to mean something, and it stops meaning
+   anything once everything has some.
+
+   `border-inline-start` (not border-left) keeps the rule on the
+   correct edge when the interface flips to Arabic. */
+.card--in      { border-inline-start: 6px solid var(--color-accent-green); background: var(--color-primary-soft); }
+.card--out     { border-inline-start: 6px solid var(--color-accent-red); background: var(--color-primary-soft); }
+.card--stock   { border-inline-start: 6px solid var(--color-accent-cyan); background: var(--color-primary-soft); }
+.card--pending { border-inline-start: 6px solid var(--color-accent-amber); background: var(--color-primary-soft); }
+.card--primary { border-inline-start: 6px solid var(--color-primary); background: var(--color-primary-soft); }
+
+/* Section heading inside a card — a short coloured rule under the
+   title instead of yet another full-width grey divider. */
+.card > h2, .card > h3.sub {
+    position: relative;
+    padding-bottom: 8px;
+}
+.card > h2::after, .card > h3.sub::after {
+    content: '';
+    position: absolute;
+    inset-inline-start: 0;
+    bottom: 0;
+    width: 34px;
+    height: 2.5px;
+    border-radius: 2px;
+    background: var(--color-primary);
+}
+.card--in > h2::after, .card--in > h3.sub::after { background: var(--color-accent-green); }
+.card--out > h2::after, .card--out > h3.sub::after { background: var(--color-accent-red); }
+.card--stock > h2::after, .card--stock > h3.sub::after { background: var(--color-accent-cyan); }
+.card--pending > h2::after, .card--pending > h3.sub::after { background: var(--color-accent-amber); }
+
+/* ── Free-trial countdown ─────────────────────────────────────── */
+.trial-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: var(--app-max-width);
+    margin: 14px auto 0;
+    padding: 11px 16px;
+    border: 1.5px solid var(--color-accent-amber);
+    border-inline-start-width: 4px;
+    background: var(--color-accent-amber-soft);
+    color: var(--color-text-primary);
+    border-radius: var(--radius-md);
+    font-size: 13.5px;
+    line-height: 1.5;
+}
+.trial-banner__icon { font-size: 16px; flex-shrink: 0; }
+.trial-banner__text { min-width: 0; flex: 1 1 auto; }
+
+/* There is no self-service billing page, so the banner has to name
+   the way out. Without these the countdown told a customer their
+   access was ending and left them to work out who to ask. */
+.trial-banner__cta { font-weight: 600; }
+.trial-banner__actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+
+.trial-banner__btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 6px 14px;
+    border-radius: var(--radius-pill);
+    border: 1.5px solid var(--color-accent-amber);
+    background: var(--color-accent-amber);
+    color: var(--color-primary-dark);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: filter var(--duration-fast) var(--ease-out);
+}
+
+.trial-banner__btn:hover { filter: brightness(0.94); }
+
+.trial-banner__btn--ghost {
+    background: transparent;
+    color: var(--color-text-primary);
+}
+
+@media (max-width: 767px) {
+    .trial-banner { margin-inline: 14px; }
+}
+
+/* On a phone the message and the buttons each need the full width —
+   side by side leaves the text at two words per line. */
+@media (max-width: 560px) {
+    .trial-banner { flex-wrap: wrap; }
+    .trial-banner__text { flex-basis: calc(100% - 26px); }
+    .trial-banner__actions { width: 100%; }
+    .trial-banner__btn { flex: 1 1 0; justify-content: center; }
+}
+
+/* Named input widths are sized for a desktop row; on a phone they
+   have to be allowed to give way rather than push the page sideways.
+   The date input takes the full row because a date control has its
+   own intrinsic minimum and is the widest of the set. */
+@media (max-width: 480px) {
+    .inp-date  { width: 100%; min-width: 0; }
+    .inp-money { width: 124px; min-width: 0; }
+    .inp-days,
+    .inp-count { width: 82px; min-width: 0; }
+    .field select, .field input { min-width: 0; }
+}
 .card--interactive { cursor: pointer; }
 .card--interactive:hover { border-color: var(--color-primary); box-shadow: var(--shadow-raised); transform: translateY(-1px); }
 @media (max-width: 480px) { .card { padding: 20px 18px; border-radius: var(--radius-md); } }
@@ -619,11 +847,26 @@ html[dir="rtl"] .sentence, body.lang-ar .sentence { font-family: 'Cairo', sans-s
     min-width: 260px;
     max-width: 100%;
 }
+/* Custom chevron on the sentence-style dropdown — a plain native
+   select gave no visual hint it opens a picker until tapped; kept
+   small and close-set so it doesn't upset the inline sentence flow
+   the way the boxed selects' wider chevron spacing would. */
+select.blank-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: var(--select-chevron);
+    background-repeat: no-repeat;
+    background-position: right 2px center;
+    background-size: 10px 6px;
+    padding-inline-end: 18px;
+}
+html[dir="rtl"] select.blank-select, body.lang-ar select.blank-select { background-position: left 2px center; }
 @media (max-width: 480px) {
     .blank-select { min-width: 170px; }
 }
 html[dir="rtl"] .blank-select, html[dir="rtl"] .blank-input,
 body.lang-ar .blank-select, body.lang-ar .blank-input { font-family: 'Cairo', sans-serif; }
+.blank-select:hover { border-bottom-color: var(--color-primary); }
 .blank-select:focus, .blank-input:focus { outline: none; border-bottom-color: var(--color-primary); }
 .blank-input.narrow { width: 70px; }
 .muted-inline { color: var(--color-text-muted); font-size: 14px; }
@@ -649,20 +892,135 @@ body.lang-ar .blank-select, body.lang-ar .blank-input { font-family: 'Cairo', sa
 .inline-icon-btn:hover { background: var(--color-primary-soft); color: var(--color-primary-dark); }
 .inline-icon-btn svg { width: 13px; height: 13px; }
 
+/* Mobile: the guided sentence is the app's signature interaction
+   and stays inline prose on a screen with room for it (desktop) —
+   but on a phone, letting a label ("Sell to", "for", "paid") run
+   directly into a dropdown or amount box on the same line is
+   exactly the label/field overlap the sentence form was flagged
+   for. Below this breakpoint, every blank becomes its own full-
+   width row directly under the words that introduce it: the
+   sentence container turns into a wrapping flex row, and each
+   blank (a ComboSelect's wrapper, a bare <select>, or a text/number
+   <input>) is given flex-basis: 100%, which — combined with
+   flex-wrap — forces it onto a fresh line by itself. The label
+   text needs no separate markup for this: browsers automatically
+   treat a run of bare text inside a flex container as its own
+   anonymous flex item, so "Sell to" already sits on its own line
+   above the field without any template change. */
+@media (max-width: 640px) {
+    .sentence {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        row-gap: 10px;
+        column-gap: 8px;
+        font-size: 16px;
+        line-height: 1.5;
+    }
+    .sentence .combo-select-wrap,
+    .sentence .combo-select-new,
+    .sentence > select.blank-select,
+    .sentence > input.blank-input {
+        flex: 1 1 100%;
+    }
+    .sentence select.blank-select,
+    .sentence .combo-select-wrap select {
+        width: 100%;
+        min-width: 0;
+    }
+    .sentence .combo-select-new input.blank-input {
+        width: 100%;
+    }
+    .sentence .inline-icon-btn { margin-top: -2px; }
+}
+
 .field-row { display: flex; gap: 24px; margin-top: 14px; flex-wrap: wrap; }
-.field { display: flex; flex-direction: column; gap: 5px; }
+/* Grow to fill the row when there's room, instead of every field
+   sitting at its 180px minimum with dead space beside it. min-width:0
+   is what lets a flex child shrink below its content on narrow
+   screens rather than forcing the row to overflow. */
+.field { display: flex; flex-direction: column; gap: 5px; flex: 1 1 200px; min-width: 0; }
 .field label { font-size: 12px; color: var(--color-text-muted); font-weight: 500; }
-.field select, .field input {
+
+/* How every text/number/date input and select in the app looks.
+
+   This used to be written as `.field select, .field input` only, so
+   an input that was NOT wrapped in a .field got no styling at all —
+   no border, no padding, no radius, raw browser default sitting in
+   the middle of a styled card. That is exactly what happened to the
+   inline edit forms (EditPaymentsPanel and the settle/edit rows that
+   reuse it), where the inputs sit directly in a flex row with no
+   .field around them: every one of those forms looked broken the
+   moment it opened.
+
+   Appearance now hangs off the named .inp-* classes as well, so an
+   input is styled because of what it IS, not because of what it
+   happens to be nested inside. LAYOUT — the 100% width and the
+   180px floor — stays with .field, since that part really is about
+   the wrapper. */
+.field select,
+.field input,
+.inp-text, .inp-count, .inp-days, .inp-money, .inp-date {
     font-family: var(--font-mono);
     font-size: 14.5px;
     border: 1.5px solid var(--color-field-border);
-    border-radius: var(--radius-sm);
-    padding: 8px 10px;
+    border-radius: var(--radius-md);
+    padding: 9px 12px;
     background: var(--color-surface);
     color: var(--color-primary-dark);
     font-weight: 600;
-    min-width: 180px;
+    transition: border-color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out);
 }
+
+.field select, .field input {
+    min-width: 180px;
+    width: 100%;
+}
+
+.inp-text, .inp-count, .inp-days, .inp-money, .inp-date {
+    /* Match the height of a .field input, whose box is the same
+       padding plus a label-less line box. */
+    line-height: 1.35;
+}
+
+.inp-text:hover, .inp-count:hover, .inp-days:hover, .inp-money:hover, .inp-date:hover {
+    border-color: var(--color-primary);
+}
+
+.inp-text:focus, .inp-count:focus, .inp-days:focus, .inp-money:focus, .inp-date:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-focus);
+}
+
+html[dir="rtl"] .inp-text, body.lang-ar .inp-text { font-family: 'Cairo', sans-serif; }
+
+.field select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: var(--select-chevron);
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 11px 7px;
+    padding-inline-end: 34px;
+    cursor: pointer;
+}
+html[dir="rtl"] .field select, body.lang-ar .field select { background-position: left 14px center; }
+.field select:hover, .field input:hover { border-color: var(--color-primary); }
+
+/* ── Named widths for the short numeric inputs that sit inline in
+   the guided-sentence forms ("due in [30] days").
+   These replace hard inline style="width:55px" attributes, which
+   beat every stylesheet rule and left no room for a realistic
+   value — 55px cannot show "365", and 100px cannot show a five
+   figure amount with its decimals. ── */
+.inp-count { width: 88px;  min-width: 88px;  flex: 0 0 auto; }
+.inp-days  { width: 92px;  min-width: 92px;  flex: 0 0 auto; }
+.inp-money { width: 136px; min-width: 136px; flex: 0 0 auto; }
+.inp-date  { width: 176px; min-width: 176px; flex: 0 0 auto; }
+
+/* Inside .field the named widths win over the 100% above. */
+.field .inp-count, .field .inp-days, .field .inp-money, .field .inp-date { width: auto; }
 /* .field--narrow overrides the 180px default for small numeric
    fields (VAT %, a day count, etc.) where a full-width input would
    look absurd — min-width alone would otherwise always win over an
@@ -678,26 +1036,43 @@ html[dir="rtl"] h3.sub, body.lang-ar h3.sub { font-family: 'Cairo', sans-serif; 
    13. LINE-ITEMS TABLE (sale lines, purchase lines, etc.)
    ============================================================ */
 table.lines { width: 100%; border-collapse: collapse; margin-top: 6px; table-layout: fixed; }
+/* Column widths sized to the numbers people actually type, not to
+   the header label. At 76px the qty column clipped "1,250.50" and
+   the price column clipped anything over five digits — the value
+   was still there, you just couldn't read it. */
 table.lines col.col-item  { width: auto; }
-table.lines col.col-qty   { width: 76px; }
-table.lines col.col-uom   { width: 90px; }
-table.lines col.col-equals { width: 160px; }
-table.lines col.col-price { width: 108px; }
-table.lines col.col-total { width: 120px; }
-table.lines col.col-rm    { width: 36px; }
+table.lines col.col-qty   { width: 108px; }
+table.lines col.col-uom   { width: 104px; }
+table.lines col.col-equals { width: 168px; }
+table.lines col.col-price { width: 144px; }
+table.lines col.col-total { width: 146px; }
+table.lines col.col-rm    { width: 40px; }
 table.lines th { text-align: start; font-size: 11.5px; color: var(--color-text-muted); font-weight: 500; padding: 0 6px 8px; border-bottom: 2px solid var(--color-border); }
 table.lines td { padding: 8px 6px; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
 table.lines input, table.lines select {
-    font-size: 13.5px;
+    font-size: 14.5px;
     border: 1.5px solid var(--color-field-border);
     background: var(--color-surface);
     color: var(--color-text-primary);
     padding: 6px 8px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     width: 100%;
+    transition: border-color var(--duration-fast) var(--ease-out);
 }
+table.lines select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: var(--select-chevron);
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 10px 6px;
+    padding-inline-end: 28px;
+    cursor: pointer;
+}
+html[dir="rtl"] table.lines select, body.lang-ar table.lines select { background-position: left 10px center; }
 html[dir="rtl"] table.lines input, html[dir="rtl"] table.lines select,
 body.lang-ar table.lines input, body.lang-ar table.lines select { font-family: 'Cairo', sans-serif; }
+table.lines input:hover, table.lines select:hover { border-color: var(--color-primary); }
 table.lines input:focus, table.lines select:focus { outline: none; border-color: var(--color-primary); box-shadow: var(--shadow-focus); }
 table.lines td.linetotal { text-align: end; white-space: nowrap; padding-inline-end: 10px; font-weight: 600; color: var(--color-primary-dark); }
 .rm-line { background: none; border: none; color: var(--color-text-muted); cursor: pointer; font-size: 16px; min-width: 32px; min-height: 32px; }
@@ -714,35 +1089,71 @@ table.lines td.linetotal { text-align: end; white-space: nowrap; padding-inline-
 /* Mobile: a 5-column table simply cannot work on a phone screen —
    each row becomes its own labelled mini-card instead. The
    data-label attribute on each <td> (set in the Vue template)
-   supplies the label via ::before, since <thead> is hidden here. */
+   supplies the label via ::before, since <thead> is hidden here.
+   Every field's label now sits on its own line ABOVE the input
+   (rather than beside it) so a long label and a long selected
+   value can never crowd into the same line and overlap — this
+   also matches the plain `.field` pattern used everywhere else in
+   the app, so the whole form reads consistently on a phone. */
 @media (max-width: 640px) {
-    table.lines, table.lines tbody, table.lines tr, table.lines td { display: block; width: auto; }
+    table.lines, table.lines tbody, table.lines td { display: block; width: auto; }
     table.lines colgroup, table.lines thead { display: none; }
     table.lines tr {
+        display: flex;
+        flex-direction: column;
         border: 1.5px solid var(--color-border);
         border-radius: var(--radius-md);
-        padding: 10px 12px;
+        padding: 10px 12px 12px;
         margin-bottom: 10px;
-        position: relative;
     }
     table.lines td {
         border-bottom: none;
         padding: 6px 0;
         display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 5px;
     }
     table.lines td::before {
         content: attr(data-label);
         font-size: 11px;
         font-weight: 600;
         color: var(--color-text-muted);
-        flex-shrink: 0;
     }
-    table.lines td.linetotal { padding-inline-end: 0; }
-    table.lines td.rm-cell { position: absolute; top: 6px; inset-inline-end: 6px; padding: 0; }
+    /* The line total is a read-only computed figure, not something
+       to fill in — keeping it a compact label:value row (rather
+       than stacking it too) is fine since there's no input to
+       crowd against. */
+    table.lines td.linetotal {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        padding-inline-end: 0;
+    }
+    /* Delete-line button: moved to its own row at the TOP of the
+       card (via `order`) with real spacing around it, instead of
+       floating on top of the Item field's corner where it used to
+       be easy to miss or mis-tap. */
+    table.lines td.rm-cell {
+        order: -1;
+        align-self: flex-end;
+        padding: 0 0 8px;
+    }
     table.lines td.rm-cell::before { content: none; }
+    table.lines button.rm-line {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        min-height: 32px;
+        border-radius: 50%;
+        background: var(--color-danger-soft);
+        color: var(--color-danger-dark);
+        font-size: 15px;
+    }
+    table.lines button.rm-line:hover { background: var(--color-danger); color: var(--color-text-on-primary); }
 }
 .addline-btn {
     margin-top: 10px;
@@ -755,7 +1166,7 @@ table.lines td.linetotal { text-align: end; white-space: nowrap; padding-inline-
     cursor: pointer;
     font-weight: 500;
 }
-.addline-btn:hover { background: var(--color-accent-cyan); color: #fff; }
+.addline-btn:hover { background: var(--color-accent-cyan); color: var(--color-text-on-primary); }
 .grandtotal { text-align: end; margin-top: 14px; font-size: 18px; font-weight: 600; color: var(--color-primary-dark); }
 
 .vat-row { display: flex; justify-content: space-between; font-size: 13.5px; color: var(--color-text-secondary); margin-top: 6px; }
@@ -766,7 +1177,7 @@ table.lines td.linetotal { text-align: end; white-space: nowrap; padding-inline-
    ============================================================ */
 .toggle-btns { display: inline-flex; border: 1.5px solid var(--color-field-border); border-radius: var(--radius-pill); overflow: hidden; max-width: 100%; }
 .toggle-btns button { font-family: inherit; font-size: 12.5px; padding: 7px 15px; border: none; background: var(--color-surface); color: var(--color-text-muted); cursor: pointer; min-height: 36px; white-space: nowrap; }
-.toggle-btns button.active { background: var(--color-primary); color: #fff; font-weight: 500; }
+.toggle-btns button.active { background: var(--color-primary); color: var(--color-text-on-primary); font-weight: 500; }
 /* 4 pill buttons (Now/Later/Partial/Installment) don't fit a phone
    width — scroll horizontally rather than wrap (wrapping would
    break the pill shape) or overflow off-screen unreachably. */
@@ -821,7 +1232,7 @@ table.lines td.linetotal { text-align: end; white-space: nowrap; padding-inline-
     color: var(--color-primary-dark);
     font-weight: 500;
 }
-.settle-item button.open-settle:hover { background: var(--color-primary); color: #fff; }
+.settle-item button.open-settle:hover { background: var(--color-primary); color: var(--color-text-on-primary); }
 .settle-form {
     margin-top: 12px;
     padding: 14px 16px;
@@ -841,7 +1252,7 @@ table.lines td.linetotal { text-align: end; white-space: nowrap; padding-inline-
     background: var(--color-surface);
     color: var(--color-text-primary);
 }
-.settle-form button.confirm { background: var(--color-success); color: #fff; border: none; padding: 8px 16px; border-radius: var(--radius-pill); cursor: pointer; font-weight: 600; }
+.settle-form button.confirm { background: var(--color-success); color: var(--color-text-on-primary); border: none; padding: 8px 16px; border-radius: var(--radius-pill); cursor: pointer; font-weight: 600; }
 .settle-form button.confirm:hover { background: var(--color-success-dark); }
 
 .plan-strip { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
@@ -920,7 +1331,7 @@ html[dir="rtl"] .badge, body.lang-ar .badge { padding: 4px 8px 4px 10px; }
 html[dir="rtl"] .btn, body.lang-ar .btn { font-family: 'Cairo', sans-serif; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.btn-primary { background: var(--color-primary); color: #fff; box-shadow: var(--shadow-button); }
+.btn-primary { background: var(--color-primary); color: var(--color-text-on-primary); box-shadow: var(--shadow-button); }
 .btn-primary:hover:not(:disabled) { background: var(--color-primary-dark); }
 
 .btn-secondary { background: var(--color-surface); color: var(--color-primary-dark); border: 1.5px solid var(--color-primary); }
@@ -929,7 +1340,7 @@ html[dir="rtl"] .btn, body.lang-ar .btn { font-family: 'Cairo', sans-serif; }
 .btn-ghost { background: transparent; color: var(--color-text-secondary); }
 .btn-ghost:hover:not(:disabled) { background: var(--color-surface-alt); }
 
-.btn-danger { background: var(--color-danger); color: #fff; }
+.btn-danger { background: var(--color-danger); color: var(--color-text-on-primary); }
 .btn-danger:hover:not(:disabled) { background: var(--color-danger-dark); }
 
 .btn-sm { padding: 7px 15px; font-size: 12.5px; min-height: 36px; }
@@ -939,7 +1350,7 @@ html[dir="rtl"] .btn, body.lang-ar .btn { font-family: 'Cairo', sans-serif; }
     font-weight: 600;
     padding: 12px 26px;
     background: var(--color-primary);
-    color: #fff;
+    color: var(--color-text-on-primary);
     border: none;
     border-radius: var(--radius-pill);
     cursor: pointer;
@@ -958,13 +1369,26 @@ html[dir="rtl"] .btn, body.lang-ar .btn { font-family: 'Cairo', sans-serif; }
     font-size: 14px;
     padding: 10px 14px;
     border: 1.5px solid var(--color-field-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     background: var(--color-surface);
     color: var(--color-text-primary);
     min-height: 44px;
+    transition: border-color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out);
 }
+.form-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: var(--select-chevron);
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 11px 7px;
+    padding-inline-end: 36px;
+    cursor: pointer;
+}
+html[dir="rtl"] .form-select, body.lang-ar .form-select { background-position: left 14px center; }
 html[dir="rtl"] .form-input, body.lang-ar .form-input,
 html[dir="rtl"] .form-select, body.lang-ar .form-select { font-family: 'Cairo', sans-serif; }
+.form-input:hover, .form-select:hover, .form-textarea:hover { border-color: var(--color-primary); }
 .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: var(--color-primary); box-shadow: var(--shadow-focus); }
 .form-error { color: var(--color-danger); font-size: 12px; margin-top: 4px; }
 .form-hint { color: var(--color-text-muted); font-size: 12px; margin-top: 4px; }
@@ -1070,6 +1494,96 @@ html[dir="rtl"] .form-select, body.lang-ar .form-select { font-family: 'Cairo', 
 /* ============================================================
    25. AUTH FORM — shared Login / Register / Forgot / Reset
    ============================================================ */
+
+/* ── Auth buttons ─────────────────────────────────────────────────
+   .ip-btn is used by all six auth screens (Login, Register, Forgot,
+   Reset, Verify, GuestLayout) and had never been defined anywhere —
+   every one of those buttons was rendering as a bare browser button.
+   This is that missing definition.
+
+   Two details do the work the old markup couldn't:
+
+   • A fixed min-height and centred flex row, so swapping in the
+     loading spinner does not change the button's size or shove the
+     label sideways. The spinner used to be an inline SVG in a
+     non-flex button, which is why it visibly broke the layout the
+     moment a submit started.
+
+   • The label keeps its place while busy: the button dims and stops
+     responding rather than collapsing to just an icon, so the user
+     can still read what they pressed. ── */
+.ip-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 46px;
+    padding: 0 20px;
+    border: 1.5px solid transparent;
+    border-radius: var(--radius-md);
+    font-family: var(--font-body);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1;
+    text-decoration: none;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color var(--duration-base) var(--ease-out),
+                border-color var(--duration-base) var(--ease-out),
+                box-shadow var(--duration-base) var(--ease-out),
+                transform var(--duration-fast) var(--ease-out);
+}
+html[dir="rtl"] .ip-btn, body.lang-ar .ip-btn { font-family: 'Cairo', sans-serif; }
+
+.ip-btn:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+}
+
+.ip-btn:disabled,
+.ip-btn[aria-disabled="true"] {
+    /* Dimmed and inert — but the same size, so nothing shifts. */
+    opacity: 0.65;
+    cursor: progress;
+    transform: none;
+}
+
+.ip-btn--full { width: 100%; }
+
+.ip-btn--primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-text-on-primary);
+    box-shadow: var(--shadow-button);
+}
+.ip-btn--primary:hover:not(:disabled) {
+    background: var(--color-primary-dark);
+    border-color: var(--color-primary-dark);
+    transform: translateY(-1px);
+}
+.ip-btn--primary:active:not(:disabled) { transform: translateY(0); }
+
+.ip-btn--outline {
+    background: transparent;
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+.ip-btn--outline:hover:not(:disabled) {
+    background: var(--color-primary-soft);
+}
+
+/* The spinner is sized to the text it sits beside so the row stays
+   optically level, and it never grows the button. */
+.ip-btn svg {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ip-btn { transition: none; }
+    .ip-btn:hover { transform: none; }
+}
 .auth-shell {
     min-height: 100vh;
     display: flex;
@@ -1083,7 +1597,7 @@ html[dir="rtl"] .form-select, body.lang-ar .form-select { font-family: 'Cairo', 
     width: 48px; height: 48px; border-radius: var(--radius-md);
     background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
     display: flex; align-items: center; justify-content: center;
-    color: #fff;
+    color: var(--color-text-on-primary);
     font-family: var(--font-heading);
     font-weight: 700;
     font-size: 20px;
@@ -1164,6 +1678,195 @@ html[dir="rtl"] .form-select, body.lang-ar .form-select { font-family: 'Cairo', 
 
 .sheet-item__chevron { width: 16px; height: 16px; color: var(--color-text-muted); flex-shrink: 0; }
 [dir="rtl"] .sheet-item__chevron { transform: scaleX(-1); }
+
+/* ============================================================
+   28. REPORT TOOLBAR (Print / Export Excel / Export PDF)
+   ============================================================ */
+.report-toolbar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 14px 0 4px;
+}
+.report-toolbar__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 9px 16px;
+    border-radius: var(--radius-pill);
+    border: 1.5px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    text-decoration: none;
+    min-height: 40px;
+    white-space: nowrap;
+}
+html[dir="rtl"] .report-toolbar__btn, body.lang-ar .report-toolbar__btn { font-family: 'Cairo', sans-serif; }
+.report-toolbar__btn svg { width: 16px; height: 16px; }
+.report-toolbar__btn:hover { background: var(--color-surface-alt); border-color: var(--color-border-input); }
+.report-toolbar__btn--excel { border-color: var(--color-accent-green); color: var(--color-success-dark); }
+.report-toolbar__btn--excel:hover { background: var(--color-accent-green-soft); }
+.report-toolbar__btn--pdf { border-color: var(--color-accent-red); color: var(--color-danger-dark); }
+.report-toolbar__btn--pdf:hover { background: var(--color-accent-red-soft); }
+.report-toolbar__btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+@media (max-width: 480px) {
+    .report-toolbar { display: grid; grid-template-columns: repeat(3, 1fr); }
+    .report-toolbar__btn { padding: 9px 6px; font-size: 11.5px; justify-content: center; }
+}
+
+/* ============================================================
+   29. REPORT FILTER BAR (date range / product / party selectors)
+   Shared row used at the top of every report — date pickers for
+   the period reports, a product dropdown for Inventory, a
+   customer/vendor dropdown for the two statements.
+   ============================================================ */
+.report-filters {
+    display: flex;
+    align-items: flex-end;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+    padding: 16px 18px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+}
+.report-filters .field { flex: 1 1 160px; min-width: 140px; }
+.report-filters .field select,
+.report-filters .field input { min-width: 0; }
+.report-filters__apply { flex-shrink: 0; }
+
+@media (max-width: 640px) {
+    .report-filters { flex-direction: column; align-items: stretch; padding: 14px; }
+    .report-filters .field { flex: 1 1 auto; }
+}
+
+/* Quantity/Value segmented toggle — reuses .toggle-btns, this just
+   adds the wrapping label pairing used on Inventory Statement. */
+.report-mode-toggle { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.report-mode-toggle__label { font-size: 12px; color: var(--color-text-muted); font-weight: 500; }
+
+/* Stock status badges on the Inventory Statement summary table. */
+.badge.stock-out { background: var(--color-danger-soft); color: var(--color-danger-dark); }
+.badge.stock-negative { background: var(--color-danger); color: var(--color-text-on-primary); }
+
+/* Generic "stack into cards on a phone" treatment for any
+   .report-table — add class="report-table--stack" plus a
+   data-label attribute on every <td> and it collapses the same
+   way table.lines and the Inventory Statement tables do. Kept as
+   one shared rule so every report page gets the same mobile
+   behaviour instead of six separate copies of it. */
+@media (max-width: 640px) {
+    .report-table--stack, .report-table--stack tbody, .report-table--stack tr, .report-table--stack td {
+        display: block; width: auto;
+    }
+    .report-table--stack thead { display: none; }
+    .report-table--stack tr {
+        border: 1.5px solid var(--color-border);
+        border-radius: var(--radius-md);
+        padding: 10px 12px;
+        margin-bottom: 10px;
+    }
+    .report-table--stack td {
+        border-bottom: none;
+        padding: 5px 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        text-align: end;
+    }
+    .report-table--stack td::before {
+        content: attr(data-label);
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--color-text-muted);
+        flex-shrink: 0;
+        text-align: start;
+    }
+    .report-table--stack td.stack-primary {
+        font-weight: 700;
+        font-size: 14.5px;
+        justify-content: space-between;
+    }
+    .report-table--stack td.stack-primary::before { content: none; }
+}
+
+/* Per-product drill-down header (back button + product name) on
+   Inventory Statement. */
+.inv-detail-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-primary-dark);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 0;
+    margin-bottom: 6px;
+}
+.inv-detail-back svg { width: 15px; height: 15px; }
+/* Chevron points end-of-reading-direction by default ("forward");
+   a "back" affordance needs it pointing start-of-reading-direction
+   instead — flip once in LTR, and flip back in RTL so it still
+   points the right way rather than cancelling out. */
+.inv-detail-back__icon { transform: scaleX(-1); }
+html[dir="rtl"] .inv-detail-back__icon { transform: scaleX(1); }
+.inv-detail-back:hover { text-decoration: underline; }
+
+/* ============================================================
+   30. PRINT STYLES
+   Applies to every page, but only report pages carry `.card`,
+   `.report-table`, `.pl-summary`, etc. in a shape worth printing —
+   this section is what makes the browser's own Print (or "Save as
+   PDF") come out clean without a dedicated print-only page.
+   ============================================================ */
+@media print {
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+    }
+
+    @page { margin: 14mm 12mm; }
+
+    body { background: #fff; }
+
+    /* Chrome the user never wants on a printed page. */
+    .no-print,
+    .app-header,
+    .bottom-nav,
+    .trial-banner,
+    .toast-stack,
+    .report-toolbar,
+    .report-filters,
+    .reports-back { display: none !important; }
+
+    .app-main { padding: 0 !important; margin: 0 !important; }
+    .app-shell { display: block !important; }
+
+    .card {
+        box-shadow: none !important;
+        border: 1px solid #d5dbe8 !important;
+        break-inside: avoid;
+    }
+
+    .report-table thead th {
+        position: static !important; /* sticky header has no meaning on paper */
+    }
+
+    table.report-table, table.lines { break-inside: auto; }
+    table.report-table tr, table.lines tr { break-inside: avoid; }
+
+    a[href]::after { content: ""; } /* don't print raw URLs after links */
+}
 
 /* ============================================================
    END OF MALIYATDOCS — app.css

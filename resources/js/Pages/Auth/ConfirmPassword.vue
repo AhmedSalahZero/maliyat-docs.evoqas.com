@@ -1,55 +1,71 @@
 <script setup>
-import GuestLayout from '@/Layouts/GuestLayout.vue';
-import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
+// ══════════════════════════════════════════════════════════════════
+//  Maliyat Docs — Auth/ConfirmPassword.vue
+//  Location: resources/js/Pages/Auth/ConfirmPassword.vue
+//
+//  Re-entering your own password before a sensitive action, behind
+//  Laravel's `password.confirm` middleware.
+//
+//  This was the last page still shipping Laravel Breeze's default
+//  look — the stock GuestLayout with Tailwind utility classes and
+//  hardcoded English, in an app whose every other screen uses
+//  IpLoginShell and is bilingual. It is rarely reached, which is
+//  exactly why it went unnoticed: a user who did land here would
+//  suddenly be looking at a different product.
+// ══════════════════════════════════════════════════════════════════
+
 import { Head, useForm } from '@inertiajs/vue3';
+import { useAuthStore } from '@/Stores/useAuthStore';
+import { useAuthTranslations } from '@/Composables/useAuthTranslations';
+import IpLoginShell from '@/Components/Auth/IpLoginShell.vue';
+import PasswordInput from '@/Components/PasswordInput.vue';
+
+const authStore = useAuthStore();
+const { t } = useAuthTranslations();
 
 const form = useForm({
     password: '',
+    locale: authStore.locale,
 });
 
-const submit = () => {
+function submit() {
+    form.locale = authStore.locale;
     form.post(route('password.confirm'), {
-        onFinish: () => form.reset(),
+        onFinish: () => form.reset('password'),
     });
-};
+}
 </script>
 
 <template>
-    <GuestLayout>
-        <Head title="Confirm Password" />
+    <Head :title="t('confirm_password')" />
 
-        <div class="mb-4 text-sm text-gray-600 dark:text-gray-400">
-            This is a secure area of the application. Please confirm your
-            password before continuing.
-        </div>
-
-        <form @submit.prevent="submit">
-            <div>
-                <InputLabel for="password" value="Password" />
-                <TextInput
+    <IpLoginShell
+        :title="t('confirm_password')"
+        :subtitle="t('confirm_password_subtitle')"
+        :back-href="route('login')"
+        :back-label="t('back_to_sign_in')"
+    >
+        <form class="ip-login__form" @submit.prevent="submit">
+            <div class="ip-form-group">
+                <label class="ip-login__label" for="password">{{ t('password') }}</label>
+                <PasswordInput
                     id="password"
-                    type="password"
-                    class="mt-1 block w-full"
                     v-model="form.password"
-                    required
+                    :has-error="!!form.errors.password"
                     autocomplete="current-password"
                     autofocus
+                    required
                 />
-                <InputError class="mt-2" :message="form.errors.password" />
+                <p v-if="form.errors.password" class="ip-login__error">{{ form.errors.password }}</p>
             </div>
 
-            <div class="mt-4 flex justify-end">
-                <PrimaryButton
-                    class="ms-4"
-                    :class="{ 'opacity-25': form.processing }"
-                    :disabled="form.processing"
-                >
-                    Confirm
-                </PrimaryButton>
-            </div>
+            <button
+                type="submit"
+                class="ip-btn ip-btn--primary ip-btn--full ip-login__submit"
+                :disabled="form.processing"
+            >
+                {{ t('confirm_password') }}
+            </button>
         </form>
-    </GuestLayout>
+    </IpLoginShell>
 </template>

@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\App;
 
+use App\Http\Requests\Concerns\GuardsPaymentAmount;
+use App\Support\FinancialRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -16,6 +18,8 @@ use Illuminate\Validation\Rule;
 // ══════════════════════════════════════════════════════════════════
 class StorePaymentOutRequest extends FormRequest
 {
+    use GuardsPaymentAmount;
+
     public function authorize(): bool
     {
         return (bool) $this->user()?->company_id;
@@ -30,11 +34,26 @@ class StorePaymentOutRequest extends FormRequest
             'payable_id'   => ['required_with:payable_type', 'nullable', 'integer'],
             'vendor_id'    => ['nullable', Rule::exists('vendors', 'id')->where('company_id', $companyId)],
             'category_id'  => ['nullable', Rule::exists('categories', 'id')->where('company_id', $companyId)->where('kind', 'expense')],
-            'date'         => ['required', 'date'],
-            'amount'       => ['required', 'numeric', 'min:0.01'],
+            'date'         => ['required', ...FinancialRules::date()],
+            'amount'       => ['required', ...FinancialRules::amount()],
             'method'       => ['required', Rule::in(['cash', 'bank', 'visa', 'instapay', 'wallet'])],
             'payment_channel_id' => ['nullable', Rule::exists('payment_channels', 'id')->where('company_id', $companyId)],
             'note'         => ['nullable', 'string', 'max:255'],
         ];
+    }
+
+    /**
+     * Same rule as the receipt side: a payment pointed at a bill
+     * cannot settle more than that bill still owes.
+     */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+
+            $this->rejectOverpayment($validator, $this->resolveBill(), (float) $this->input('amount'));
+        });
     }
 }

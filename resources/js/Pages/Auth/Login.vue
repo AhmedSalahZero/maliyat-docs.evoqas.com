@@ -1,6 +1,6 @@
 <script setup>
 // ══════════════════════════════════════════════════════════════════
-//  InPractice — Login.vue
+//  Maliyat Docs — Login.vue
 //  Location: resources/js/Pages/Auth/Login.vue
 //
 //  Layout:
@@ -147,7 +147,7 @@ onMounted(() => {
                 <p class="ip-login__hero-sub">
                     {{ locale === 'ar'
                         ? 'ماليات دوكس يساعدك على تسجيل المبيعات والمصروفات والمخزون بلغة بسيطة — بدون خبرة محاسبية.'
-                        : 'MaliyatDocs helps micro-business owners record sales, expenses, and inventory in plain language — no accounting background needed.' }}
+                        : 'Maliyat Docs helps micro-business owners record sales, expenses, and inventory in plain language — no accounting background needed.' }}
                 </p>
                 <p class="ip-login__hero-badge">
                     {{ locale === 'ar' ? '٦٠ يوماً مجاناً — بدون بطاقة ائتمان' : '60 days free — no card required' }}
@@ -513,7 +513,10 @@ onMounted(() => {
 }
 
 .ip-login__brand-img {
-    height: 150px;
+    /* Scales with the window rather than sitting at a fixed 150px.
+       The logo was the single largest block in the panel, so on a
+       short screen it alone decided whether anything scrolled. */
+    height: clamp(200px, 15vh, 150px);
     width: auto;
     object-fit: contain;
     margin-bottom: 0px;
@@ -807,13 +810,18 @@ onMounted(() => {
         display: flex;
         flex-direction: column;
         justify-content: center;
-        gap: var(--space-5);
+        /* Fluid rhythm: on a tall screen this is the full gap, on a
+           short one it closes up instead of forcing a scrollbar. */
+        gap: clamp(10px, 2.2vh, 24px);
         position: relative;
         z-index: 1;
         flex: 0 0 55%;
         height: 100%;
+        /* Kept as a floor, not as the plan. Everything above is sized
+           so the content fits; this only catches a genuinely tiny
+           window, where clipping the panel would lose content. */
         overflow-y: auto;
-        padding: var(--space-8) var(--space-10);
+        padding: clamp(16px, 3vh, 32px) var(--space-10);
     }
 
     /* Right panel becomes fixed width */
@@ -844,15 +852,33 @@ onMounted(() => {
     }
 }
 
-/* Shorter laptop screens — trim the feature grid down to 2 columns
-   so the whole left panel comfortably fits without scrolling. */
-@media (min-width: 768px) and (max-height: 760px) {
-    .ip-login__feature-grid {
-        grid-template-columns: repeat(2, 1fr);
+/* Shorter laptop screens. This used to cut off at 760px, so a
+   768px-tall window — one of the most common laptop sizes there is —
+   missed it by eight pixels and scrolled. The sizes above are fluid
+   now, so this only has to trim the things that don't scale: line
+   heights and card padding. */
+@media (min-width: 768px) and (max-height: 860px) {
+    .ip-login__hero-sub {
+        line-height: 1.5;
     }
 
-    .ip-login__hero-title {
-        font-size: 34px;
+    .ip-login__feature-card {
+        padding: 9px 10px 8px;
+    }
+
+}
+
+/* Only on a genuinely short window does the card caption go. Most
+   laptops are 768–900 tall and keep it — dropping the descriptions
+   across that whole range would strip the panel of most of what it
+   actually says. */
+@media (min-width: 768px) and (max-height: 660px) {
+    .ip-login__feature-desc {
+        display: none;
+    }
+
+    .ip-login__hero-sub {
+        display: none;
     }
 }
 
@@ -882,7 +908,7 @@ onMounted(() => {
 }
 
 .ip-login__hero-title {
-    font-size: 46px;
+    font-size: clamp(30px, 4.4vh, 46px);
     font-weight: var(--fw-bold);
     color: #FFFFFF;
     line-height: 1.02;
@@ -914,7 +940,13 @@ onMounted(() => {
 /* ── Feature card grid ───────────────────────────────────────── */
 .ip-login__feature-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    /* auto-fit, not a fixed 3, because the column COUNT is what
+       decides the panel's height: squeeze three cards into a narrow
+       panel and every caption wraps to three lines, which is what
+       pushed the panel past the viewport at 1024px wide. At a 200px
+       floor this settles on three columns when there is room and two
+       when there isn't. */
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 10px;
 }
 

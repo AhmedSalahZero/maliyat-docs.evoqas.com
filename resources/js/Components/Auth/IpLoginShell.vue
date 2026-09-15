@@ -90,7 +90,7 @@ onMounted(() => {
         </main>
 
         <footer class="ip-shell__footer">
-            <p>© {{ new Date().getFullYear() }} InPractice · Learn. Connect. Earn.</p>
+            <p>© {{ new Date().getFullYear() }} Maliyat Docs</p>
         </footer>
 
     </div>

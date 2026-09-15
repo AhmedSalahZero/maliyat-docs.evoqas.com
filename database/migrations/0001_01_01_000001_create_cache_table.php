@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 // ══════════════════════════════════════════════════════════════════
-//  InPractice — Cache Table
+//  Maliyat Docs — Cache Table
 //  Laravel system table — do not modify
 // ══════════════════════════════════════════════════════════════════
 

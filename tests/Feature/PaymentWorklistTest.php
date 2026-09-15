@@ -201,6 +201,12 @@ class PaymentWorklistTest extends TestCase
             $this->sale(100, 0, null, $customer);
         }
 
+        // One throwaway request first. PostDueDepreciation does its
+        // once-a-day check on a company's first request, which is a
+        // fixed cost paid once — not the per-row growth this test is
+        // looking for. Measuring it would hide the thing being tested.
+        $this->actingAs($this->user)->getJson(route('app.payments.open-invoices'))->assertOk();
+
         $small = $this->countQueriesForOpenInvoices();
 
         for ($i = 0; $i < 60; $i++) {

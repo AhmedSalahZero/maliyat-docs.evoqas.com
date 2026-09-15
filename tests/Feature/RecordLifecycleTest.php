@@ -192,6 +192,95 @@ class RecordLifecycleTest extends TestCase
 
     // ── Editing ──────────────────────────────────────────────────
 
+    public function test_the_due_date_can_be_corrected_after_the_fact(): void
+    {
+        $this->actingAs($this->user)
+            ->post(route('app.sales.store'), $this->salePayload([
+                'mode' => 'later', 'due_in_days' => 30,
+            ]))
+            ->assertRedirect();
+
+        $sale = Sale::sole();
+        $this->assertNotNull($sale->due_date, 'Precondition: the sale has a due date.');
+
+        $corrected = now()->addDays(90)->toDateString();
+
+        $this->actingAs($this->user)
+            ->put(route('app.sales.update', $sale->id), [
+                'customer_id' => $this->customer->id,
+                'date'        => now()->toDateString(),
+                'vat_rate'    => 0,
+                'lines'       => [['item_id' => null, 'qty' => 2, 'unit_price' => 50]],
+                'due_date'    => $corrected,
+            ])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect();
+
+        $this->assertSame($corrected, $sale->fresh()->due_date->toDateString());
+    }
+
+    public function test_a_due_date_can_be_cleared_entirely(): void
+    {
+        $this->actingAs($this->user)
+            ->post(route('app.sales.store'), $this->salePayload(['mode' => 'later', 'due_in_days' => 30]))
+            ->assertRedirect();
+
+        $sale = Sale::sole();
+
+        $this->actingAs($this->user)
+            ->put(route('app.sales.update', $sale->id), [
+                'customer_id' => $this->customer->id,
+                'date'        => now()->toDateString(),
+                'vat_rate'    => 0,
+                'lines'       => [['item_id' => null, 'qty' => 2, 'unit_price' => 50]],
+                'due_date'    => null,
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertNull($sale->fresh()->due_date, 'A record must be able to go back to having no due date.');
+    }
+
+    public function test_a_due_date_before_the_document_date_is_refused(): void
+    {
+        $this->actingAs($this->user)
+            ->post(route('app.sales.store'), $this->salePayload(['mode' => 'later', 'due_in_days' => 30]))
+            ->assertRedirect();
+
+        $sale = Sale::sole();
+
+        $this->actingAs($this->user)
+            ->put(route('app.sales.update', $sale->id), [
+                'customer_id' => $this->customer->id,
+                'date'        => now()->toDateString(),
+                'vat_rate'    => 0,
+                'lines'       => [['item_id' => null, 'qty' => 2, 'unit_price' => 50]],
+                'due_date'    => now()->subWeek()->toDateString(),
+            ])
+            ->assertSessionHasErrors('due_date');
+    }
+
+    public function test_omitting_the_due_date_leaves_the_existing_one_alone(): void
+    {
+        $this->actingAs($this->user)
+            ->post(route('app.sales.store'), $this->salePayload(['mode' => 'later', 'due_in_days' => 30]))
+            ->assertRedirect();
+
+        $sale     = Sale::sole();
+        $original = $sale->due_date->toDateString();
+
+        // An older client that doesn't send the field must not wipe it.
+        $this->actingAs($this->user)
+            ->put(route('app.sales.update', $sale->id), [
+                'customer_id' => $this->customer->id,
+                'date'        => now()->toDateString(),
+                'vat_rate'    => 0,
+                'lines'       => [['item_id' => null, 'qty' => 2, 'unit_price' => 50]],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($original, $sale->fresh()->due_date->toDateString());
+    }
+
     public function test_editing_a_sale_keeps_the_ledger_in_step_with_the_new_total(): void
     {
         $this->actingAs($this->user)

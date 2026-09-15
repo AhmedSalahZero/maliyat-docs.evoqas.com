@@ -7,7 +7,7 @@
 //  App\Http\Controllers\Admin\DashboardController: companies_count,
 //  active_companies_count, users_count. Three KPI cards + a link
 //  into Companies, since that's the only thing a super_admin
-//  manages in MaliyatDocs.
+//  manages in Maliyat Docs.
 //
 //  NOTE: this page used to be InPractice's admin dashboard (member
 //  stats, hub breakdown, forum stats, recent registrations) built
@@ -34,7 +34,7 @@ const props = defineProps({
             <div class="adm-dash__header">
                 <div>
                     <h1 class="adm-dash__title">Platform Overview</h1>
-                    <p class="adm-dash__sub">Every company on MaliyatDocs, at a glance</p>
+                    <p class="adm-dash__sub">Every company on Maliyat Docs, at a glance</p>
                 </div>
                 <Link :href="route('admin.companies.index')" class="adm-dash__cta">
                     Manage Companies

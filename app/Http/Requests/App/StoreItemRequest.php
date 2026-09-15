@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\App;
 
+use App\Support\FinancialRules;
 use Illuminate\Foundation\Http\FormRequest;
 
 // ══════════════════════════════════════════════════════════════════
@@ -21,7 +22,7 @@ class StoreItemRequest extends FormRequest
         return [
             'name'           => ['required', 'string', 'max:150'],
             'uom'            => ['nullable', 'string', 'max:40'],
-            'qty_per_uom'    => ['nullable', 'numeric', 'min:0.01'],
+            'qty_per_uom'    => ['nullable', ...FinancialRules::qty()],
             'base_unit_name' => ['nullable', 'string', 'max:40'],
         ];
     }

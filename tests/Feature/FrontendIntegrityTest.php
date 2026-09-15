@@ -169,6 +169,65 @@ class FrontendIntegrityTest extends TestCase
         $this->assertSame([], $stillThere, "Left over from the InPractice copy:\n".implode("\n", $stillThere));
     }
 
+    /**
+     * Nothing under resources/js should sit there unimported.
+     *
+     * This is the check that was missing: the earlier cleanup found
+     * files that were *referenced but deleted*, and none that were
+     * *present but referenced by nothing* — which is how nine dead
+     * components, a dead layout and a dead store survived it.
+     *
+     * Pages are excluded: Inertia resolves them by name at runtime,
+     * so they are never imported by another file.
+     */
+    public function test_no_frontend_file_is_left_unreferenced(): void
+    {
+        $root = resource_path('js');
+
+        $imported = [];
+
+        foreach ($this->frontendFiles() as $path) {
+            $source = (string) file_get_contents($path);
+
+            preg_match_all("/from\s+'@\/([^']+)'/", $source, $alias);
+            foreach ($alias[1] as $target) {
+                $imported[$target] = true;
+            }
+
+            preg_match_all("/from\s+'(\.[^']+)'/", $source, $relative);
+            foreach ($relative[1] as $target) {
+                $resolved = realpath(dirname($path).'/'.$target)
+                    ?: dirname($path).'/'.$target;
+                $imported[ltrim(str_replace($root, '', $resolved), '/')] = true;
+            }
+        }
+
+        $entryPoints = ['app.js', 'bootstrap.js'];
+        $orphans     = [];
+
+        foreach ($this->frontendFiles() as $path) {
+            $relative = ltrim(str_replace($root, '', $path), '/');
+
+            if (in_array($relative, $entryPoints, true) || str_starts_with($relative, 'Pages/')) {
+                continue;
+            }
+
+            $withoutExtension = preg_replace('/\.(vue|js)$/', '', $relative);
+
+            if (! isset($imported[$relative]) && ! isset($imported[$withoutExtension])) {
+                $orphans[] = $relative;
+            }
+        }
+
+        sort($orphans);
+
+        $this->assertSame(
+            [],
+            $orphans,
+            "Nothing imports these — they ship in the bundle for no reason:\n".implode("\n", $orphans)
+        );
+    }
+
     public function test_the_two_translation_bundles_define_the_same_keys(): void
     {
         $source = (string) file_get_contents(resource_path('js/lang/appTranslations.js'));

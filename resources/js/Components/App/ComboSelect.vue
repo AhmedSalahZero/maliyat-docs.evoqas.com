@@ -17,6 +17,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { ref, computed, nextTick } from 'vue';
+import { useAppTranslations } from '@/Composables/useAppTranslations';
 
 const props = defineProps({
     modelValue: { type: [Number, String, null], default: null },
@@ -29,6 +30,23 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:modelValue', 'create']);
+
+const { locale } = useAppTranslations();
+
+// Categories (and anything else that ships a name_ar column) are
+// stored bilingually — Customers/Vendors/Items currently aren't, so
+// this falls back to the plain `optionLabel` field for those. This
+// is the ONE place that decides which language an option shows in,
+// so every dropdown built on ComboSelect gets Arabic labels for
+// free the moment its options include a `name_ar`, with nothing to
+// wire up per page.
+function optionText(option) {
+    if (locale.value === 'ar' && option?.name_ar) {
+        return option.name_ar;
+    }
+
+    return option?.[props.optionLabel];
+}
 
 const addingNew = ref(false);
 const newName = ref('');
@@ -75,7 +93,7 @@ defineExpose({ finishAdding });
     <span v-if="!addingNew" class="combo-select-wrap">
         <select v-model="selectValue" :class="inline ? 'blank-select' : 'form-select'" :disabled="creating">
             <option value="">{{ placeholder }}</option>
-            <option v-for="opt in options" :key="opt.id" :value="opt.id">{{ opt[optionLabel] }}</option>
+            <option v-for="opt in options" :key="opt.id" :value="opt.id">{{ optionText(opt) }}</option>
             <option value="__new__">{{ addNewLabel }}</option>
         </select>
     </span>

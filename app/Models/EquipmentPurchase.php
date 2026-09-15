@@ -16,12 +16,14 @@ class EquipmentPurchase extends Model
         'company_id', 'vendor_id', 'category_id', 'name',
         'qty', 'unit_price', 'amount', 'date', 'due_date', 'created_by',
         'useful_life_years', 'accumulated_depreciation', 'last_depreciated_through',
+        'is_opening_balance',
     ];
 
     protected $casts = [
         'date' => 'date',
         'due_date' => 'date',
         'last_depreciated_through' => 'date',
+        'is_opening_balance' => 'boolean',
     ];
 
     public function vendor(): BelongsTo

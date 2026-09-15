@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 // ══════════════════════════════════════════════════════════════════
-//  InPractice — Users Table
+//  Maliyat Docs — Users Table
 //
 //  Roles:
 //    admin → Platform manager (Mahmoud's team)

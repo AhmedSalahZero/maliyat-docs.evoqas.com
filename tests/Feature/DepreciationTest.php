@@ -12,7 +12,6 @@ use App\Models\Vendor;
 use App\Services\JournalService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Console\Scheduling\Schedule;
 use Tests\TestCase;
 
 // ══════════════════════════════════════════════════════════════════
@@ -24,9 +23,16 @@ use Tests\TestCase;
 //  hand, which nobody does: assets stayed on the books at their
 //  purchase price forever, overstating both assets and profit.
 //
-//  It's scheduled daily rather than monthly on purpose: the command
-//  works out every whole month elapsed since each asset's last
-//  posting, so a missed day is caught up rather than lost.
+//  It was then scheduled — which traded one silent failure for
+//  another, because the schedule itself only runs if the server has
+//  a crontab line calling schedule:run. Depreciation is now driven
+//  by the app instead (PostDueDepreciation), and the command below
+//  is kept for manual sweeps. Both share DepreciationService, so
+//  these tests cover the same body either way.
+//
+//  The catch-up design is what makes that possible: every run works
+//  out the whole months elapsed since each asset's last posting, so
+//  it does not matter when or how often it runs.
 // ══════════════════════════════════════════════════════════════════
 class DepreciationTest extends TestCase
 {
@@ -66,15 +72,21 @@ class DepreciationTest extends TestCase
         ]);
     }
 
-    public function test_the_command_is_actually_scheduled(): void
+    /**
+     * Depreciation deliberately no longer depends on the scheduler.
+     * If somebody re-adds it to routes/console.php that is safe, but
+     * what must never happen is the middleware being dropped and the
+     * schedule not being there either — which is what this asserts.
+     */
+    public function test_depreciation_has_a_trigger_that_does_not_need_cron(): void
     {
-        $commands = collect(app(Schedule::class)->events())
-            ->map(fn ($event) => $event->command ?? '')
-            ->filter(fn (string $command) => str_contains($command, 'depreciation:run'));
+        $registered = collect(app(\Illuminate\Contracts\Http\Kernel::class)
+            ->getMiddlewareGroups()['web'] ?? []);
 
         $this->assertTrue(
-            $commands->isNotEmpty(),
-            'depreciation:run is not on the schedule, so nothing will ever call it.'
+            $registered->contains(\App\Http\Middleware\PostDueDepreciation::class),
+            'PostDueDepreciation is not in the web middleware group, so depreciation '
+            .'would only ever run if the server happened to have cron configured.'
         );
     }
 

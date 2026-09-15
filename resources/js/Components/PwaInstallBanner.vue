@@ -28,10 +28,10 @@
       <div class="pwa-banner__icon">⚡</div>
       <div class="pwa-banner__text">
         <div class="pwa-banner__title">
-          {{ isRTL ? 'ثبّت إنبراكتس' : 'Install InPractice' }}
+          {{ isRTL ? 'ثبّت ماليات دوكس' : 'Install Maliyat Docs' }}
         </div>
         <div class="pwa-banner__sub">
-          {{ isRTL ? 'تعلّم وتواصل واكسب — في أي وقت' : 'Practice. Connect. Earn. — anytime, even offline' }}
+          {{ isRTL ? 'حساباتك معك في أي وقت — حتى بدون إنترنت' : 'Your books, anytime — even offline' }}
         </div>
       </div>
       <div class="pwa-banner__actions">
@@ -140,7 +140,13 @@ onMounted(() => {
 
 .pwa-banner {
   position: fixed;
-  bottom: 80px;
+  /* Sits clear of whatever is already pinned to the bottom. The app
+     shell sets --pwa-banner-offset to the bottom-nav height; auth
+     screens have no bottom nav, so the fallback just clears the
+     safe-area inset. The old hard 80px was measured for the app
+     shell and, on the login page, landed squarely on top of the
+     Sign In button. */
+  bottom: var(--pwa-banner-offset, calc(16px + env(safe-area-inset-bottom, 0px)));
   left: 50%;
   transform: translateX(-50%);
   width: calc(100% - 2rem);
@@ -286,7 +292,8 @@ onMounted(() => {
 
 @media (min-width: 769px) {
   .pwa-banner {
-    bottom: 24px;
+    /* No bottom nav from the tablet breakpoint up. */
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }
 }
 

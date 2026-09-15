@@ -79,7 +79,13 @@ class CustodyController extends Controller
     {
         $data = $request->validated();
 
-        $custody = DB::transaction(function () use ($data) {
+        // The custody row, the cash that left with it and the ledger
+        // entry are one business fact — they commit together or not
+        // at all. The posting used to sit after this block, so a
+        // failure there left a custody on the books with nothing in
+        // the general ledger. Same fix as SaleController::store() and
+        // settle() below.
+        DB::transaction(function () use ($data) {
             $custody = Custody::create([
                 'holder_id'  => $data['holder_id'],
                 'amount'     => $data['amount'],
@@ -99,10 +105,8 @@ class CustodyController extends Controller
                 'direction'  => 'out',
             ]);
 
-            return $custody;
+            $this->journal->postCustodyGiven($custody);
         });
-
-        $this->journal->postCustodyGiven($custody);
 
         return back()->with('success', 'Custody recorded.');
     }
@@ -148,8 +152,14 @@ class CustodyController extends Controller
     {
         $data = $request->validated();
 
+        // The settlement rows, the cash that moved with them and the
+        // ledger entry are one business fact — they commit together
+        // or not at all. The posting used to sit outside this block,
+        // which is the pattern SaleController::store() already moved
+        // away from: a failure there left a settled custody with
+        // nothing in the general ledger to show for it.
         DB::transaction(function () use ($custody, $data) {
-            $custody->settle($data['lines']);
+            $custody->settle($data['lines'], $data['settlement_date']);
             $custody->refresh();
 
             if ($custody->leftover_returned > 0) {
@@ -171,9 +181,9 @@ class CustodyController extends Controller
                     'direction'  => 'out',
                 ]);
             }
-        });
 
-        $this->journal->postCustodySettlement($custody);
+            $this->journal->postCustodySettlement($custody);
+        });
 
         return back()->with('success', 'Custody settled.');
     }
@@ -185,6 +195,8 @@ class CustodyController extends Controller
      */
     public function destroy(Custody $custody): RedirectResponse
     {
+        $this->authorizeDelete();
+
         DB::transaction(function () use ($custody) {
             $this->journal->reverseAllForPayable($custody);
             $custody->settlementLines()->delete();

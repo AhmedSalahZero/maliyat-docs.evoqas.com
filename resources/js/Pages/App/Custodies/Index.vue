@@ -20,12 +20,15 @@ import { ref, computed } from 'vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import FormInstructions from '@/Components/App/FormInstructions.vue';
 import AppIcon from '@/Components/App/AppIcon.vue';
 import ComboSelect from '@/Components/App/ComboSelect.vue';
 import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
 import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { scrollToForm } from '@/Composables/useScrollToForm';
+import { usePermissions } from '@/Composables/usePermissions';
 
 const props = defineProps({
     vendors:         { type: Array, required: true },
@@ -36,6 +39,13 @@ const props = defineProps({
 
 const page = usePage();
 const { t, locale } = useAppTranslations();
+
+// The form card, so pressing Edit can bring the FORM into view
+// rather than the top of the document — see useScrollToForm.
+const formCard = ref(null);
+
+// Delete is company-admin only — mirrors Controller::authorizeDelete().
+const { canDelete } = usePermissions();
 const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
 
 function todayIso() { return new Date().toISOString().slice(0, 10); }
@@ -114,7 +124,7 @@ function startEdit(custody) {
     form.payment_channel_id = custody.payment_channel_id;
     form.given_at = custody.given_at;
     form.clearErrors();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToForm(formCard);
 }
 
 function cancelEdit() {
@@ -139,13 +149,20 @@ function submit() {
 
 // ── Settlement (inline, one open at a time) ─────────────────────
 const settlingId = ref(null);
+// When the custody was actually squared up. Defaults to today, but
+// it is a real field: keying a July settlement in in September must
+// not date it September (see Custody::settle()).
+const settleDate = ref(todayIso());
 const settleLines = ref([{ description: '', category_id: null, amount: null }]);
+const settleErrors = ref({});
 const creatingSettleCategoryForRow = ref(null);
 const settling = ref(false);
 
 function openSettle(custody) {
     settlingId.value = settlingId.value === custody.id ? null : custody.id;
+    settleDate.value = todayIso();
     settleLines.value = [{ description: '', category_id: null, amount: null }];
+    settleErrors.value = {};
 }
 
 function addSettleLine() {
@@ -183,9 +200,14 @@ function submitSettle(custody) {
     }
 
     settling.value = true;
-    router.patch(route('app.custodies.settle', custody.id), { lines }, {
+    settleErrors.value = {};
+    router.patch(route('app.custodies.settle', custody.id), {
+        settlement_date: settleDate.value,
+        lines,
+    }, {
         preserveScroll: true,
         onSuccess: () => { settlingId.value = null; },
+        onError: (errors) => { settleErrors.value = errors; },
         onFinish: () => { settling.value = false; },
     });
 }
@@ -216,13 +238,20 @@ function onConfirmDialogConfirm() {
             <h1>{{ t('action_custody_title') }}</h1>
         </div>
 
-        <div class="card">
+        <FormInstructions
+            v-if="!editingCustody"
+            form-key="custody"
+            :steps="['howto_custody_1', 'howto_custody_2', 'howto_custody_3', 'howto_custody_4', 'howto_custody_5']"
+            tip-key="howto_custody_tip"
+        />
+
+        <div ref="formCard" class="card card--pending">
             <div v-if="editingCustody" class="alert info">{{ t('editingBanner') }}</div>
 
             <div class="field-row" style="margin-bottom: 4px;">
                 <div class="field">
                     <label>{{ t('dateLbl') }}</label>
-                    <input v-model="form.given_at" type="date" :max="todayIso()" style="min-width: 0; width: 160px;">
+                    <input v-model="form.given_at" type="date" :max="todayIso()" class="inp-date" style="width: 15rem;">
                 </div>
             </div>
             <div v-if="form.errors.given_at" class="form-error">{{ form.errors.given_at }}</div>
@@ -275,7 +304,7 @@ function onConfirmDialogConfirm() {
                             <button type="button" class="btn btn-ghost btn-sm" @click="startEdit(custody)">{{ t('editBtn') }}</button>
                             <button type="button" class="open-settle" @click="openSettle(custody)">{{ t('settleCustodyBtn') }}</button>
                         </template>
-                        <button type="button" class="btn btn-ghost btn-sm" style="color: var(--color-danger);" @click="confirmDelete(custody)">{{ t('deleteBtn') }}</button>
+                        <button v-if="canDelete" type="button" class="btn btn-ghost btn-sm" style="color: var(--color-danger);" @click="confirmDelete(custody)">{{ t('deleteBtn') }}</button>
                     </div>
                 </div>
 
@@ -287,6 +316,21 @@ function onConfirmDialogConfirm() {
 
                 <!-- Inline settlement form -->
                 <div v-if="settlingId === custody.id" class="settle-form" style="flex-direction: column; align-items: stretch;">
+                    <div class="field-row" style="margin-bottom: 10px;">
+                        <div class="field" style="flex: 0 0 auto;">
+                            <label :for="`settle-date-${custody.id}`">{{ t('settlementDateLbl') }}</label>
+                            <input
+                                :id="`settle-date-${custody.id}`"
+                                v-model="settleDate"
+                                type="date"
+                                class="inp-date"
+                                :min="custody.given_at"
+                                :max="todayIso()"
+                            >
+                        </div>
+                    </div>
+                    <div v-if="settleErrors.settlement_date" class="form-error">{{ settleErrors.settlement_date }}</div>
+
                     <table class="lines">
                         <colgroup><col class="col-item"><col class="col-price"><col class="col-total"><col class="col-rm"></colgroup>
                         <thead>

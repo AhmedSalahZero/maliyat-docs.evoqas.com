@@ -59,6 +59,7 @@ class SaleController extends Controller
             ->through(fn (Sale $sale) => [
                 'id'          => $sale->id,
                 'date'        => $sale->date->toDateString(),
+                'due_date'    => $sale->due_date?->toDateString(),
                 'customer_id' => $sale->customer_id,
                 'customer'    => $sale->customer?->name,
                 'lines'       => $sale->lines->map(fn ($line) => [
@@ -80,6 +81,9 @@ class SaleController extends Controller
                     'date'   => $payment->date->toDateString(),
                     'amount' => (float) $payment->amount,
                     'method' => $payment->method,
+                    // Needed so the edit form can prefill the bank /
+                    // operator the payment actually went through.
+                    'payment_channel_id' => $payment->payment_channel_id,
                 ])->values(),
             ]);
 
@@ -195,6 +199,8 @@ class SaleController extends Controller
                 'vat_rate'    => $vatRate,
                 'vat_amount'  => $vatAmount,
                 'amount'      => $total,
+                // Correctable now — see the note in the Update*Request.
+                'due_date'    => array_key_exists('due_date', $data) ? $data['due_date'] : $sale->due_date,
             ]);
 
             $sale->lines()->delete();
@@ -223,6 +229,8 @@ class SaleController extends Controller
      */
     public function destroy(Sale $sale): RedirectResponse
     {
+        $this->authorizeDelete();
+
         DB::transaction(function () use ($sale) {
             $this->journal->reverseAllForPayable($sale);
             $sale->payments()->delete();

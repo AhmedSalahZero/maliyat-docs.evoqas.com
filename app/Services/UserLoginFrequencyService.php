@@ -5,96 +5,200 @@ namespace App\Services;
 use App\Enums\LoginActivityType;
 use App\Models\User;
 use App\Models\UserLoginActivity;
-use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
-// ══════════════════════════════════════════════════════════════════
-//  Maliyat Docs — UserLoginFrequencyService
-//  Location: app/Services/UserLoginFrequencyService.php
-//
-//  Single source of truth for "how often does this user actually use
-//  the app" — used by the admin user list and the member's own
-//  activity panel (see LoginFrequencyWidgets.vue / useLoginStats.js).
-//
-//  Writes two things:
-//    1. App\Models\User        → login_count, last_login_at, last_activity_at
-//    2. user_login_activities  → one immutable row per event (see
-//       LoginActivityType: 'login' for explicit sign-ins, one per
-//       calendar day for 'daily_access' visits)
-//
-//  Called from exactly two places — keep it that way, don't scatter
-//  activity-recording calls elsewhere:
-//    - App\Listeners\RecordSuccessfulLogin  → recordExplicitLogin()
-//    - App\Http\Middleware\TrackDailyUserAccess → recordDailyAccessIfNeeded()
-// ══════════════════════════════════════════════════════════════════
 class UserLoginFrequencyService
 {
+    private const ACTIVITY_TOUCH_MINUTES = 5;
+
     /**
-     * Record an explicit login (the user submitted the login form / was
-     * authenticated via a fresh session). Always writes a new 'login' row
-     * — a user can log in more than once a day — and also makes sure
-     * today's 'daily_access' row exists, so the middleware doesn't need
-     * to write a second row later in the same request cycle's day.
+     * Record an explicit authentication event (login or post-registration login).
+     * Each successful auth increments the frequency counter, even on the same day.
      */
     public function recordExplicitLogin(User $user, string $source = 'web'): void
     {
-        $now   = Date::now();
-        $today = $now->toDateString();
+        DB::transaction(function () use ($user, $source) {
+            $locked = User::query()->whereKey($user->id)->lockForUpdate()->firstOrFail();
+            $now    = now();
 
-        UserLoginActivity::create([
-            'user_id'       => $user->id,
-            'login_at'      => $now,
-            'activity_date' => $today,
-            'type'          => LoginActivityType::Login,
-            'source'        => $source,
-        ]);
+            UserLoginActivity::query()->create([
+                'user_id'       => $locked->id,
+                'login_at'      => $now,
+                'activity_date' => $now->toDateString(),
+                'type'          => LoginActivityType::Login,
+                'source'        => $source,
+            ]);
 
-        $this->ensureDailyAccessRow($user, $now, $today, $source);
+            $locked->forceFill([
+                'last_login_at'    => $now,
+                'last_activity_at' => $now,
+                'login_count'      => $locked->login_count + 1,
+            ])->save();
 
-        $user->forceFill([
-            'login_count'      => $user->login_count + 1,
-            'last_login_at'    => $now,
-            'last_activity_at' => $now,
-        ])->save();
+            $this->markActivityForDate($locked->id, $now->toDateString());
+        });
+
+        $user->refresh();
     }
 
     /**
-     * Record the first authenticated page view of the current calendar
-     * day. Idempotent — safe to call on every request; only writes once
-     * per user per day. Does NOT touch login_count (that's only for
-     * explicit logins), but does keep last_activity_at fresh.
+     * Record the first access of a new calendar day for a user who remains logged in.
+     * Skipped when the user already has any activity row for today.
      */
     public function recordDailyAccessIfNeeded(User $user, string $source = 'web'): void
     {
-        $now   = Date::now();
-        $today = $now->toDateString();
+        $today = now()->toDateString();
 
-        $created = $this->ensureDailyAccessRow($user, $now, $today, $source);
+        if ($this->hasActivityForDate($user->id, $today)) {
+            $this->touchLastActivityIfStale($user);
 
-        // Keep last_activity_at current even on days that already have
-        // a daily_access row — it should reflect "most recent visit",
-        // not just "most recent new day".
-        if (! $created && $user->last_activity_at?->isSameDay($now)) {
+            return;
+        }
+
+        if ($user->last_activity_at?->toDateString() === $today) {
+            $this->markActivityForDate($user->id, $today);
+            $this->touchLastActivityIfStale($user);
+
+            return;
+        }
+
+        DB::transaction(function () use ($user, $source, $today) {
+            $locked = User::query()->whereKey($user->id)->lockForUpdate()->firstOrFail();
+            $now    = now();
+
+            if ($this->hasActivityForDate($locked->id, $today)) {
+                $this->touchLastActivityLocked($locked, $now);
+
+                return;
+            }
+
+            $created = UserLoginActivity::query()->firstOrCreate(
+                [
+                    'user_id'       => $locked->id,
+                    'activity_date' => $today,
+                    'type'          => LoginActivityType::DailyAccess,
+                ],
+                [
+                    'login_at' => $now,
+                    'source'   => $source,
+                ]
+            );
+
+            if (! $created->wasRecentlyCreated) {
+                $this->touchLastActivityLocked($locked, $now);
+
+                return;
+            }
+
+            $locked->forceFill([
+                'last_activity_at' => $now,
+                'login_count'      => $locked->login_count + 1,
+            ])->save();
+
+            $this->markActivityForDate($locked->id, $today);
+        });
+    }
+
+    /**
+     * @return array{
+     *     login_count: int,
+     *     last_login_at: ?string,
+     *     last_activity_at: ?string
+     * }
+     */
+    public function getUserStatistics(User $user): array
+    {
+        $user->refresh();
+
+        return [
+            'login_count'      => (int) $user->login_count,
+            'last_login_at'    => $user->last_login_at?->toIso8601String(),
+            'last_activity_at' => $user->last_activity_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     total_logins: int,
+     *     unique_active_days: int,
+     *     active_days_this_month: int,
+     *     active_days_last_month: int
+     * }
+     */
+    public function getLoginFrequencyAnalytics(User $user): array
+    {
+        $user->refresh();
+
+        $now       = now();
+        $thisMonth = $now->copy()->startOfMonth();
+        $lastMonth = $now->copy()->subMonthNoOverflow()->startOfMonth();
+        $lastMonthEnd = $lastMonth->copy()->endOfMonth();
+
+        $base = UserLoginActivity::query()->where('user_id', $user->id);
+
+        return [
+            'total_logins'           => (int) $user->login_count,
+            'unique_active_days'     => (clone $base)->distinct('activity_date')->count('activity_date'),
+            'active_days_this_month' => (clone $base)
+                ->whereBetween('activity_date', [$thisMonth->toDateString(), $now->toDateString()])
+                ->distinct('activity_date')
+                ->count('activity_date'),
+            'active_days_last_month' => (clone $base)
+                ->whereBetween('activity_date', [$lastMonth->toDateString(), $lastMonthEnd->toDateString()])
+                ->distinct('activity_date')
+                ->count('activity_date'),
+        ];
+    }
+
+    private function touchLastActivityIfStale(User $user): void
+    {
+        $threshold = now()->subMinutes(self::ACTIVITY_TOUCH_MINUTES);
+
+        if ($user->last_activity_at && $user->last_activity_at->greaterThanOrEqualTo($threshold)) {
+            return;
+        }
+
+        User::query()
+            ->whereKey($user->id)
+            ->where(function ($query) use ($threshold) {
+                $query->whereNull('last_activity_at')
+                    ->orWhere('last_activity_at', '<', $threshold);
+            })
+            ->update(['last_activity_at' => now()]);
+    }
+
+    private function touchLastActivityLocked(User $user, Carbon $now): void
+    {
+        $threshold = $now->copy()->subMinutes(self::ACTIVITY_TOUCH_MINUTES);
+
+        if ($user->last_activity_at && $user->last_activity_at->greaterThanOrEqualTo($threshold)) {
             return;
         }
 
         $user->forceFill(['last_activity_at' => $now])->save();
     }
 
-    /**
-     * Insert today's daily_access row if it doesn't already exist.
-     * Returns true if a new row was created, false if one already existed.
-     */
-    private function ensureDailyAccessRow(User $user, $now, string $today, string $source): bool
+    private function hasActivityForDate(int $userId, string $date): bool
     {
-        $activity = UserLoginActivity::firstOrCreate([
-            'user_id'       => $user->id,
-            'activity_date' => $today,
-            'type'          => LoginActivityType::DailyAccess,
-        ], [
-            'login_at' => $now,
-            'source'   => $source,
-        ]);
+        return Cache::remember(
+            $this->activityCacheKey($userId, $date),
+            now()->endOfDay(),
+            fn () => UserLoginActivity::query()
+                ->where('user_id', $userId)
+                ->where('activity_date', $date)
+                ->exists()
+        );
+    }
 
-        return $activity->wasRecentlyCreated;
+    private function markActivityForDate(int $userId, string $date): void
+    {
+        Cache::put($this->activityCacheKey($userId, $date), true, now()->endOfDay());
+    }
+
+    private function activityCacheKey(int $userId, string $date): string
+    {
+        return "user_login_activity:{$userId}:{$date}";
     }
 }

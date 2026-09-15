@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\App;
 
+use App\Support\FinancialRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -29,10 +30,10 @@ class StoreCustodyRequest extends FormRequest
 
         return [
             'holder_id' => ['required', Rule::exists('vendors', 'id')->where('company_id', $companyId)],
-            'amount'    => ['required', 'numeric', 'min:0.01'],
+            'amount'    => ['required', ...FinancialRules::amount()],
             'method'    => ['nullable', Rule::in(['cash', 'bank', 'visa', 'instapay', 'wallet'])],
             'payment_channel_id' => ['nullable', Rule::exists('payment_channels', 'id')->where('company_id', $companyId)],
-            'given_at'  => ['required', 'date'],
+            'given_at'  => ['required', ...FinancialRules::date()],
         ];
     }
 }

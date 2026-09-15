@@ -127,7 +127,7 @@ class User extends Authenticatable
             return null;
         }
 
-        // Read the flag straight from the table rather than through
+        // Read straight from the table rather than through
         // $this->company. That relation may already be cached on this
         // instance — HandleInertiaRequests loads it earlier in the
         // same request — and a cached copy can be stale wherever the
@@ -136,12 +136,23 @@ class User extends Authenticatable
         // guard's per-instance user cache. An authorization check
         // must not be answered from a cache it doesn't control, so
         // this costs one primary-key lookup instead.
-        $companyIsActive = Company::query()
+        $company = Company::query()
             ->whereKey($this->company_id)
-            ->value('is_active');
+            ->first(['is_active', 'trial_ends_at']);
 
-        if ($companyIsActive !== null && ! $companyIsActive) {
+        if (! $company) {
+            return null;
+        }
+
+        // An administrative suspension outranks a billing one: if an
+        // admin has switched the company off, saying "renew your
+        // subscription" would send the customer down the wrong path.
+        if (! $company->is_active) {
             return 'errors.company_suspended';
+        }
+
+        if ($company->hasLapsed()) {
+            return 'errors.subscription_expired';
         }
 
         return null;

@@ -17,8 +17,19 @@ let listenerAttached = false
 let snoozeUntil      = 0
 let currentLoginCount = 0
 
+// A guest has 0. Anyone who has signed in at least once may be asked.
+const MIN_LOGINS_BEFORE_OFFER = 1
+
 export function setPwaLoginContext(loginCount) {
+    const previous = currentLoginCount
     currentLoginCount = Number(loginCount) || 0
+
+    // Signing in changes the answer to canOfferInstall(), so re-check
+    // rather than waiting for the next beforeinstallprompt — the
+    // browser only fires that once per page load.
+    if (previous !== currentLoginCount) {
+        tryShowBanner()
+    }
 }
 
 // ── Device detection ──────────────────────────────────────────────
@@ -83,13 +94,26 @@ function canOfferInstall() {
     syncPwaInstallState()
     if (isStandaloneDisplay()) return false
     if (isSnoozed()) return false
+
+    // Only offer the install to someone who has actually signed in.
+    //
+    // setPwaLoginContext() has always recorded this, but nothing ever
+    // read it — so the banner was being shown to guests too, floating
+    // over the login form and covering its buttons. Asking a stranger
+    // to install the app before they can even sign in is the wrong
+    // moment to ask, quite apart from what it was sitting on top of.
+    if (currentLoginCount < MIN_LOGINS_BEFORE_OFFER) return false
+
     return true
 }
 
 function captureDeferredPrompt() {
-    const existing = window.__inpractice_pwa_prompt
-    if (!existing || !canOfferInstall()) return
+    const existing = window.__maliyat_pwa_prompt
+    if (!existing) return
 
+    // Capture unconditionally. Whether we may SHOW the banner is a
+    // separate question, answered by tryShowBanner() — see the note
+    // on onBeforeInstallPrompt below.
     deferredPrompt.value = existing
     showIosBanner.value  = false
     tryShowBanner()
@@ -122,12 +146,26 @@ function tryShowBanner() {
 }
 
 function onBeforeInstallPrompt(e) {
-    if (!canOfferInstall()) return
-
+    // ALWAYS capture, then decide separately whether to show.
+    //
+    // The browser fires this once per page load and hands over the
+    // only object that can trigger an install. Bailing out here —
+    // which is what the login-count gate used to do — threw that
+    // object away: a guest lands on /login, the event fires, it is
+    // discarded, and then they sign in by SPA navigation with no page
+    // reload, so no second event ever comes. The banner could never
+    // appear again for the rest of that session.
+    //
+    // preventDefault() also has to happen here or the browser shows
+    // its own mini-infobar over the page.
     e.preventDefault()
-    window.__inpractice_pwa_prompt = e
+    window.__maliyat_pwa_prompt = e
     deferredPrompt.value = e
     showIosBanner.value  = false
+
+    // canOfferInstall() is consulted inside tryShowBanner(), so a
+    // guest still sees nothing — the prompt is merely kept until they
+    // are someone we may ask.
     tryShowBanner()
 }
 
@@ -145,7 +183,7 @@ export function initPwaInstallListener() {
 
     if (!listenerAttached) {
         window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt)
-        window.addEventListener('inpractice-pwa-installable', captureDeferredPrompt)
+        window.addEventListener('maliyat-pwa-installable', captureDeferredPrompt)
 
         window.addEventListener('pageshow', () => {
             syncPwaInstallState()

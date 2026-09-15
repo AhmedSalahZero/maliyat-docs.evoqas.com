@@ -56,6 +56,7 @@ class InventoryPurchaseController extends Controller
             ->through(fn (InventoryPurchase $purchase) => [
                 'id'          => $purchase->id,
                 'date'        => $purchase->date->toDateString(),
+                'due_date'    => $purchase->due_date?->toDateString(),
                 'vendor_id'   => $purchase->vendor_id,
                 'vendor'      => $purchase->vendor?->name,
                 'lines'       => $purchase->lines->map(fn ($line) => [
@@ -80,6 +81,9 @@ class InventoryPurchaseController extends Controller
                     'date'   => $payment->date->toDateString(),
                     'amount' => (float) $payment->amount,
                     'method' => $payment->method,
+                    // Needed so the edit form can prefill the bank /
+                    // operator the payment actually went through.
+                    'payment_channel_id' => $payment->payment_channel_id,
                 ])->values(),
             ]);
 
@@ -173,6 +177,8 @@ class InventoryPurchaseController extends Controller
                 'vat_rate'   => $vatRate,
                 'vat_amount' => $vatAmount,
                 'amount'     => $total,
+                // Correctable now — see the note in the Update*Request.
+                'due_date'   => array_key_exists('due_date', $data) ? $data['due_date'] : $inventoryPurchase->due_date,
             ]);
 
             $inventoryPurchase->lines()->delete();
@@ -194,6 +200,8 @@ class InventoryPurchaseController extends Controller
      */
     public function destroy(InventoryPurchase $inventoryPurchase): RedirectResponse
     {
+        $this->authorizeDelete();
+
         DB::transaction(function () use ($inventoryPurchase) {
             $this->journal->reverseAllForPayable($inventoryPurchase);
             $inventoryPurchase->payments()->delete();

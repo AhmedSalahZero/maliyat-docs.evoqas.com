@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════════
-//  InPractice — useAuthStore.js
+//  Maliyat Docs — useAuthStore.js
 //  Location: resources/js/Stores/useAuthStore.js
 //
 //  Global state for the authenticated user.

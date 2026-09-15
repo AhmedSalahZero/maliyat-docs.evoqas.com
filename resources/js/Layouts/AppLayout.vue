@@ -46,6 +46,60 @@ const { t }     = useAppTranslations();
 
 const auth = computed(() => page.props.auth);
 
+// Language toggle — see the button in the header. Mirrors
+// MenuSheet's own toggle rather than replacing it, so both entry
+// points go through the same store action.
+const locale = computed(() => authStore.locale);
+
+function toggleLocale() {
+    authStore.setLocale(locale.value === 'en' ? 'ar' : 'en');
+}
+
+// Theme toggle — lives directly in the header (not just buried in the
+// Menu sheet) for the same reason language does: it's something
+// people reach for constantly, especially at night, and shouldn't
+// take two taps to get to.
+const isDark = computed(() => authStore.isDark);
+
+function toggleTheme() {
+    authStore.setTheme(isDark.value ? 'light' : 'dark');
+}
+
+// Free-trial countdown. Both values come from the shared auth prop
+// (HandleInertiaRequests::resolveCompany), so the banner reflects the
+// server's view on every page load rather than a cached client copy.
+const trialExpiring = computed(() => auth.value?.user?.company?.trial_expiring === true);
+const trialDaysLeft = computed(() => auth.value?.user?.company?.trial_days_left ?? 0);
+
+// Renewal is arranged with a person — there is no billing page to
+// send anyone to. Telling a customer their access ends in three days
+// without telling them who to talk to is a dead end, so the banner
+// carries the contact. Either channel may be unset (see
+// config/subscription.php); the banner shows whichever exists.
+const support = computed(() => page.props.support ?? {});
+
+const renewMailto = computed(() => {
+    if (!support.value.email) return null;
+
+    const company = auth.value?.user?.company?.name ?? '';
+
+    return `mailto:${support.value.email}`
+        + `?subject=${encodeURIComponent(t('trial_renew_subject', { company }))}`;
+});
+
+const renewWhatsApp = computed(() => {
+    if (!support.value.phone) return null;
+
+    // wa.me wants digits only — a number stored as "+20 123 456 7890"
+    // would otherwise produce a link that silently does nothing.
+    const digits = String(support.value.phone).replace(/\D/g, '');
+    if (!digits) return null;
+
+    const company = auth.value?.user?.company?.name ?? '';
+
+    return `https://wa.me/${digits}?text=${encodeURIComponent(t('trial_renew_subject', { company }))}`;
+});
+
 const avatarInitials = computed(() => {
     const name  = auth.value?.user?.name ?? '';
     const parts = name.trim().split(' ').filter(Boolean);
@@ -100,14 +154,46 @@ watch(() => page.props.flash, (flash) => {
         <header class="app-header">
             <div class="app-header__inner">
                 <Link :href="route('app.dashboard')" class="app-header__brand">
-                    <div class="app-header__logo">MD</div>
-                    <div>
-                        <div class="app-header__title">{{ t('app_name') }}</div>
-                        <div v-if="companyName" class="app-header__company">{{ companyName }}</div>
+                    <img
+                        :src="isDark ? '/images/logo-icon-dark.png' : '/images/logo-icon-light.png'"
+                        :alt="t('app_name')"
+                        class="app-header__logo"
+                    />
+                    <div class="app-header__name-line">
+                        <span class="app-header__title">{{ t('app_name') }}</span>
+                        <span v-if="companyName" class="app-header__company">{{ companyName }}</span>
                     </div>
                 </Link>
 
                 <div class="app-header__actions">
+                    <!-- Language lives here, not buried in the menu
+                         sheet: switching language is something people
+                         do on their first visit and then rarely
+                         again, but they must be able to find it
+                         instantly the first time. -->
+                    <button
+                        type="button"
+                        class="lang-btn"
+                        :aria-label="locale === 'en' ? 'التبديل إلى العربية' : 'Switch to English'"
+                        :title="locale === 'en' ? 'العربية' : 'English'"
+                        @click="toggleLocale"
+                    >
+                        {{ locale === 'en' ? 'ع' : 'EN' }}
+                    </button>
+
+                    <!-- Theme toggle sits right beside language for the
+                         same reason — a preference people reach for
+                         often and expect to find in one tap, not two. -->
+                    <button
+                        type="button"
+                        class="theme-toggle"
+                        :aria-label="isDark ? (locale === 'ar' ? 'الوضع الفاتح' : 'Switch to light theme') : (locale === 'ar' ? 'الوضع الداكن' : 'Switch to dark theme')"
+                        :title="isDark ? (locale === 'ar' ? 'الوضع الفاتح' : 'Light theme') : (locale === 'ar' ? 'الوضع الداكن' : 'Dark theme')"
+                        @click="toggleTheme"
+                    >
+                        <AppIcon :name="isDark ? 'sun' : 'moon'" />
+                    </button>
+
                     <button type="button" class="avatar" @click="menuOpen = true" :aria-label="t('nav_menu')">
                         {{ avatarInitials }}
                     </button>
@@ -150,6 +236,32 @@ watch(() => page.props.flash, (flash) => {
                 </nav>
             </div>
         </header>
+
+        <!-- ══════════════════════════════════════════════════════
+             TRIAL COUNTDOWN — only inside the warning window, and
+             only while there is still time to act. Once the trial
+             has actually lapsed the user can't reach this layout at
+             all (EnsureMember sends them back to login), so there is
+             no "expired" state to render here.
+        ═══════════════════════════════════════════════════════════ -->
+        <div v-if="trialExpiring" class="trial-banner" role="status">
+            <span class="trial-banner__icon">⏳</span>
+            <span class="trial-banner__text">
+                {{ trialDaysLeft === 0
+                    ? t('trial_ends_today')
+                    : t('trial_ends_in', { days: trialDaysLeft }) }}
+                <strong class="trial-banner__cta">{{ t('trial_renew_contact') }}</strong>
+            </span>
+
+            <span v-if="renewWhatsApp || renewMailto" class="trial-banner__actions">
+                <a v-if="renewWhatsApp" :href="renewWhatsApp" target="_blank" rel="noopener" class="trial-banner__btn">
+                    {{ t('trial_renew_whatsapp') }}
+                </a>
+                <a v-if="renewMailto" :href="renewMailto" class="trial-banner__btn trial-banner__btn--ghost">
+                    {{ t('trial_renew_email') }}
+                </a>
+            </span>
+        </div>
 
         <!-- ══════════════════════════════════════════════════════
              MAIN — page content (full width on desktop, see app.css)

@@ -21,6 +21,7 @@ import { ref, computed } from 'vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import FormInstructions from '@/Components/App/FormInstructions.vue';
 import AppIcon from '@/Components/App/AppIcon.vue';
 import ComboSelect from '@/Components/App/ComboSelect.vue';
 import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
@@ -28,6 +29,8 @@ import EditPaymentsPanel from '@/Components/App/EditPaymentsPanel.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
 import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { scrollToForm } from '@/Composables/useScrollToForm';
+import { usePermissions } from '@/Composables/usePermissions';
 
 const props = defineProps({
     vendors:         { type: Array, required: true },
@@ -39,6 +42,13 @@ const props = defineProps({
 
 const page = usePage();
 const { t, locale } = useAppTranslations();
+
+// The form card, so pressing Edit can bring the FORM into view
+// rather than the top of the document — see useScrollToForm.
+const formCard = ref(null);
+
+// Delete is company-admin only — mirrors Controller::authorizeDelete().
+const { canDelete } = usePermissions();
 const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
 
 function todayIso() { return new Date().toISOString().slice(0, 10); }
@@ -164,8 +174,9 @@ function startEdit(expense) {
     form.category_id = expense.category_id;
     form.date = expense.date;
     form.amount = expense.amount;
+    form.due_date = editingExpense.value?.due_date ?? null;
     form.clearErrors();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToForm(formCard);
 }
 
 function cancelEdit() {
@@ -216,6 +227,7 @@ function doSubmitEdit(id) {
         category_id: data.category_id,
         date: data.date,
         amount: data.amount,
+            due_date: data.due_date || null,
     })).put(route('app.expenses.update', id), {
         preserveScroll: true,
         onSuccess: () => cancelEdit(),
@@ -278,7 +290,14 @@ function freqLabel(freq) {
             <h1>{{ t('action_expense_title') }}</h1>
         </div>
 
-        <div class="card">
+        <FormInstructions
+            v-if="!editingExpense"
+            form-key="expense"
+            :steps="['howto_expense_1', 'howto_expense_2', 'howto_expense_3', 'howto_expense_4', 'howto_expense_5']"
+            tip-key="howto_expense_tip"
+        />
+
+        <div ref="formCard" class="card card--out">
             <div v-if="editingExpense" class="alert info">{{ t('editingBanner') }}</div>
 
             <div v-if="!editingExpense" class="toggle-btns" style="margin-bottom: 16px;">
@@ -289,7 +308,7 @@ function freqLabel(freq) {
             <div class="field-row" style="margin-bottom: 4px;">
                 <div class="field">
                     <label>{{ t('dateLbl') }}</label>
-                    <input v-model="form.date" type="date" :max="todayIso()" style="min-width: 0; width: 160px;">
+                    <input v-model="form.date" type="date" :max="todayIso()" class="inp-date" style="width: 15rem;">
                 </div>
             </div>
             <div v-if="form.errors.date" class="form-error">{{ form.errors.date }}</div>
@@ -346,26 +365,26 @@ function freqLabel(freq) {
                 </div>
                 <div v-else-if="form.mode === 'later'" class="paymode-sub">
                     <span>{{ t('dueInLbl') }}</span>
-                    <input v-model.number="form.due_in_days" type="number" style="width: 60px;">
+                    <input v-model.number="form.due_in_days" type="number" class="inp-days">
                     <span>{{ t('daysLbl') }}</span>
                 </div>
                 <div v-else-if="form.mode === 'partial'" class="paymode-sub">
                     <span>{{ t('amountNowLbl') }}</span>
                     <span class="muted-inline">{{ currency }}</span>
-                    <input v-model.number="form.amount_now" type="number" step="0.01" style="width: 100px;">
+                    <input v-model.number="form.amount_now" type="number" step="0.01" class="inp-money">
                     <PaymentMethodField v-model="form.method" v-model:channel-id="form.payment_channel_id"
                         :channels="channelList" :creating-channel="creatingChannel" @create-channel="createChannel" />
                     <span>{{ t('remainderDueLbl') }}</span>
-                    <input v-model.number="form.due_in_days" type="number" style="width: 60px;">
+                    <input v-model.number="form.due_in_days" type="number" class="inp-days">
                     <span>{{ t('daysLbl') }}</span>
                 </div>
                 <div v-if="form.errors.amount_now" class="form-error">{{ form.errors.amount_now }}</div>
 
                 <div v-if="!isRecurring && form.mode === 'installment'" class="paymode-sub">
                     <span>{{ t('numInstallmentsLbl') }}</span>
-                    <input v-model.number="form.installment_count" type="number" min="2" style="width: 55px;">
+                    <input v-model.number="form.installment_count" type="number" min="2" class="inp-count">
                     <span>{{ t('everyDaysLbl') }}</span>
-                    <input v-model.number="form.installment_interval_days" type="number" min="1" style="width: 60px;">
+                    <input v-model.number="form.installment_interval_days" type="number" min="1" class="inp-days">
                     <span>{{ t('daysLbl') }}</span>
                 </div>
                 <ul v-if="!isRecurring && form.mode === 'installment' && installmentSchedule.length" class="installment-preview">
@@ -374,6 +393,20 @@ function freqLabel(freq) {
                     </li>
                 </ul>
             </div>
+
+            <!-- Due date, edit only. On a NEW record the date is
+                 implied by the payment mode above ("due in 30 days"),
+                 but once the record exists that mode is history — what
+                 remains is a concrete date, and it has to be
+                 correctable. -->
+            <div v-if="editingExpense" class="field-row edit-due">
+                <div class="field">
+                    <label for="edit-due-date">{{ t('dueDateLbl') }}</label>
+                    <input id="edit-due-date" v-model="form.due_date" type="date" class="inp-date" style="width: 15rem;">
+                    <p class="form-hint">{{ t('dueDateNoneHint') }}</p>
+                </div>
+            </div>
+            <div v-if="form.errors.due_date" class="form-error">{{ form.errors.due_date }}</div>
 
             <!-- Payments on the saved record. The mode picker above is
                  creation-only by design (it describes how a NEW record
@@ -420,7 +453,7 @@ function freqLabel(freq) {
                         </div>
                     </div>
                     <div>
-                        <button v-if="series.has_unpaid" type="button" class="btn btn-ghost btn-sm" @click="confirmCancelRemaining(series)">
+                        <button v-if="series.has_unpaid && canDelete" type="button" class="btn btn-ghost btn-sm" @click="confirmCancelRemaining(series)">
                             {{ t('cancelRemainingBtn') }}
                         </button>
                     </div>
@@ -449,7 +482,7 @@ function freqLabel(freq) {
                     <div>
                         <span class="amt">{{ currency }} {{ money(expense.amount) }}</span>
                         <button type="button" class="btn btn-ghost btn-sm" @click="startEdit(expense)">{{ t('editBtn') }}</button>
-                        <button type="button" class="btn btn-ghost btn-sm" style="color: var(--color-danger);" @click="confirmDelete(expense)">{{ t('deleteBtn') }}</button>
+                        <button v-if="canDelete" type="button" class="btn btn-ghost btn-sm" style="color: var(--color-danger);" @click="confirmDelete(expense)">{{ t('deleteBtn') }}</button>
                     </div>
                 </div>
             </div>

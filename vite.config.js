@@ -126,7 +126,7 @@ export default defineConfig({
                         sizes:       '540x720',
                         type:        'image/png',
                         form_factor: 'narrow',
-                        label:       'Maliyat Docs — Dashboard',
+                        label:       'Maliyat Docs — Sign in',
                     },
                 ],
             },

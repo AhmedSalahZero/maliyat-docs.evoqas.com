@@ -11,7 +11,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 // ══════════════════════════════════════════════════════════════════
-//  InPractice — RegisteredUserController
+//  Maliyat Docs — RegisteredUserController
 //  Location: app/Http/Controllers/Auth/RegisteredUserController.php
 //
 //  Thin controller — follows the Project Bible strictly.

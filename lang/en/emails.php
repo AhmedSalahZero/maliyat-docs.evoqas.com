@@ -37,6 +37,18 @@ return [
         'closing'  => 'Thanks.',
     ],
 
+    // ── Free trial ending ─────────────────────────────────────────
+    'trial_ending' => [
+        'subject'       => 'Your Maliyat Docs trial ends in :days days',
+        'heading'       => 'Your free trial is ending soon',
+        'greeting'      => 'Hi :name,',
+        'intro'         => 'The free trial for :company ends in :days days.',
+        'ends_on_label' => 'Access stops on this date',
+        'what_happens'  => 'After that date nobody on your team will be able to sign in, but none of your records are deleted — everything is waiting for you the moment the account is renewed.',
+        'how_to_renew'  => 'To keep working without a break, contact us before that date to renew.',
+        'closing'       => 'Thanks for trying Maliyat Docs.',
+    ],
+
     // ── Shared layout ─────────────────────────────────────────────
     'footer_tagline' => 'Bookkeeping, kept simple.',
 

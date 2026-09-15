@@ -1,6 +1,6 @@
 <script setup>
 // ══════════════════════════════════════════════════════════════════
-//  InPractice — Register.vue
+//  Maliyat Docs — Register.vue
 //  Location: resources/js/Pages/Auth/Register.vue
 // ══════════════════════════════════════════════════════════════════
 
@@ -8,29 +8,19 @@ import { ref, computed, onMounted } from 'vue';
 import { Head, Link, useForm }      from '@inertiajs/vue3';
 import { useAuthStore }             from '@/Stores/useAuthStore';
 import PasswordInput                from '@/Components/PasswordInput.vue';
-import { EXPERIENCE_LEVELS }        from '@/constants/experienceLevels';
 
 const authStore = useAuthStore();
 
-const hubs = [
-    { slug: 'finance',   label_en: 'Finance',   label_ar: 'المالية',   icon: '📊' },
-    { slug: 'marketing', label_en: 'Marketing',  label_ar: 'التسويق',   icon: '📢' },
-    { slug: 'sales',     label_en: 'Sales',      label_ar: 'المبيعات',  icon: '🎯' },
-];
-
-const experienceLevels = EXPERIENCE_LEVELS;
+const CURRENCIES = ['EGP', 'SAR', 'AED', 'USD', 'KWD'];
 
 const form = useForm({
-    name:                 '',
-    nickname:             '',
-    email:                '',
-    profession:           '',
-    experience_level:     'fresh',
-    hubs:                 [],
-    language:             'en',
-    theme:                'navy',
-    password:             '',
-    password_confirmation:'',
+    name:                  '',
+    company_name:          '',
+    email:                 '',
+    currency:              'EGP',
+    language:              'en',
+    password:              '',
+    password_confirmation: '',
     _hp: '',
     _ft: 0,
 });
@@ -39,14 +29,10 @@ const isDark  = computed(() => authStore.isDark);
 const isRtl   = computed(() => authStore.isRtl);
 const locale  = computed(() => authStore.locale);
 
-const hubLabel = (hub)   => locale.value === 'ar' ? hub.label_ar   : hub.label_en;
-const expLabel = (level) => locale.value === 'ar' ? level.label_ar : level.label_en;
-
 function toggleTheme() {
-    const next = authStore.theme === 'navy' ? 'dark' : 'navy';
+    const next = authStore.theme === 'light' ? 'dark' : 'light';
     authStore.setThemeLocal(next);
     localStorage.setItem('ip_theme', next);
-    form.theme = next;
 }
 
 function toggleLocale() {
@@ -57,16 +43,6 @@ function toggleLocale() {
     form.language = next;
 }
 
-function toggleHub(slug) {
-    const idx = form.hubs.indexOf(slug);
-    if (idx === -1) { form.hubs.push(slug); }
-    else            { form.hubs.splice(idx, 1); }
-}
-
-function isHubSelected(slug) {
-    return form.hubs.includes(slug);
-}
-
 function submit() {
     form.post(route('register'), {
         onFinish: () => form.reset('password', 'password_confirmation'),
@@ -74,9 +50,8 @@ function submit() {
 }
 
 onMounted(() => {
-    const savedTheme  = localStorage.getItem('ip_theme') ?? 'navy';
+    const savedTheme = localStorage.getItem('ip_theme') ?? 'light';
     authStore.setThemeLocal(savedTheme);
-    form.theme    = savedTheme;
     form.language = locale.value;
     form._ft      = Date.now();
 });
@@ -111,23 +86,42 @@ onMounted(() => {
         <!-- Left panel — desktop -->
         <div class="ip-login__left">
             <div class="ip-login__brand">
-                <img src="/images/logo-light.png" alt="InPractice" class="ip-login__brand-img" />
+                <img src="/images/logo-light.png" alt="Maliyat Docs" class="ip-login__brand-img" />
             </div>
             <div class="ip-login__hero">
-                <p class="ip-login__hero-label">Real Cases. Real Mastery.</p>
-                <h1 class="ip-login__hero-title">Join the<br/>Club.</h1>
+                <p class="ip-login__hero-label">
+                    {{ locale === 'ar' ? 'محاسبة · بسيطة · لأصحاب الأعمال' : 'BOOKKEEPING · MADE SIMPLE' }}
+                </p>
+                <h1 class="ip-login__hero-title">
+                    {{ locale === 'ar' ? 'ابدأ تنظيم حساباتك.' : 'Start keeping your books.' }}
+                </h1>
                 <p class="ip-login__hero-sub">
-                    InPractice is a professional club for Finance, Marketing, and Sales practitioners in Egypt and the GCC.
-                    Free to join. Built for the real world.
+                    {{ locale === 'ar'
+                        ? 'سجّل مبيعاتك ومصروفاتك ومخزونك بلغة بسيطة — بدون خبرة محاسبية، وبدون جداول إكسل.'
+                        : 'Record your sales, expenses and stock in plain language — no accounting background, no spreadsheets.' }}
                 </p>
             </div>
             <ul class="ip-login__bullets">
-                <li class="ip-login__bullet"><span class="ip-login__bullet-dot" />200+ practical business cases</li>
-                <li class="ip-login__bullet"><span class="ip-login__bullet-dot" />Anonymous CV pool and job matching</li>
-                <li class="ip-login__bullet"><span class="ip-login__bullet-dot" />Freelance matchmaking with privacy</li>
-                <li class="ip-login__bullet"><span class="ip-login__bullet-dot" />Community forum — real problems, real answers</li>
+                <li class="ip-login__bullet">
+                    <span class="ip-login__bullet-dot" />
+                    {{ locale === 'ar' ? 'فواتير البيع والشراء في ثوانٍ' : 'Sales and purchase invoices in seconds' }}
+                </li>
+                <li class="ip-login__bullet">
+                    <span class="ip-login__bullet-dot" />
+                    {{ locale === 'ar' ? 'تتبّع المخزون والعهد والأقساط' : 'Track stock, custody and installments' }}
+                </li>
+                <li class="ip-login__bullet">
+                    <span class="ip-login__bullet-dot" />
+                    {{ locale === 'ar' ? 'كشوف حساب للعملاء والموردين' : 'Customer and supplier statements' }}
+                </li>
+                <li class="ip-login__bullet">
+                    <span class="ip-login__bullet-dot" />
+                    {{ locale === 'ar' ? 'تقارير الأرباح والتدفق النقدي' : 'Profit and cash-flow reports' }}
+                </li>
             </ul>
-            <p class="ip-login__tagline">Practice, Connect & Earn.</p>
+            <p class="ip-login__tagline">
+                {{ locale === 'ar' ? '٦٠ يوماً مجاناً — بدون بطاقة ائتمان' : '60 days free — no card required' }}
+            </p>
         </div>
 
         <!-- Right panel — form -->
@@ -136,7 +130,7 @@ onMounted(() => {
 
                 <!-- Mobile brand -->
                 <div class="ip-login__mobile-brand">
-                    <img src="/images/logo-dark.png" alt="InPractice" class="ip-login__mobile-brand-img" />
+                    <img src="/images/logo-dark.png" alt="Maliyat Docs" class="ip-login__mobile-brand-img" />
                 </div>
 
                 <!-- Card heading -->
@@ -155,7 +149,6 @@ onMounted(() => {
                     <div class="ip-form-group">
                         <label class="ip-login__label" for="name">
                             {{ locale === 'ar' ? 'الاسم الكامل' : 'Full Name' }}
-                            <span class="ip-register__private">{{ locale === 'ar' ? '(خاص)' : '(private)' }}</span>
                         </label>
                         <div class="ip-login__input-wrap">
                             <svg class="ip-login__input-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -170,26 +163,22 @@ onMounted(() => {
                         <p v-if="form.errors.name" class="ip-login__error">{{ form.errors.name }}</p>
                     </div>
 
-                    <!-- Nickname -->
+                    <!-- Company name -->
                     <div class="ip-form-group">
-                        <label class="ip-login__label" for="nickname">
-                            {{ locale === 'ar' ? 'الاسم المستعار' : 'Nickname' }}
-                            <span class="ip-register__public">{{ locale === 'ar' ? '(عام)' : '(public)' }}</span>
+                        <label class="ip-login__label" for="company_name">
+                            {{ locale === 'ar' ? 'اسم الشركة' : 'Company Name' }}
                         </label>
                         <div class="ip-login__input-wrap">
                             <svg class="ip-login__input-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                                <rect x="4" y="3" width="16" height="18" rx="1.5"/><line x1="8" y1="7.5" x2="8.01" y2="7.5"/><line x1="12" y1="7.5" x2="12.01" y2="7.5"/><line x1="16" y1="7.5" x2="16.01" y2="7.5"/><line x1="8" y1="11.5" x2="8.01" y2="11.5"/><line x1="12" y1="11.5" x2="12.01" y2="11.5"/><line x1="16" y1="11.5" x2="16.01" y2="11.5"/><path d="M10 21v-4h4v4"/>
                             </svg>
-                            <input id="nickname" v-model="form.nickname" type="text"
+                            <input id="company_name" v-model="form.company_name" type="text"
                                 class="ip-login__input"
-                                :class="{ 'ip-login__input--error': form.errors.nickname }"
-                                :placeholder="locale === 'ar' ? 'مثال: FinanceGuru' : 'e.g. FinanceGuru'"
-                                autocomplete="off" required />
+                                :class="{ 'ip-login__input--error': form.errors.company_name }"
+                                :placeholder="locale === 'ar' ? 'اسم شركتك' : 'Your company name'"
+                                autocomplete="organization" required />
                         </div>
-                        <p class="ip-register__hint">
-                            {{ locale === 'ar' ? 'هذا الاسم يظهر في المنتدى والحالات بدلاً من اسمك الحقيقي.' : 'This appears in the forum and cases instead of your real name.' }}
-                        </p>
-                        <p v-if="form.errors.nickname" class="ip-login__error">{{ form.errors.nickname }}</p>
+                        <p v-if="form.errors.company_name" class="ip-login__error">{{ form.errors.company_name }}</p>
                     </div>
 
                     <!-- Email -->
@@ -210,56 +199,17 @@ onMounted(() => {
                         <p v-if="form.errors.email" class="ip-login__error">{{ form.errors.email }}</p>
                     </div>
 
-                    <!-- Profession + Experience -->
-                    <div class="ip-register__row-2">
-                        <div class="ip-form-group">
-                            <label class="ip-login__label" for="profession">
-                                {{ locale === 'ar' ? 'المسمى الوظيفي' : 'Profession' }}
-                            </label>
-                            <input id="profession" v-model="form.profession" type="text"
-                                class="ip-login__input ip-login__input--no-icon"
-                                :class="{ 'ip-login__input--error': form.errors.profession }"
-                                :placeholder="locale === 'ar' ? 'مثال: محلل مالي' : 'e.g. Financial Analyst'" />
-                            <p v-if="form.errors.profession" class="ip-login__error">{{ form.errors.profession }}</p>
-                        </div>
-                        <div class="ip-form-group">
-                            <label class="ip-login__label" for="experience_level">
-                                {{ locale === 'ar' ? 'مستوى الخبرة' : 'Experience' }}
-                            </label>
-                            <select id="experience_level" v-model="form.experience_level"
-                                class="ip-login__input ip-login__input--no-icon ip-select"
-                                :class="{ 'ip-login__input--error': form.errors.experience_level }">
-                                <option v-for="level in experienceLevels" :key="level.value" :value="level.value">
-                                    {{ expLabel(level) }}
-                                </option>
-                            </select>
-                            <p v-if="form.errors.experience_level" class="ip-login__error">{{ form.errors.experience_level }}</p>
-                        </div>
-                    </div>
-
-                    <!-- Hub selection -->
+                    <!-- Currency -->
                     <div class="ip-form-group">
-                        <label class="ip-login__label">
-                            {{ locale === 'ar' ? 'اختر مجالك (أو أكثر)' : 'Select Your Hub(s)' }}
+                        <label class="ip-login__label" for="currency">
+                            {{ locale === 'ar' ? 'العملة' : 'Currency' }}
                         </label>
-                        <div class="ip-register__hubs">
-                            <button
-                                v-for="hub in hubs"
-                                :key="hub.slug"
-                                type="button"
-                                class="ip-register__hub-btn"
-                                :class="{
-                                    'ip-register__hub-btn--active': isHubSelected(hub.slug),
-                                    [`ip-register__hub-btn--${hub.slug}`]: true,
-                                }"
-                                @click="toggleHub(hub.slug)"
-                            >
-                                <span class="ip-register__hub-icon">{{ hub.icon }}</span>
-                                <span class="ip-register__hub-name">{{ hubLabel(hub) }}</span>
-                                <span v-if="isHubSelected(hub.slug)" class="ip-register__hub-check">✓</span>
-                            </button>
-                        </div>
-                        <p v-if="form.errors.hubs" class="ip-login__error">{{ form.errors.hubs }}</p>
+                        <select id="currency" v-model="form.currency"
+                            class="ip-login__input ip-login__input--no-icon ip-select"
+                            :class="{ 'ip-login__input--error': form.errors.currency }">
+                            <option v-for="code in CURRENCIES" :key="code" :value="code">{{ code }}</option>
+                        </select>
+                        <p v-if="form.errors.currency" class="ip-login__error">{{ form.errors.currency }}</p>
                     </div>
 
                     <!-- Password -->
@@ -313,13 +263,12 @@ onMounted(() => {
                         </span>
                     </div>
 
-                    <input type="hidden" v-model="form.theme" />
                     <input type="hidden" v-model="form.language" />
 
                     <!-- Submit -->
                     <button type="submit"
                         class="ip-btn ip-btn--primary ip-btn--full ip-login__submit"
-                        :disabled="form.processing || form.hubs.length === 0">
+                        :disabled="form.processing">
                         <svg v-if="form.processing" class="ip-login__spinner" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
                         </svg>

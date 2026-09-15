@@ -60,6 +60,7 @@ class EquipmentPurchaseController extends Controller
             ->through(fn (EquipmentPurchase $purchase) => [
                 'id'             => $purchase->id,
                 'date'           => $purchase->date->toDateString(),
+                'due_date'    => $purchase->due_date?->toDateString(),
                 'vendor_id'      => $purchase->vendor_id,
                 'vendor'         => $purchase->vendor?->name,
                 'category_id'    => $purchase->category_id,
@@ -79,6 +80,9 @@ class EquipmentPurchaseController extends Controller
                     'date'   => $payment->date->toDateString(),
                     'amount' => (float) $payment->amount,
                     'method' => $payment->method,
+                    // Needed so the edit form can prefill the bank /
+                    // operator the payment actually went through.
+                    'payment_channel_id' => $payment->payment_channel_id,
                 ])->values(),
             ]);
 
@@ -170,6 +174,8 @@ class EquipmentPurchaseController extends Controller
                 'unit_price'               => $data['unit_price'],
                 'amount'                   => $amount,
                 'date'                     => $data['date'],
+                // Correctable now — see the note in the Update*Request.
+                'due_date'                 => array_key_exists('due_date', $data) ? $data['due_date'] : $equipmentPurchase->due_date,
                 'useful_life_years'        => $this->usefulLifeFor($data['category_id']),
                 'accumulated_depreciation' => 0,
                 'last_depreciated_through' => null,
@@ -183,6 +189,8 @@ class EquipmentPurchaseController extends Controller
 
     public function destroy(EquipmentPurchase $equipmentPurchase): RedirectResponse
     {
+        $this->authorizeDelete();
+
         DB::transaction(function () use ($equipmentPurchase) {
             $this->journal->reverseAllForPayable($equipmentPurchase);
             $equipmentPurchase->payments()->delete();

@@ -15,7 +15,7 @@ import { forceScrollToTop, shouldResetScroll } from '@/Composables/useScrollToTo
 import { syncCsrfMetaFromPage } from '@/Utils/csrf';
 
 // ══════════════════════════════════════════════════════════════════
-//  InPractice — Main JS Entry Point
+//  Maliyat Docs — Main JS Entry Point
 //
 //  Boots the Vue application with:
 //    - Inertia.js  → connects Vue to Laravel
@@ -25,7 +25,7 @@ import { syncCsrfMetaFromPage } from '@/Utils/csrf';
 //    - PWA prompt  → captures install event for the install banner
 // ══════════════════════════════════════════════════════════════════
 
-const appName = import.meta.env.VITE_APP_NAME || 'InPractice';
+const appName = import.meta.env.VITE_APP_NAME || 'Maliyat Docs';
 
 let lastVisitPreserveScroll = false;
 
@@ -61,8 +61,8 @@ registerServiceWorker();
 
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
-    window.__inpractice_pwa_prompt = e;
-    window.dispatchEvent(new CustomEvent('inpractice-pwa-installable'));
+    window.__maliyat_pwa_prompt = e;
+    window.dispatchEvent(new CustomEvent('maliyat-pwa-installable'));
 });
 
 markPwaColdStart();

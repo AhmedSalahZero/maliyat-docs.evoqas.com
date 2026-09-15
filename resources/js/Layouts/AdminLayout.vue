@@ -12,7 +12,7 @@
 //
 //  NOTE: this file used to be InPractice's, with a "View Platform"
 //  link to the member-facing dashboard and a sidebar for Cases/
-//  Users/Suggestions. None of that exists in MaliyatDocs — the
+//  Users/Suggestions. None of that exists in Maliyat Docs — the
 //  member.* routes were removed entirely and super_admin only
 //  manages companies (see routes/web.php's admin.* group), so the
 //  nav and that link have been replaced rather than edited in place.
@@ -47,6 +47,7 @@ const auth = computed(() => page.props.auth);
 const navItems = [
     { label: 'Dashboard', route: 'admin.dashboard',        icon: 'grid' },
     { label: 'Companies', route: 'admin.companies.index',  icon: 'building' },
+    { label: 'Activity',  route: 'admin.activity.index',   icon: 'pulse' },
 ];
 
 // 6. Methods
@@ -64,7 +65,7 @@ function logout() {
 // 7. Lifecycle
 onMounted(() => {
     // Admin panel always forces Dark theme (the old 'navy' theme this
-    // used to force no longer exists — MaliyatDocs only ships light/dark)
+    // used to force no longer exists — Maliyat Docs only ships light/dark)
     document.documentElement.setAttribute('data-theme', 'dark');
     document.documentElement.setAttribute('lang', 'en');
     document.documentElement.setAttribute('dir', 'ltr');
@@ -142,6 +143,10 @@ watch(
                         <!-- Book icon -->
                         <svg v-if="item.icon === 'book-open'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                        </svg>
+                        <!-- Pulse icon (Activity) -->
+                        <svg v-if="item.icon === 'pulse'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
                         </svg>
                         <!-- Building icon (Companies) -->
                         <svg v-if="item.icon === 'building'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

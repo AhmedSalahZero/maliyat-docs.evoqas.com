@@ -71,6 +71,16 @@ class PageRenderTest extends TestCase
         foreach ($names as $name) {
             $response = $this->actingAs($user)->get(route($name));
 
+            // A link that redirects still has to land somewhere that
+            // renders — /app/reports/trial-balance now forwards into
+            // the External Audit screen, and an old bookmark pointing
+            // at it is only "working" if the destination is a real
+            // page. Following the hop keeps the sweep honest about
+            // that instead of accepting any 302 as a pass.
+            if ($response->isRedirect()) {
+                $response = $this->actingAs($user)->get($response->headers->get('Location'));
+            }
+
             if ($response->getStatusCode() !== 200) {
                 $failures[] = sprintf('%s → HTTP %d', $name, $response->getStatusCode());
             }
@@ -129,6 +139,64 @@ class PageRenderTest extends TestCase
                 ->component('App/Team/Index')
                 ->has('employees', 1)
                 ->where('employees.0.name', 'A Colleague')
+            );
+    }
+
+    /**
+     * These three are linked from the app menu AND fetched as JSON by
+     * the sentence forms' dropdowns. They used to answer only JSON,
+     * so clicking the menu entry dropped a raw array on the screen.
+     */
+    public function test_the_reference_data_links_render_a_page_for_a_person(): void
+    {
+        $user = User::factory()->companyAdmin()->create();
+
+        foreach (['app.customers.index', 'app.vendors.index', 'app.items.index'] as $name) {
+            $this->actingAs($user)
+                ->get(route($name))
+                ->assertOk()
+                ->assertInertia(fn ($page) => $page->component('App/Lookups/Index'));
+        }
+    }
+
+    /**
+     * The dropdowns on the sentence forms do NOT fetch these routes —
+     * each form controller passes its own lists as Inertia props. So
+     * these three are page-only, and this asserts that rather than the
+     * JSON branch they used to carry.
+     */
+    public function test_the_reference_routes_are_pages_not_json_endpoints(): void
+    {
+        $company = Company::factory()->create();
+        $user    = User::factory()->companyAdmin($company)->create();
+
+        \App\Models\Customer::create(['name' => 'Acme', 'company_id' => $company->id]);
+
+        $this->actingAs($user)
+            ->get(route('app.customers.index'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('App/Lookups/Index')
+                ->where('rows.0.name', 'Acme')
+            );
+    }
+
+    public function test_the_items_page_carries_its_categories_too(): void
+    {
+        $company = Company::factory()->create();
+        $user    = User::factory()->companyAdmin($company)->create();
+
+        \App\Models\Category::create([
+            'name' => 'Rent', 'kind' => 'expense', 'company_id' => $company->id,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('app.items.index'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('App/Lookups/Index')
+                ->where('tab', 'items')
+                ->has('categories')
             );
     }
 

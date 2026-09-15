@@ -20,6 +20,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { Head, usePage, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import FormInstructions from '@/Components/App/FormInstructions.vue';
 import ComboSelect from '@/Components/App/ComboSelect.vue';
 import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
 import { useAppTranslations } from '@/Composables/useAppTranslations';
@@ -248,6 +249,12 @@ function submitGenericPay() {
             <h1>{{ t('action_payment_title') }}</h1>
         </div>
 
+        <FormInstructions
+            form-key="payment"
+            :steps="['howto_payment_1', 'howto_payment_2', 'howto_payment_3', 'howto_payment_4']"
+            tip-key="howto_payment_tip"
+        />
+
         <div class="toggle-btns" style="margin-bottom: 18px;">
             <button type="button" :class="{ active: activeTab === 'receive' }" @click="activeTab = 'receive'">{{ t('receiveMoneyTab') }}</button>
             <button type="button" :class="{ active: activeTab === 'pay' }" @click="activeTab = 'pay'">{{ t('payMoneyTab') }}</button>
@@ -285,9 +292,9 @@ function submitGenericPay() {
 
                         <div v-if="settlingInvoiceId === invoice.id" class="settle-form">
                             <span>{{ t('dateLbl') }}</span>
-                            <input v-model="settleForm.date" type="date" :max="todayIso()" style="width: 140px;">
+                            <input v-model="settleForm.date" type="date" :max="todayIso()" class="inp-date" style="width: 15rem;">
                             <span>{{ t('amountNowLbl') }}</span>
-                            <input v-model.number="settleForm.amount" type="number" step="0.01" style="width: 100px;">
+                            <input v-model.number="settleForm.amount" type="number" step="0.01" class="inp-money">
                             <PaymentMethodField v-model="settleForm.method" v-model:channel-id="settleForm.payment_channel_id"
                                 :channels="channelList" :creating-channel="creatingChannel" @create-channel="(name) => createChannel(name, settleForm)" />
                             <button class="confirm" :disabled="submitting" @click="confirmSettleInvoice(invoice)">{{ t('confirmBtn') }}</button>
@@ -303,7 +310,7 @@ function submitGenericPay() {
                 <div class="field-row" style="margin-bottom: 4px;">
                     <div class="field">
                         <label>{{ t('dateLbl') }}</label>
-                        <input v-model="genReceive.date" type="date" :max="todayIso()" style="min-width: 0; width: 160px;">
+                        <input v-model="genReceive.date" type="date" :max="todayIso()" class="inp-date" style="width: 15rem;">
                     </div>
                 </div>
                 <div v-if="genReceiveErrors.date" class="form-error">{{ genReceiveErrors.date }}</div>
@@ -368,9 +375,9 @@ function submitGenericPay() {
 
                         <div v-if="settlingBillKey === `${bill.payable_type}:${bill.id}`" class="settle-form">
                             <span>{{ t('dateLbl') }}</span>
-                            <input v-model="settleForm.date" type="date" :max="todayIso()" style="width: 140px;">
+                            <input v-model="settleForm.date" type="date" :max="todayIso()" class="inp-date" style="width: 15rem;">
                             <span>{{ t('amountNowLbl') }}</span>
-                            <input v-model.number="settleForm.amount" type="number" step="0.01" style="width: 100px;">
+                            <input v-model.number="settleForm.amount" type="number" step="0.01" class="inp-money">
                             <PaymentMethodField v-model="settleForm.method" v-model:channel-id="settleForm.payment_channel_id"
                                 :channels="channelList" :creating-channel="creatingChannel" @create-channel="(name) => createChannel(name, settleForm)" />
                             <button class="confirm" :disabled="submitting" @click="confirmSettleBill(bill)">{{ t('confirmBtn') }}</button>
@@ -386,7 +393,7 @@ function submitGenericPay() {
                 <div class="field-row" style="margin-bottom: 4px;">
                     <div class="field">
                         <label>{{ t('dateLbl') }}</label>
-                        <input v-model="genPay.date" type="date" :max="todayIso()" style="min-width: 0; width: 160px;">
+                        <input v-model="genPay.date" type="date" :max="todayIso()" class="inp-date" style="width: 15rem;">
                     </div>
                 </div>
                 <div v-if="genPayErrors.date" class="form-error">{{ genPayErrors.date }}</div>

@@ -44,6 +44,7 @@ const links = computed(() => {
 
     if (isAdmin.value) {
         items.push({ key: 'team', icon: 'gear', route: 'app.team.index', title: t('menu_team'), sub: t('menu_team_sub') });
+        items.push({ key: 'opening-balance', icon: 'box', route: 'app.opening-balance.index', title: t('menu_opening_balance'), sub: t('menu_opening_balance_sub') });
     }
 
     items.push({ key: 'profile', icon: 'box', route: 'app.profile.index', title: t('menu_profile'), sub: t('menu_profile_sub') });

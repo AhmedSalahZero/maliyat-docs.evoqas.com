@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\App;
 
+use App\Support\FinancialRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -25,8 +26,13 @@ class UpdateExpenseRequest extends FormRequest
         return [
             'vendor_id'   => ['required', Rule::exists('vendors', 'id')->where('company_id', $companyId)],
             'category_id' => ['required', Rule::exists('categories', 'id')->where('company_id', $companyId)->where('kind', 'expense')],
-            'date'        => ['required', 'date'],
-            'amount'      => ['required', 'numeric', 'min:0.01'],
+            'date'        => ['required', ...FinancialRules::date()],
+            'amount'      => ['required', ...FinancialRules::amount()],
+            // A due date entered wrongly at creation could never be
+            // corrected — update() simply didn't accept the field.
+            // Nullable so a bill can also be moved back to "no due
+            // date" rather than only forward.
+            'due_date' => ['nullable', 'date', 'after_or_equal:date', 'before_or_equal:'.FinancialRules::latestAllowedDueDate()],
         ];
     }
 }

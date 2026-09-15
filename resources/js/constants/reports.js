@@ -5,4 +5,8 @@ export const REPORTS = [
     { key: 'supp',     icon: 'statement_supp', route: 'app.reports.supplier-statement',  titleKey: 'report_supplier_statement',  subKey: 'report_supplier_statement_sub',  tabKey: 'tab_statement_supp' },
     { key: 'inv',      icon: 'inv_statement',  route: 'app.reports.inventory-statement', titleKey: 'report_inventory_statement', subKey: 'report_inventory_statement_sub', tabKey: 'tab_inv_statement' },
     { key: 'cashflow', icon: 'cashflow',       route: 'app.reports.cash-flow',           titleKey: 'report_cashflow',            subKey: 'report_cashflow_sub',            tabKey: 'tab_cashflow' },
+    // Trial Balance and Journal live behind this one tile — they are
+    // the auditor's two screens and are always read together. See
+    // ReportController::externalAudit().
+    { key: 'audit',    icon: 'audit',          route: 'app.reports.external-audit',      titleKey: 'report_external_audit',      subKey: 'report_external_audit_sub',      tabKey: 'tab_external_audit' },
 ];

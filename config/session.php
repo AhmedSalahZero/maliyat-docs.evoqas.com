@@ -169,7 +169,11 @@ return [
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE'),
+    // Defaults to ON in production rather than waiting to be
+    // remembered in .env. Left unset it was null, meaning the session
+    // cookie could travel over plain HTTP — the one cookie that must
+    // not. Local and testing stay off so http://127.0.0.1 still works.
+    'secure' => env('SESSION_SECURE_COOKIE', env('APP_ENV') === 'production'),
 
     /*
     |--------------------------------------------------------------------------

@@ -18,8 +18,10 @@ use Illuminate\Support\Facades\Schema;
 //                        of that day (see TrackDailyUserAccess).
 //
 //  Used to power the login-frequency widgets on the admin user list
-//  and the member's own "my activity" panel (see LoginFrequencyWidgets.vue
-//  and the useLoginStats composable).
+//  and the member's own "my activity" panel. (The Vue widgets that
+//  once read this were InPractice leftovers and have been removed —
+//  the table and its writer, UserLoginFrequencyService, are still
+//  live and feed the admin dashboard.)
 //
 //  This table has no `updated_at` column — rows are immutable once
 //  written (append-only activity log), matching UserLoginActivity's

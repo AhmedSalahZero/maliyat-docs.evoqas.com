@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 // ══════════════════════════════════════════════════════════════════
-//  InPractice — Jobs Table
+//  Maliyat Docs — Jobs Table
 //  Laravel system table — do not modify
 //  Handles background tasks: sending emails, push notifications
 // ══════════════════════════════════════════════════════════════════

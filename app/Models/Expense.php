@@ -15,12 +15,13 @@ class Expense extends Model
     protected $fillable = [
         'company_id', 'vendor_id', 'category_id', 'date', 'amount', 'due_date',
         'recurring_id', 'recurring_index', 'recurring_count', 'recurring_frequency',
-        'created_by',
+        'created_by', 'is_opening_balance',
     ];
 
     protected $casts = [
         'date' => 'date',
         'due_date' => 'date',
+        'is_opening_balance' => 'boolean',
     ];
 
     public function vendor(): BelongsTo

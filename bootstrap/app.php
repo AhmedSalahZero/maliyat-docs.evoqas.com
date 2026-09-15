@@ -2,6 +2,8 @@
 
 use App\Http\Middleware\EnsureAdmin;
 use App\Http\Middleware\EnsureMember;
+use App\Http\Middleware\PostDueDepreciation;
+use App\Http\Middleware\PreventDuplicateSubmission;
 use App\Http\Middleware\SetLocale;
 use App\Http\Middleware\TrackDailyUserAccess;
 use Illuminate\Foundation\Application;
@@ -39,6 +41,21 @@ return Application::configure(basePath: dirname(__DIR__))
             TrackDailyUserAccess::class,
         ]);
 
+        // ── PostDueDepreciation runs on every web request ──────
+        // Posts any depreciation the viewer's company owes, on the
+        // first page it opens each day. This replaces the cron
+        // dependency: depreciation used to run only if the server
+        // had a crontab line calling schedule:run, and if that line
+        // was missing it silently never posted at all.
+        //
+        // The work happens in terminate(), after the response has
+        // gone out, so the user never waits for it. On every request
+        // but the day's first it is a single date comparison against
+        // data HandleInertiaRequests has already loaded.
+        $middleware->web(append: [
+            PostDueDepreciation::class,
+        ]);
+
         // ── Register named middleware aliases ──────────────────
         // These names are used in route files:
         //   Route::middleware(['auth', 'admin'])
@@ -46,6 +63,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin'  => EnsureAdmin::class,
             'member' => EnsureMember::class,
+
+            // Applied to the /app and /admin route groups (see
+            // routes/web.php). Not global: a failed login retried
+            // with the same credentials is a legitimate repeat, and
+            // this would refuse it.
+            'no-duplicate' => PreventDuplicateSubmission::class,
         ]);
 
     })

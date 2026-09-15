@@ -16,11 +16,13 @@ class InventoryPurchase extends Model
     protected $fillable = [
         'company_id', 'vendor_id', 'date', 'subtotal',
         'vat_rate', 'vat_amount', 'amount', 'due_date', 'created_by',
+        'is_opening_balance',
     ];
 
     protected $casts = [
         'date' => 'date',
         'due_date' => 'date',
+        'is_opening_balance' => 'boolean',
     ];
 
     public function vendor(): BelongsTo
