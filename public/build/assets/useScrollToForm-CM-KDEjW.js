@@ -1,0 +1,1 @@
+function n(){const e=document.querySelector(".app-header");return e?e.getBoundingClientRect().height:0}function r(e){typeof window>"u"||requestAnimationFrame(()=>{const o=e?.value;if(!o)return;const t=o.getBoundingClientRect().top+window.scrollY-n()-12;window.scrollTo({top:Math.max(t,0),behavior:"smooth"})})}export{r as s};
