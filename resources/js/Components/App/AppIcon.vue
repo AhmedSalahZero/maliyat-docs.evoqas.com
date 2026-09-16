@@ -59,6 +59,9 @@ const NEW_ICONS = {
     filter:   '<path d="M3 4.5h14M6 10h8M8.5 15.5h3"/>',
     search:   '<circle cx="8.5" cy="8.5" r="5.2"/><line x1="12.4" y1="12.4" x2="17" y2="17"/>',
     swap:     '<path d="M4 7h11l-3-3M16 13H5l3 3"/>',
+
+    // A small "factory" glyph — Production Orders tab/card.
+    production: '<path d="M3 17V9l4 3V9l4 3V6l6 4v7z"/><line x1="3" y1="17" x2="17" y2="17"/>',
 };
 
 const ALL_ICONS = { ...PROTOTYPE_ICONS, ...NEW_ICONS };

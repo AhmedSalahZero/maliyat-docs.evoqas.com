@@ -198,6 +198,12 @@ class CustodyController extends Controller
         $this->authorizeDelete();
 
         DB::transaction(function () use ($custody) {
+            $this->logDeletion(
+                $custody,
+                "Custody #{$custody->id} — ".($custody->holder?->name ?? 'Unknown holder').' — '.number_format((float) $custody->amount, 2),
+                ['settlement_lines' => $custody->settlementLines->toArray()]
+            );
+
             $this->journal->reverseAllForPayable($custody);
             $custody->settlementLines()->delete();
             $custody->payments()->delete();

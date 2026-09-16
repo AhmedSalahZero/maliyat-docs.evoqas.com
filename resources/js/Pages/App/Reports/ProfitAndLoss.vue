@@ -3,25 +3,32 @@
 //  Maliyat Docs — Reports/ProfitAndLoss.vue
 //  Location: resources/js/Pages/App/Reports/ProfitAndLoss.vue
 //
-//  Income received vs. expenses paid, cash basis (see
-//  ReportDataService's class doc comment for what "cash basis"
-//  means here). Kept deliberately simple for a non-accountant: one
-//  headline number (net profit) plus two short breakdowns, each
-//  drawn with a plain CSS bar rather than a charting library — easy
-//  to scan on a phone, nothing to configure.
+//  Revenue earned vs. expenses incurred, ACCRUAL basis — see
+//  ReportDataService::profitAndLoss()'s doc comment for why. Kept
+//  deliberately simple for a non-accountant: five headline numbers
+//  (Revenue → COGS → Gross profit → Operating expenses → Net profit,
+//  read top to bottom like a simple income statement) plus two short
+//  breakdowns, each drawn with a plain CSS bar rather than a charting
+//  library — easy to scan on a phone, nothing to configure.
+//
+//  Cash movement (what actually came into/left the till or bank) is
+//  a different question, answered on the Cash Flow report instead —
+//  see Reports/CashFlow.vue.
 // ══════════════════════════════════════════════════════════════════
 
 import { ref, computed } from 'vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import ReportToolbar from '@/Components/App/ReportToolbar.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 
 const props = defineProps({
     from: { type: String, required: true },
     to: { type: String, required: true },
-    income_received: { type: Number, default: 0 },
-    expenses_paid: { type: Number, default: 0 },
+    revenue: { type: Number, default: 0 },
+    cost_of_goods_sold: { type: Number, default: 0 },
+    gross_profit: { type: Number, default: 0 },
+    operating_expenses: { type: Number, default: 0 },
     net_profit: { type: Number, default: 0 },
     expenses_by_category: { type: Array, default: () => [] },
     income_by_item: { type: Array, default: () => [] },
@@ -79,12 +86,22 @@ const pdfHref = computed(() => route('app.reports.profit-loss.export', { format:
 
         <div class="pl-summary">
             <div class="pl-box">
-                <div class="pl-label">{{ t('incomeReceivedLbl') }}</div>
-                <div class="pl-value income">{{ currency }} {{ money(props.income_received) }}</div>
+                <div class="pl-label">{{ t('revenueLbl') }}</div>
+                <div class="pl-value income">{{ currency }} {{ money(props.revenue) }}</div>
             </div>
             <div class="pl-box">
-                <div class="pl-label">{{ t('expensesPaidLbl') }}</div>
-                <div class="pl-value expense">{{ currency }} {{ money(props.expenses_paid) }}</div>
+                <div class="pl-label">{{ t('costOfGoodsSoldLbl') }}</div>
+                <div class="pl-value expense">{{ currency }} {{ money(props.cost_of_goods_sold) }}</div>
+            </div>
+            <div class="pl-box">
+                <div class="pl-label">{{ t('grossProfitLbl') }}</div>
+                <div class="pl-value net" :style="{ color: props.gross_profit >= 0 ? 'var(--color-success-dark)' : 'var(--color-danger-dark)' }">
+                    {{ currency }} {{ money(props.gross_profit) }}
+                </div>
+            </div>
+            <div class="pl-box">
+                <div class="pl-label">{{ t('operatingExpensesLbl') }}</div>
+                <div class="pl-value expense">{{ currency }} {{ money(props.operating_expenses) }}</div>
             </div>
             <div class="pl-box">
                 <div class="pl-label">{{ t('netProfitLbl') }}</div>

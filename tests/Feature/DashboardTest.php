@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\Expense;
 use App\Models\InventoryPurchase;
 use App\Models\Item;
+use App\Models\Payment;
 use App\Models\Sale;
 use App\Models\User;
 use App\Models\Vendor;
@@ -202,6 +203,93 @@ class DashboardTest extends TestCase
 
         $this->assertSame(['Mine'], collect($props['top_customers'])->pluck('name')->all());
         $this->assertSame(['Cement'], collect($props['sku_sales'])->pluck('name')->all());
+    }
+
+    /**
+     * QA audit (Sep 2026), Finding 3: DashboardController opts out of
+     * the automatic BelongsToCompany global scope for performance and
+     * filters every raw query by hand instead. That's verified correct
+     * as of this test, but nothing previously caught a REGRESSION —
+     * a future edit that adds a new figure and forgets its company_id
+     * filter would leak silently. This test is the guard rail: it
+     * exercises every figure the dashboard returns (not just the two
+     * covered by test_another_companys_trade_never_appears above)
+     * against a second company with real, large, easy-to-notice
+     * numbers, so any future leak fails a test immediately instead of
+     * surfacing as a live customer seeing another company's money.
+     */
+    public function test_no_figure_on_the_dashboard_ever_includes_another_companys_money(): void
+    {
+        // My own company: one small, known sale, one small open
+        // invoice, one small unpaid bill.
+        $myCustomer = $this->customer('Mine');
+        $myItem     = $this->item('Cement');
+        $mySale     = $this->sell($myCustomer, $myItem, 1, 100); // 100, fully unpaid → open
+
+        $myVendor   = Vendor::create(['name' => 'My Vendor', 'company_id' => $this->company->id]);
+        $myCategory = \App\Models\Category::create(['name' => 'Rent', 'kind' => 'expense', 'company_id' => $this->company->id]);
+        Expense::create([
+            'company_id' => $this->company->id, 'vendor_id' => $myVendor->id, 'category_id' => $myCategory->id,
+            'date' => now()->toDateString(), 'amount' => 50, // unpaid → open bill
+        ]);
+
+        // A second, unrelated company with LARGE, easy-to-spot
+        // numbers in every single category the dashboard reports on.
+        $other         = Company::factory()->create();
+        $otherCustomer = Customer::create(['name' => 'Theirs', 'company_id' => $other->id]);
+        $otherItem     = Item::create(['name' => 'Their Item', 'company_id' => $other->id]);
+        $otherVendor   = Vendor::create(['name' => 'Their Vendor', 'company_id' => $other->id]);
+        $otherCategory = \App\Models\Category::create(['name' => 'Rent', 'kind' => 'expense', 'company_id' => $other->id]);
+
+        $theirSale = Sale::create([
+            'company_id' => $other->id, 'customer_id' => $otherCustomer->id,
+            'date' => now()->toDateString(), 'subtotal' => 999999, 'vat_rate' => 0,
+            'vat_amount' => 0, 'amount' => 999999,
+        ]);
+        $theirSale->lines()->create([
+            'item_id' => $otherItem->id, 'qty' => 999, 'unit_price' => 1000, 'line_total' => 999999,
+        ]);
+
+        Expense::create([
+            'company_id' => $other->id, 'vendor_id' => $otherVendor->id, 'category_id' => $otherCategory->id,
+            'date' => now()->toDateString(), 'amount' => 888888,
+        ]);
+
+        InventoryPurchase::create([
+            'company_id' => $other->id, 'vendor_id' => $otherVendor->id,
+            'date' => now()->toDateString(), 'subtotal' => 777777, 'vat_rate' => 0,
+            'vat_amount' => 0, 'amount' => 777777,
+        ])->lines()->create([
+            'item_id' => $otherItem->id, 'qty' => 100, 'uom' => 'unit',
+            'qty_per_uom' => 1, 'base_unit_name' => 'unit', 'unit_price' => 7777.77, 'line_total' => 777777,
+        ]);
+
+        Payment::create([
+            'company_id' => $other->id, 'date' => now()->toDateString(),
+            'amount' => 555555, 'direction' => 'in', 'method' => 'cash',
+        ]);
+
+        $props = $this->dashboard()->toArray()['props'];
+
+        // Every money figure must stay at MY scale, never leap to
+        // their six/seven-figure amounts.
+        $this->assertLessThan(1000, $props['income_this_month']);
+        $this->assertLessThan(1000, $props['expenses_this_month']);
+        $this->assertLessThan(1000, $props['cash_balance']);
+
+        // Exactly my one open invoice / one open bill — not theirs too.
+        $this->assertSame(1, $props['open_invoices_count']);
+        $this->assertSame(1, $props['open_bills_count']);
+
+        // Their vendor must never appear in my top suppliers list.
+        $this->assertFalse(
+            collect($props['top_suppliers'])->pluck('name')->contains('Their Vendor'),
+            "Another company's vendor leaked into top_suppliers."
+        );
+
+        // Their customer/item must never appear in my lists either.
+        $this->assertFalse(collect($props['top_customers'])->pluck('name')->contains('Theirs'));
+        $this->assertFalse(collect($props['sku_sales'])->pluck('name')->contains('Their Item'));
     }
 
     public function test_sales_outside_the_period_are_excluded(): void

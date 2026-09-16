@@ -23,13 +23,14 @@ class UpdateItemRequest extends FormRequest
     {
         // Route-model binding applies the company scope, so reaching
         // another company's item already 404s before this runs.
-        return (bool) $this->user();
+        return (bool) $this->user()?->company_id;
     }
 
     public function rules(): array
     {
         return [
             'name'           => ['required', 'string', 'max:150'],
+            'type'           => ['nullable', 'in:trading,raw_material,product'],
             'uom'            => ['nullable', 'string', 'max:40'],
             'qty_per_uom'    => ['nullable', ...FinancialRules::qty()],
             'base_unit_name' => ['nullable', 'string', 'max:40'],
@@ -39,6 +40,7 @@ class UpdateItemRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $this->merge([
+            'type'           => $this->type ?: 'trading',
             'uom'            => $this->uom ?: 'Carton',
             'qty_per_uom'    => $this->qty_per_uom ?: 1,
             'base_unit_name' => $this->base_unit_name ?: 'Piece',

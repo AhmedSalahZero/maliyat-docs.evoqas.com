@@ -32,6 +32,9 @@ class StoreExpenseRequest extends FormRequest
             'category_id' => ['required', Rule::exists('categories', 'id')->where('company_id', $companyId)->where('kind', 'expense')],
             'date'        => ['required', ...FinancialRules::date()],
             'amount'      => ['required', ...FinancialRules::amount()],
+            // "This is Production Labor" checkbox — see
+            // ExpenseController::postExpenseJournal().
+            'is_production_labor' => ['nullable', 'boolean'],
 
             'mode'        => ['required', Rule::in(['now', 'later', 'partial', 'installment'])],
             'method'      => ['nullable', Rule::in(['cash', 'bank', 'visa', 'instapay', 'wallet'])],

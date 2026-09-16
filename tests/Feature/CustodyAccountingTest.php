@@ -238,13 +238,11 @@ class CustodyAccountingTest extends TestCase
      * headline and its category breakdown.
      *
      * Read the name precisely: this proves custody is no longer a
-     * SOURCE of that disagreement, not that the two halves always
-     * agree. They still differ by whatever was paid for stock and
-     * equipment, which are counted in the headline and not in the
-     * breakdown — a separate, older problem this fix did not touch.
-     * ReportConsistencyTest pins that gap with a figure so it stays
-     * visible; asserting a general equality here would hide it
-     * behind a scenario that happens to avoid it.
+     * SOURCE of that disagreement. The separate, older problem —
+     * stock and equipment counted in the headline and not in the
+     * breakdown — has since been closed too, and
+     * ReportConsistencyTest asserts the two halves match in a
+     * scenario that actually contains both.
      */
     public function test_custody_no_longer_splits_the_headline_from_the_breakdown(): void
     {

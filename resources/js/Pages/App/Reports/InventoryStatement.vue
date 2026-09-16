@@ -5,6 +5,10 @@
 //
 //  Quantity and value per SKU, using weighted-average cost — see
 //  Item::averagePurchaseCost() / ReportDataService::inventoryStatement().
+//  Both purchases/sales AND Production Order output/consumption feed
+//  the numbers here now, straight from the same Item model methods
+//  Production and Sales already rely on for their own stock checks —
+//  see the class doc comment on Item.php.
 //
 //  Two views, both server-rendered by the same page (no client
 //  math): pick a product from the dropdown to see its own stat
@@ -21,7 +25,7 @@ import { Head, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import AppIcon from '@/Components/App/AppIcon.vue';
 import ReportToolbar from '@/Components/App/ReportToolbar.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 
 const props = defineProps({
     items: { type: Array, required: true },
@@ -113,6 +117,15 @@ function stockBadge(item) {
     if (item.is_out_of_stock) return { cls: 'stock-out', label: t('outOfStockBadge') };
     return null;
 }
+
+function historyTypeLabel(type) {
+    return {
+        purchase: t('purchaseLbl'),
+        sale: t('saleLbl'),
+        produced: t('producedLbl'),
+        consumed: t('consumedLbl'),
+    }[type] ?? type;
+}
 </script>
 
 <template>
@@ -170,12 +183,12 @@ function stockBadge(item) {
 
                     <div class="stats-row">
                         <div class="stat-box">
-                            <div class="stat-box__label">{{ t('totalPurchasedLbl') }}</div>
-                            <div class="stat-box__value">{{ qty(props.selected.total_purchased_base) }} {{ props.selected.base_unit_name }}</div>
+                            <div class="stat-box__label">{{ t('totalInLbl') }}</div>
+                            <div class="stat-box__value">{{ qty(props.selected.total_in_base) }} {{ props.selected.base_unit_name }}</div>
                         </div>
                         <div class="stat-box">
-                            <div class="stat-box__label">{{ t('totalSoldLbl') }}</div>
-                            <div class="stat-box__value">{{ qty(props.selected.total_sold_base) }} {{ props.selected.base_unit_name }}</div>
+                            <div class="stat-box__label">{{ t('totalOutLbl') }}</div>
+                            <div class="stat-box__value">{{ qty(props.selected.total_out_base) }} {{ props.selected.base_unit_name }}</div>
                         </div>
                         <div class="stat-box">
                             <div class="stat-box__label">{{ t('currentStockLbl') }}</div>
@@ -206,8 +219,8 @@ function stockBadge(item) {
                             <tr v-for="(row, idx) in props.history" :key="idx">
                                 <td :data-label="t('dateLbl')">{{ row.date }}</td>
                                 <td :data-label="t('typeLbl')">
-                                    <span class="badge" :class="row.type === 'purchase' ? 'in' : 'out'">
-                                        {{ row.type === 'purchase' ? t('purchaseLbl') : t('saleLbl') }}
+                                    <span class="badge" :class="row.qty >= 0 ? 'in' : 'out'">
+                                        {{ historyTypeLabel(row.type) }}
                                     </span>
                                 </td>
                                 <td class="num" :data-label="t('qtyLbl')" :style="{ color: row.qty >= 0 ? 'var(--color-money-in)' : 'var(--color-money-out)' }">
@@ -236,8 +249,8 @@ function stockBadge(item) {
                             <tr>
                                 <th>{{ t('itemLbl') }}</th>
                                 <template v-if="props.mode === 'quantity'">
-                                    <th class="num">{{ t('totalPurchasedLbl') }}</th>
-                                    <th class="num">{{ t('totalSoldLbl') }}</th>
+                                    <th class="num">{{ t('totalInLbl') }}</th>
+                                    <th class="num">{{ t('totalOutLbl') }}</th>
                                     <th class="num">{{ t('currentStockLbl') }}</th>
                                 </template>
                                 <template v-else>
@@ -255,8 +268,8 @@ function stockBadge(item) {
                                 </td>
 
                                 <template v-if="props.mode === 'quantity'">
-                                    <td class="num" :data-label="t('totalPurchasedLbl')">{{ qty(item.total_purchased_base) }} {{ item.base_unit_name }}</td>
-                                    <td class="num" :data-label="t('totalSoldLbl')">{{ qty(item.total_sold_base) }} {{ item.base_unit_name }}</td>
+                                    <td class="num" :data-label="t('totalInLbl')">{{ qty(item.total_in_base) }} {{ item.base_unit_name }}</td>
+                                    <td class="num" :data-label="t('totalOutLbl')">{{ qty(item.total_out_base) }} {{ item.base_unit_name }}</td>
                                     <td class="num" :data-label="t('currentStockLbl')"><strong>{{ qty(item.current_stock) }} {{ item.base_unit_name }}</strong></td>
                                 </template>
                                 <template v-else>

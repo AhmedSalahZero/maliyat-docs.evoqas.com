@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Database\Eloquent\Model;
+
 // ══════════════════════════════════════════════════════════════════
 //  Maliyat Docs — base Controller
 //
-//  Carries the one authorization check that every destructive action
-//  in the app shares, so it reads the same way in all of them and
-//  cannot be left out of a new one by accident.
+//  Carries the two things every destructive action in the app
+//  shares, so they read the same way everywhere and cannot be left
+//  out of a new one by accident.
 // ══════════════════════════════════════════════════════════════════
 abstract class Controller
 {
@@ -19,8 +21,10 @@ abstract class Controller
      * is the exception, and the reason is what delete actually does
      * here — removing a sale also removes the payments recorded
      * against it, so the cash that came in disappears alongside the
-     * invoice. The rows are gone for good (there is no soft delete)
-     * and nothing records who removed them.
+     * invoice. The rows are gone for good (there is no soft delete),
+     * which is why every destroy() also calls logDeletion() below —
+     * gone from the working tables is fine, gone with no trace at
+     * all is not.
      *
      * Editing is deliberately NOT behind this. An edit leaves a full
      * reversal trail in the general ledger and touches no payments,
@@ -39,5 +43,32 @@ abstract class Controller
             403,
             __('errors.delete_requires_admin')
         );
+    }
+
+    /**
+     * Record what a financial record looked like the instant before
+     * it's deleted — who deleted it, and what it contained.
+     *
+     * QA audit (Sep 2026) finding: destroy() permanently erased the
+     * row with nothing anywhere saying who did it or what was in it.
+     * For a bookkeeping app that's a real gap — there was no way to
+     * answer "who deleted this invoice, and what did it say?" after
+     * the fact, whether the delete was a mistake or something worse.
+     *
+     * Call this BEFORE the actual delete, inside the same
+     * DB::transaction() the delete already runs in, so the two
+     * either both happen or neither does — a delete can never
+     * succeed while leaving no trace behind.
+     *
+     * $summary should be a short, human-readable line (e.g. "Sale
+     * #482 — Acme Trading — 4,500.00 EGP") — see each destroy() for
+     * the exact wording it uses. $extra is for anything worth
+     * capturing that the model itself doesn't own, e.g. a sale's own
+     * line items, since those are deleted separately and won't be on
+     * $model->toArray() by the time anyone reads this log back.
+     */
+    protected function logDeletion(Model $model, string $summary, array $extra = []): void
+    {
+        \App\Support\DeletionLogger::log($model, $summary, $extra);
     }
 }

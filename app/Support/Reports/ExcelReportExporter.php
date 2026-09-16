@@ -72,7 +72,7 @@ class ExcelReportExporter
 
         // ── Title banner ────────────────────────────────────────
         $sheet->mergeCells("A{$row}:{$lastColLetter}{$row}");
-        $sheet->setCellValue("A{$row}", $doc['title'] ?? 'Report');
+        $sheet->setCellValue("A{$row}", self::safeCell($doc['title'] ?? 'Report'));
         $sheet->getStyle("A{$row}")->applyFromArray([
             'font' => ['bold' => true, 'size' => 16, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::BRAND_BLUE]],
@@ -83,7 +83,7 @@ class ExcelReportExporter
 
         if (! empty($doc['subtitle'])) {
             $sheet->mergeCells("A{$row}:{$lastColLetter}{$row}");
-            $sheet->setCellValue("A{$row}", $doc['subtitle']);
+            $sheet->setCellValue("A{$row}", self::safeCell($doc['subtitle']));
             $sheet->getStyle("A{$row}")->applyFromArray([
                 'font' => ['italic' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
                 'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::BRAND_DARK]],
@@ -96,11 +96,11 @@ class ExcelReportExporter
 
         // ── Meta lines (company, currency, generated at, filters) ─
         foreach ($doc['meta'] ?? [] as $meta) {
-            $sheet->setCellValue("A{$row}", $meta['label'].':');
+            $sheet->setCellValue("A{$row}", self::safeCell($meta['label'].':'));
             $sheet->getStyle("A{$row}")->applyFromArray([
                 'font' => ['bold' => true, 'color' => ['rgb' => self::TEXT_DARK]],
             ]);
-            $sheet->setCellValue("B{$row}", $meta['value']);
+            $sheet->setCellValue("B{$row}", self::safeCell($meta['value']));
             $row++;
         }
 
@@ -120,8 +120,8 @@ class ExcelReportExporter
                 $fill = match ($stat['tone'] ?? 'neutral') {
                     'income' => 'E3F7EA', 'expense' => 'FDE8E9', 'primary' => self::SOFT_BLUE, default => 'EEF2FA',
                 };
-                $sheet->setCellValue("{$colLetter}{$statsRow}", $stat['label']);
-                $sheet->setCellValue("{$colLetter}".($statsRow + 1), $stat['value']);
+                $sheet->setCellValue("{$colLetter}{$statsRow}", self::safeCell($stat['label']));
+                $sheet->setCellValue("{$colLetter}".($statsRow + 1), self::safeCell($stat['value']));
                 $sheet->getStyle("{$colLetter}{$statsRow}")->applyFromArray([
                     'font' => ['size' => 9, 'color' => ['rgb' => self::TEXT_DARK]],
                     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $fill]],
@@ -138,7 +138,7 @@ class ExcelReportExporter
         // ── Sections (each with its own header row + rows + totals) ─
         foreach ($doc['sections'] ?? [] as $section) {
             if (! empty($section['heading'])) {
-                $sheet->setCellValue("A{$row}", $section['heading']);
+                $sheet->setCellValue("A{$row}", self::safeCell($section['heading']));
                 $sheet->getStyle("A{$row}")->applyFromArray([
                     'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => self::BRAND_DARK]],
                 ]);
@@ -150,7 +150,7 @@ class ExcelReportExporter
 
             foreach ($columns as $i => $column) {
                 $colLetter = self::columnLetter($i + 1);
-                $sheet->setCellValue("{$colLetter}{$headerRow}", $column['label']);
+                $sheet->setCellValue("{$colLetter}{$headerRow}", self::safeCell($column['label']));
             }
             $sheet->getStyle("A{$headerRow}:".self::columnLetter(count($columns))."{$headerRow}")->applyFromArray([
                 'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
@@ -164,7 +164,7 @@ class ExcelReportExporter
             foreach ($section['rows'] ?? [] as $rowIndex => $dataRow) {
                 foreach ($columns as $i => $column) {
                     $colLetter = self::columnLetter($i + 1);
-                    $sheet->setCellValue("{$colLetter}{$row}", $dataRow[$i] ?? '');
+                    $sheet->setCellValue("{$colLetter}{$row}", self::safeCell($dataRow[$i] ?? ''));
                     $sheet->getStyle("{$colLetter}{$row}")->getAlignment()->setHorizontal(
                         ($column['align'] ?? 'start') === 'end' ? Alignment::HORIZONTAL_RIGHT : Alignment::HORIZONTAL_LEFT
                     );
@@ -187,7 +187,7 @@ class ExcelReportExporter
             if (! empty($section['totals'])) {
                 foreach ($columns as $i => $column) {
                     $colLetter = self::columnLetter($i + 1);
-                    $sheet->setCellValue("{$colLetter}{$row}", $section['totals'][$i] ?? '');
+                    $sheet->setCellValue("{$colLetter}{$row}", self::safeCell($section['totals'][$i] ?? ''));
                 }
                 $sheet->getStyle("A{$row}:".self::columnLetter(count($columns))."{$row}")->applyFromArray([
                     'font' => ['bold' => true, 'color' => ['rgb' => self::BRAND_DARK]],
@@ -223,5 +223,41 @@ class ExcelReportExporter
     private static function columnLetter(int $index): string
     {
         return \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index);
+    }
+
+    /**
+     * Guard against spreadsheet "formula injection" (a.k.a. CSV/Excel
+     * injection — see e.g. OWASP's CSV Injection page).
+     *
+     * Every value written into a data cell ultimately traces back,
+     * at some point in the call chain, to something a user typed —
+     * a customer name, a vendor name, a category — none of which is
+     * restricted from starting with a spreadsheet-formula character.
+     * Excel (and most spreadsheet software) treats a cell starting
+     * with =, +, -, or @ as a formula to evaluate when the file is
+     * opened, not as plain text — so an unescaped customer named
+     * e.g. `=HYPERLINK("https://evil.example","Click")` would render
+     * as a live, misleading link the moment someone opens the
+     * exported statement in Excel.
+     *
+     * Prefixing such a value with a leading apostrophe is the
+     * standard fix: spreadsheet software treats a leading apostrophe
+     * as "the rest of this is literal text", so the value still
+     * displays exactly as typed but is never evaluated as a formula.
+     * Ordinary text (the overwhelming majority of what passes
+     * through here) is returned completely unchanged.
+     */
+    private static function safeCell(mixed $value): mixed
+    {
+        if (! is_string($value) || $value === '') {
+            return $value;
+        }
+
+        return str_starts_with($value, '=')
+            || str_starts_with($value, '+')
+            || str_starts_with($value, '-')
+            || str_starts_with($value, '@')
+            ? "'".$value
+            : $value;
     }
 }

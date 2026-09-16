@@ -43,6 +43,7 @@ class RegisterService
             $company = Company::create([
                 'name'     => $data['company_name'],
                 'currency' => $data['currency'] ?? 'EGP',
+                'business_types' => $data['business_types'] ?? ['trading'],
             ]);
 
             $user = User::create([

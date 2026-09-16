@@ -14,7 +14,7 @@
 import { Head, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import AppIcon from '@/Components/App/AppIcon.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 import { REPORTS } from '@/constants/reports';
 
 const { t } = useAppTranslations();

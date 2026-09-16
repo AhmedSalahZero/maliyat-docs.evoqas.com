@@ -192,6 +192,11 @@ class EquipmentPurchaseController extends Controller
         $this->authorizeDelete();
 
         DB::transaction(function () use ($equipmentPurchase) {
+            $this->logDeletion(
+                $equipmentPurchase,
+                "Equipment purchase #{$equipmentPurchase->id} — ".($equipmentPurchase->vendor?->name ?? 'Unknown vendor').' — '.number_format((float) $equipmentPurchase->amount, 2)
+            );
+
             $this->journal->reverseAllForPayable($equipmentPurchase);
             $equipmentPurchase->payments()->delete();
             $equipmentPurchase->installments()->delete();

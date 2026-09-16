@@ -16,12 +16,14 @@ class Expense extends Model
         'company_id', 'vendor_id', 'category_id', 'date', 'amount', 'due_date',
         'recurring_id', 'recurring_index', 'recurring_count', 'recurring_frequency',
         'created_by', 'is_opening_balance',
+        'is_production_labor', 'production_labor_applied_snapshot',
     ];
 
     protected $casts = [
         'date' => 'date',
         'due_date' => 'date',
         'is_opening_balance' => 'boolean',
+        'is_production_labor' => 'boolean',
     ];
 
     public function vendor(): BelongsTo

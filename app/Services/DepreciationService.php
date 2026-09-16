@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\EquipmentPurchase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 // ══════════════════════════════════════════════════════════════════
 //  Maliyat Docs — DepreciationService
@@ -161,12 +162,31 @@ class DepreciationService
 
         while ($periodEnd->lessThanOrEqualTo($today) && $purchase->remainingDepreciableAmount() > 0.004) {
             $amount = min($monthly, $purchase->remainingDepreciableAmount());
+            $postingDate = $periodEnd->toDateString();
 
-            $this->journal->postDepreciation($purchase, $amount, $periodEnd->toDateString());
+            // The ledger entry and the watermark that records it was
+            // made are one fact, so they commit together.
+            //
+            // They used to be two separate writes. If the save failed
+            // after the entry had already been committed — a deadlock,
+            // a dropped connection — the month was in the ledger but
+            // last_depreciated_through had not moved, so the NEXT run
+            // posted the same month again. Nothing would have reported
+            // that: depreciation is deliberately invisible to the user,
+            // so a duplicate would surface months later as an asset
+            // worth less than it should be, with no way to trace when
+            // it happened.
+            //
+            // The per-company lock in catchUpCompany() prevents two
+            // runs colliding. It does nothing about one run failing
+            // halfway, which is what this closes.
+            DB::transaction(function () use ($purchase, $amount, $postingDate) {
+                $this->journal->postDepreciation($purchase, $amount, $postingDate);
 
-            $purchase->accumulated_depreciation = round((float) $purchase->accumulated_depreciation + $amount, 2);
-            $purchase->last_depreciated_through = $periodEnd->toDateString();
-            $purchase->save();
+                $purchase->accumulated_depreciation = round((float) $purchase->accumulated_depreciation + $amount, 2);
+                $purchase->last_depreciated_through = $postingDate;
+                $purchase->save();
+            });
 
             $posted++;
             $periodEnd = $periodEnd->copy()->addMonthNoOverflow()->endOfMonth();

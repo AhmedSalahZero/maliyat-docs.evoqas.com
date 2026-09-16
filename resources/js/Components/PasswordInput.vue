@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { useAuthStore } from '@/Stores/useAuthStore'
+import { useAuthStore } from '@/stores/useAuthStore'
 
 const props = defineProps({
     modelValue: { type: String, default: '' },

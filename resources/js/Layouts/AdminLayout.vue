@@ -21,7 +21,7 @@
 // 1. Imports
 import { onMounted, computed, ref, watch } from 'vue';
 import { usePage, Link, router }           from '@inertiajs/vue3';
-import { useAuthStore }                    from '@/Stores/useAuthStore';
+import { useAuthStore }                    from '@/stores/useAuthStore';
 
 // 2. Props
 defineProps({

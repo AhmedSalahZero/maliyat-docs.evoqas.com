@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
-import { useAuthStore } from '@/Stores/useAuthStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 
 defineProps({
     title: { type: String, required: true },
@@ -72,6 +72,7 @@ onMounted(() => {
                     class="ip-shell__ctrl-btn"
                     @click="toggleLocale"
                     :title="locale === 'en' ? 'العربية' : 'English'"
+                    :aria-label="locale === 'en' ? 'العربية' : 'English'"
                 >
                     <span class="ip-shell__ctrl-label">{{ locale === 'en' ? 'ع' : 'EN' }}</span>
                 </button>
@@ -79,7 +80,8 @@ onMounted(() => {
                     type="button"
                     class="ip-shell__ctrl-btn"
                     @click="toggleTheme"
-                    :title="isDark ? 'Navy theme' : 'Dark theme'"
+                    :title="isDark ? 'Light theme' : 'Dark theme'"
+                    :aria-label="isDark ? 'Light theme' : 'Dark theme'"
                 >
                     <svg v-if="isDark" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>

@@ -40,7 +40,10 @@ class RegistrationVisibilityTest extends TestCase
     /** What the browser sends when a person fills the form properly. */
     private function payload(array $overrides = []): array
     {
-        return array_merge([
+        $unset = $overrides['__unset'] ?? null;
+        unset($overrides['__unset']);
+
+        $payload = array_merge([
             'name'                  => 'Ahmed Salah',
             'company_name'          => 'Evoqas Trading',
             'email'                 => 'ahmed@example.test',
@@ -48,9 +51,15 @@ class RegistrationVisibilityTest extends TestCase
             'language'              => 'en',
             'password'              => 'password123',
             'password_confirmation' => 'password123',
+            'business_types'        => ['trading'],
             '_hp'                   => '',
-            '_ft'                   => (now()->timestamp * 1000) - 10000,
         ], $overrides);
+
+        if ($unset) {
+            unset($payload[$unset]);
+        }
+
+        return $payload;
     }
 
     // ── The happy path still works ───────────────────────────────
@@ -83,9 +92,7 @@ class RegistrationVisibilityTest extends TestCase
     {
         return [
             'the browser autofilled the honeypot' => [['_hp' => 'https://example.com'], '_hp'],
-            'the timestamp never got set'         => [['_ft' => 0], '_ft'],
-            'the timestamp was stripped'          => [['_ft' => null], '_ft'],
-            'the timestamp is not a number'       => [['_ft' => 'abc'], '_ft'],
+            'the honeypot field was stripped'     => [['__unset' => '_hp'], '_hp'],
         ];
     }
 
@@ -111,15 +118,50 @@ class RegistrationVisibilityTest extends TestCase
     }
 
     /**
-     * The one guard that already had somewhere to speak: too-fast
-     * submissions report against the email field.
+     * The timing guard, which now lives entirely on the server.
+     *
+     * It used to compare a timestamp the BROWSER sent against the
+     * server's clock, and reported failure as __('auth.failed') —
+     * "These credentials do not match our records" — on a form where
+     * nothing is being matched. A customer whose device clock ran a
+     * minute fast was told their credentials were wrong while
+     * creating their first account.
      */
-    public function test_a_submission_faster_than_a_human_is_refused_on_a_visible_field(): void
+    public function test_a_submission_faster_than_a_human_is_refused(): void
     {
-        $this->post('/register', $this->payload(['_ft' => (now()->timestamp * 1000) - 500]))
-            ->assertSessionHasErrors('email');
+        $this->withSession([\App\Http\Requests\Auth\StoreRegisterRequest::FORM_OPENED_AT => now()])
+            ->post('/register', $this->payload())
+            ->assertSessionHasErrors('_hp');
 
         $this->assertSame(0, User::count());
+    }
+
+    public function test_the_timing_guard_never_reports_a_sign_in_error(): void
+    {
+        $this->withSession([\App\Http\Requests\Auth\StoreRegisterRequest::FORM_OPENED_AT => now()])
+            ->post('/register', $this->payload());
+
+        $message = session('errors')->first();
+
+        $this->assertNotSame(
+            __('auth.failed'),
+            $message,
+            'Registration reports the SIGN-IN error, on a form with no credentials to match'
+        );
+        $this->assertSame(__('auth.blocked_submission'), $message);
+    }
+
+    /**
+     * The device clock is no longer consulted, so no amount of skew
+     * can refuse somebody who really did take their time.
+     */
+    public function test_a_wrong_device_clock_cannot_refuse_a_real_person(): void
+    {
+        $this->withSession([\App\Http\Requests\Auth\StoreRegisterRequest::FORM_OPENED_AT => now()->subMinutes(5)])
+            ->post('/register', $this->payload())
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(1, User::count());
     }
 
     public function test_the_block_message_exists_in_both_languages(): void
@@ -236,17 +278,19 @@ class RegistrationVisibilityTest extends TestCase
     }
 
     /**
-     * Zero is the value that used to get through to the server and
-     * be rejected there, invisibly.
+     * The browser no longer sends a timestamp at all — the guard is
+     * measured on the server, where there is only one clock. A
+     * timestamp travelling through the browser is exactly what let a
+     * wrong device clock refuse a real customer.
      */
-    public function test_the_time_guard_is_stamped_before_anything_can_submit(): void
+    public function test_the_browser_no_longer_sends_a_clock_reading(): void
     {
         $this->assertStringNotContainsString(
-            '_ft: 0,',
+            'Date.now()',
             $this->registerMarkup(),
-            'The time guard starts at zero, which the server rejects'
+            'The form still trusts the device clock'
         );
 
-        $this->assertStringContainsString('_ft: Date.now()', $this->registerPage());
+        $this->assertStringNotContainsString('_ft', $this->registerMarkup());
     }
 }

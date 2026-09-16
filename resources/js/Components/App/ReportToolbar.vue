@@ -26,7 +26,7 @@
 
 import { ref, onMounted } from 'vue';
 import AppIcon from '@/Components/App/AppIcon.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 
 const props = defineProps({
     excelHref: { type: String, required: true },

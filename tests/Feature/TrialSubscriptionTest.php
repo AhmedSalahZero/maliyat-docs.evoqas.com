@@ -54,6 +54,7 @@ class TrialSubscriptionTest extends TestCase
         $this->post('/register', [
             '_hp' => '', '_ft' => (now()->timestamp - 10) * 1000,
             'company_name' => 'Signed Up Co', 'currency' => 'SAR',
+            'business_types' => ['trading'],
             'name' => 'Owner', 'email' => 'owner@example.test',
             'password' => 'secret-pass1', 'password_confirmation' => 'secret-pass1',
         ])->assertSessionHasNoErrors();

@@ -22,7 +22,8 @@ import { computed, ref, watch } from 'vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import FormInstructions from '@/Components/App/FormInstructions.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useBusinessType } from '@/composables/useBusinessType';
 
 const props = defineProps({
     tab:        { type: String, default: 'customers' },
@@ -31,6 +32,7 @@ const props = defineProps({
 });
 
 const { t } = useAppTranslations();
+const { isProduction } = useBusinessType();
 
 const TABS = [
     { key: 'customers', route: 'app.customers.index', labelKey: 'lookup_customers' },
@@ -40,12 +42,26 @@ const TABS = [
 
 const isItems = computed(() => props.tab === 'items');
 
+// Extra columns: items get a Unit column (+ a Type column when
+// Production is on); customers/vendors get one extra column each.
+const columnCount = computed(() => {
+    let count = 2;
+    if (isItems.value) {
+        count += 1;
+        if (isProduction.value) count += 1;
+    } else if (props.tab === 'customers' || props.tab === 'vendors') {
+        count += 1;
+    }
+    return count;
+});
+
 // ── Editing ──────────────────────────────────────────────────────
 const editingId = ref(null);
 
 const form = useForm({
     name: '',
     // Items only.
+    type: 'trading',
     uom: '',
     qty_per_uom: 1,
     base_unit_name: '',
@@ -57,6 +73,7 @@ function startEdit(row) {
     form.reset();
     form.clearErrors();
     form.name = row.name ?? '';
+    form.type = row.type ?? 'trading';
     form.uom = row.uom ?? '';
     form.qty_per_uom = row.qty_per_uom ?? 1;
     form.base_unit_name = row.base_unit_name ?? '';
@@ -84,6 +101,7 @@ function save() {
         if (props.tab === 'items') {
             return {
                 name: data.name,
+                type: data.type,
                 uom: data.uom,
                 qty_per_uom: data.qty_per_uom,
                 base_unit_name: data.base_unit_name,
@@ -107,7 +125,10 @@ const addingNew = ref(false);
 const createForm = useForm({
     name: '',
     phone: '',        // customers
-    type: 'vendor',   // vendors — required by StoreVendorRequest
+    type: 'vendor',   // vendors — required by StoreVendorRequest; ALSO
+                       // reused for items' type (trading/raw_material/
+                       // product) — the two tabs never post at once,
+                       // so this can't collide.
     uom: '',          // items
     qty_per_uom: 1,   // items
     base_unit_name: '', // items
@@ -116,6 +137,11 @@ const createForm = useForm({
 function startAddNew() {
     createForm.reset();
     createForm.clearErrors();
+    // Items default to Trading unless the picker below is shown
+    // (Production companies only) and the user changes it.
+    if (props.tab === 'items') {
+        createForm.type = 'trading';
+    }
     addingNew.value = true;
 }
 
@@ -136,6 +162,7 @@ function createRow() {
         if (props.tab === 'items') {
             return {
                 name: data.name,
+                type: data.type,
                 uom: data.uom,
                 qty_per_uom: data.qty_per_uom,
                 base_unit_name: data.base_unit_name,
@@ -253,6 +280,7 @@ function unitSummary(row) {
                 <thead>
                     <tr>
                         <th>{{ t('lookup_name') }}</th>
+                        <th v-if="isItems && isProduction">{{ t('lookup_item_type') }}</th>
                         <th v-if="isItems">{{ t('lookup_unit') }}</th>
                         <th v-if="props.tab === 'customers'">{{ t('lookup_phone') }}</th>
                         <th v-if="props.tab === 'vendors'">{{ t('lookup_vendor_type') }}</th>
@@ -263,7 +291,7 @@ function unitSummary(row) {
                     <!-- New-row form, always first so it's the first
                          thing seen after tapping "+ Add new" -->
                     <tr v-if="addingNew">
-                        <td :colspan="isItems || props.tab === 'customers' || props.tab === 'vendors' ? 3 : 2">
+                        <td :colspan="columnCount">
                             <div class="lookup-edit">
                                 <div class="field">
                                     <label for="lookup-new-name">{{ t('lookup_name') }}</label>
@@ -271,6 +299,14 @@ function unitSummary(row) {
                                 </div>
 
                                 <template v-if="isItems">
+                                    <div v-if="isProduction" class="field">
+                                        <label for="lookup-new-itemtype">{{ t('lookup_item_type') }}</label>
+                                        <select id="lookup-new-itemtype" v-model="createForm.type">
+                                            <option value="trading">{{ t('lookup_item_type_trading') }}</option>
+                                            <option value="raw_material">{{ t('lookup_item_type_raw_material') }}</option>
+                                            <option value="product">{{ t('lookup_item_type_product') }}</option>
+                                        </select>
+                                    </div>
                                     <div class="field">
                                         <label for="lookup-new-uom">{{ t('lookup_uom') }}</label>
                                         <input id="lookup-new-uom" v-model="createForm.uom" type="text" placeholder="Carton">
@@ -321,6 +357,11 @@ function unitSummary(row) {
                     <template v-for="row in props.rows" :key="row.id">
                         <tr v-if="editingId !== row.id">
                             <td class="lookup-name">{{ row.name }}</td>
+                            <td v-if="isItems && isProduction">
+                                <span v-if="row.type === 'raw_material'">{{ t('lookup_item_type_raw_material') }}</span>
+                                <span v-else-if="row.type === 'product'">{{ t('lookup_item_type_product') }}</span>
+                                <span v-else>{{ t('lookup_item_type_trading') }}</span>
+                            </td>
                             <td v-if="isItems">{{ unitSummary(row) }}</td>
                             <td v-if="props.tab === 'customers'">{{ row.phone || '—' }}</td>
                             <td v-if="props.tab === 'vendors'">
@@ -336,7 +377,7 @@ function unitSummary(row) {
                         <!-- Inline editor, in the row's own place so
                              it's obvious which record is being changed -->
                         <tr v-else>
-                            <td :colspan="isItems || props.tab === 'customers' || props.tab === 'vendors' ? 3 : 2">
+                            <td :colspan="columnCount">
                                 <div class="lookup-edit">
                                     <div class="field">
                                         <label :for="`lookup-name-${row.id}`">{{ t('lookup_name') }}</label>
@@ -344,6 +385,14 @@ function unitSummary(row) {
                                     </div>
 
                                     <template v-if="isItems">
+                                        <div v-if="isProduction" class="field">
+                                            <label :for="`lookup-itemtype-${row.id}`">{{ t('lookup_item_type') }}</label>
+                                            <select :id="`lookup-itemtype-${row.id}`" v-model="form.type">
+                                                <option value="trading">{{ t('lookup_item_type_trading') }}</option>
+                                                <option value="raw_material">{{ t('lookup_item_type_raw_material') }}</option>
+                                                <option value="product">{{ t('lookup_item_type_product') }}</option>
+                                            </select>
+                                        </div>
                                         <div class="field">
                                             <label :for="`lookup-uom-${row.id}`">{{ t('lookup_uom') }}</label>
                                             <input :id="`lookup-uom-${row.id}`" v-model="form.uom" type="text">

@@ -24,7 +24,8 @@ import FormInstructions from '@/Components/App/FormInstructions.vue';
 import AppIcon from '@/Components/App/AppIcon.vue';
 import ComboSelect from '@/Components/App/ComboSelect.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useBusinessType } from '@/composables/useBusinessType';
 
 const props = defineProps({
     header: { type: Object, required: true },
@@ -47,6 +48,7 @@ function money(v) {
 }
 
 const isPosted = computed(() => props.header.status === 'posted');
+const { isProduction } = useBusinessType();
 
 // ── Quick-add lookup lists (customer / vendor / item) ─────────────
 const customerList = ref([...props.customers]);
@@ -57,8 +59,15 @@ const creatingCustomer = ref(null); // row index currently creating, or null
 const creatingVendor = ref(null);
 const creatingItem = ref(null);
 
-async function quickAdd(kind, name, list, routeName, onDone) {
-    const { data } = await axios.post(route(routeName), { name }, { headers: { Accept: 'application/json' } });
+// Transient — kept outside form state so it's never submitted as
+// part of the opening balance itself. Read once, at the moment a
+// brand-new item is actually created; meaningless once an existing
+// item is picked instead. Same reasoning as the identical flag on
+// the Inventory Purchase page.
+const newItemIsRawMaterial = ref({});
+
+async function quickAdd(kind, name, list, routeName, onDone, extra = {}) {
+    const { data } = await axios.post(route(routeName), { name, ...extra }, { headers: { Accept: 'application/json' } });
     list.value.push(data);
     onDone(data.id);
 }
@@ -240,14 +249,20 @@ function doReset() {
                     <p class="ob-help">{{ t('ob_inventory_help') }}</p>
 
                     <div v-for="(row, idx) in form.inventory" :key="idx" class="ob-row ob-row--inventory">
-                        <ComboSelect
-                            v-model="row.item_id"
-                            :options="itemList"
-                            :placeholder="t('selectProductLbl')"
-                            :creating="creatingItem === idx"
-                            :inline="false"
-                            @create="(name) => { creatingItem = idx; quickAdd('item', name, itemList, 'app.items.store', (id) => { row.item_id = id; creatingItem = null; }); }"
-                        />
+                        <div class="ob-item-cell">
+                            <ComboSelect
+                                v-model="row.item_id"
+                                :options="itemList"
+                                :placeholder="t('selectProductLbl')"
+                                :creating="creatingItem === idx"
+                                :inline="false"
+                                @create="(name) => { creatingItem = idx; quickAdd('item', name, itemList, 'app.items.store', (id) => { row.item_id = id; creatingItem = null; delete newItemIsRawMaterial[idx]; }, { type: newItemIsRawMaterial[idx] ? 'raw_material' : 'trading' }); }"
+                            />
+                            <label v-if="isProduction" class="raw-material-check" @mousedown.prevent>
+                                <input type="checkbox" v-model="newItemIsRawMaterial[idx]">
+                                {{ t('newItemIsRawMaterialLbl') }}
+                            </label>
+                        </div>
                         <input type="number" step="0.01" min="0" class="form-input inp-count" v-model="row.qty" :placeholder="t('ob_qty_placeholder')" />
                         <input type="number" step="0.01" min="0" class="form-input inp-money" v-model="row.unit_price" :placeholder="t('ob_unit_cost_placeholder')" />
                         <span class="ob-line-total">{{ currency }} {{ money(inventoryLineTotal(row)) }}</span>
@@ -320,6 +335,15 @@ function doReset() {
     margin-bottom: 10px;
 }
 .ob-row > :first-child { flex: 1 1 auto; min-width: 0; }
+.ob-item-cell { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.raw-material-check {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 11.5px; color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+.raw-material-check input[type="checkbox"] {
+    margin: 0 !important; padding: 0; width: 14px; height: 14px; flex-shrink: 0;
+}
 .ob-row .inp-money { width: 130px; flex-shrink: 0; }
 .ob-row--inventory .inp-count { width: 90px; flex-shrink: 0; }
 .ob-row--inventory .ob-line-total { width: 110px; flex-shrink: 0; text-align: end; font-weight: 600; color: var(--color-primary-dark); font-size: 13px; }

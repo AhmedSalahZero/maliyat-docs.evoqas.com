@@ -85,8 +85,10 @@ class ReportExportController extends Controller
         ]);
 
         $doc['stats'] = [
-            ['label' => $l['income_received'], 'value' => $this->money($data['income_received'], $currency), 'tone' => 'income'],
-            ['label' => $l['expenses_paid'], 'value' => $this->money($data['expenses_paid'], $currency), 'tone' => 'expense'],
+            ['label' => $l['revenue'], 'value' => $this->money($data['revenue'], $currency), 'tone' => 'income'],
+            ['label' => $l['cost_of_goods_sold'], 'value' => $this->money($data['cost_of_goods_sold'], $currency), 'tone' => 'expense'],
+            ['label' => $l['gross_profit'], 'value' => $this->money($data['gross_profit'], $currency), 'tone' => 'primary'],
+            ['label' => $l['operating_expenses'], 'value' => $this->money($data['operating_expenses'], $currency), 'tone' => 'expense'],
             ['label' => $l['net_profit'], 'value' => $this->money($data['net_profit'], $currency), 'tone' => 'primary'],
         ];
 
@@ -183,9 +185,16 @@ class ReportExportController extends Controller
         if ($data['selected']) {
             $item = $data['selected'];
 
+            $historyTypeLabels = [
+                'purchase' => $l['type_inventory_purchase'],
+                'sale'     => $l['type_sale'],
+                'produced' => $l['type_produced'],
+                'consumed' => $l['type_consumed'],
+            ];
+
             $rows = $data['history']->map(fn ($h) => [
                 $h['date'],
-                $h['type'] === 'purchase' ? $l['type_inventory_purchase'] : $l['type_sale'],
+                $historyTypeLabels[$h['type']] ?? $h['type'],
                 $h['ref'],
                 ($h['qty'] >= 0 ? '+' : '').$this->qty($h['qty']).' '.$item['base_unit_name'],
                 $this->money($h['unit_price'], $currency),
@@ -204,8 +213,8 @@ class ReportExportController extends Controller
             ]);
 
             $doc['stats'] = [
-                ['label' => $l['total_purchased'], 'value' => $this->qty($item['total_purchased_base']).' '.$item['base_unit_name'], 'tone' => 'income'],
-                ['label' => $l['total_sold'], 'value' => $this->qty($item['total_sold_base']).' '.$item['base_unit_name'], 'tone' => 'expense'],
+                ['label' => $l['total_in'], 'value' => $this->qty($item['total_in_base']).' '.$item['base_unit_name'], 'tone' => 'income'],
+                ['label' => $l['total_out'], 'value' => $this->qty($item['total_out_base']).' '.$item['base_unit_name'], 'tone' => 'expense'],
                 ['label' => $l['current_stock'], 'value' => $this->qty($item['current_stock']).' '.$item['base_unit_name'], 'tone' => 'primary'],
             ];
 
@@ -214,8 +223,8 @@ class ReportExportController extends Controller
 
         $rows = collect($data['items'])->map(fn ($it) => [
             $it['name'],
-            $this->qty($it['total_purchased_base']).' '.$it['base_unit_name'],
-            $this->qty($it['total_sold_base']).' '.$it['base_unit_name'],
+            $this->qty($it['total_in_base']).' '.$it['base_unit_name'],
+            $this->qty($it['total_out_base']).' '.$it['base_unit_name'],
             $this->qty($it['current_stock']).' '.$it['base_unit_name'],
             $it['avg_purchase_cost'] !== null ? $this->money($it['avg_purchase_cost'], $currency) : '—',
             $this->money($it['stock_value'], $currency),
@@ -224,8 +233,8 @@ class ReportExportController extends Controller
         $doc = $this->baseDoc($l['report_inventory_statement'], $from, $to, [
             [
                 'columns' => [
-                    ['label' => $l['item']], ['label' => $l['total_purchased'], 'align' => 'end'],
-                    ['label' => $l['total_sold'], 'align' => 'end'], ['label' => $l['current_stock'], 'align' => 'end'],
+                    ['label' => $l['item']], ['label' => $l['total_in'], 'align' => 'end'],
+                    ['label' => $l['total_out'], 'align' => 'end'], ['label' => $l['current_stock'], 'align' => 'end'],
                     ['label' => $l['avg_cost'], 'align' => 'end'], ['label' => $l['stock_value'], 'align' => 'end'],
                 ],
                 'rows' => $rows,
@@ -427,8 +436,10 @@ class ReportExportController extends Controller
             'running_balance' => 'Running balance', 'total_balance' => 'Total balance',
             'item' => 'Item', 'category' => 'Category', 'qty' => 'Quantity', 'unit_price' => 'Unit price', 'stock_after' => 'Stock after',
             'total_purchased' => 'Total purchased', 'total_sold' => 'Total sold', 'current_stock' => 'Current stock',
+            'total_in' => 'Total received', 'total_out' => 'Total issued',
             'avg_cost' => 'Avg. cost / unit', 'stock_value' => 'Stock value', 'total_stock_value' => 'Total stock value',
-            'income_received' => 'Income received', 'expenses_paid' => 'Expenses paid', 'net_profit' => 'Net profit',
+            'revenue' => 'Revenue', 'cost_of_goods_sold' => 'Cost of goods sold', 'gross_profit' => 'Gross profit',
+            'operating_expenses' => 'Operating expenses', 'net_profit' => 'Net profit',
             'income_by_item' => 'Income by item', 'expenses_by_category' => 'Expenses by category',
             'cash_in' => 'Cash in', 'cash_out' => 'Cash out', 'net_flow' => 'Net flow', 'by_method' => 'By payment method',
             'movements' => 'Movements', 'method' => 'Method', 'direction' => 'Direction',
@@ -436,6 +447,7 @@ class ReportExportController extends Controller
             'method_cash' => 'Cash', 'method_bank' => 'Bank', 'method_visa' => 'Visa', 'method_instapay' => 'InstaPay', 'method_wallet' => 'Electronic wallet',
             'status_paid' => 'Paid', 'status_partial' => 'Partial', 'status_unpaid' => 'Unpaid',
             'type_sale' => 'Sale', 'type_expense' => 'Expense', 'type_inventory_purchase' => 'Inventory purchase', 'type_equipment_purchase' => 'Equipment purchase',
+            'type_produced' => 'Produced', 'type_consumed' => 'Consumed',
             'report_ledger' => 'All Entries', 'report_pl' => 'Profit & Loss', 'report_customer_statement' => 'Customer Statement',
             'report_supplier_statement' => 'Supplier Statement', 'report_inventory_statement' => 'Inventory Statement', 'report_cashflow' => 'Cash Flow',
             'report_trial_balance' => 'Trial Balance', 'report_journal' => 'Journal',
@@ -453,8 +465,10 @@ class ReportExportController extends Controller
             'running_balance' => 'الرصيد التراكمي', 'total_balance' => 'إجمالي الرصيد',
             'item' => 'الصنف', 'category' => 'الفئة', 'qty' => 'الكمية', 'unit_price' => 'سعر الوحدة', 'stock_after' => 'الرصيد بعد الحركة',
             'total_purchased' => 'إجمالي المُشترى', 'total_sold' => 'إجمالي المُباع', 'current_stock' => 'المخزون الحالي',
+            'total_in' => 'إجمالي الوارد', 'total_out' => 'إجمالي المنصرف',
             'avg_cost' => 'متوسط تكلفة الوحدة', 'stock_value' => 'قيمة المخزون', 'total_stock_value' => 'إجمالي قيمة المخزون',
-            'income_received' => 'الإيرادات المحصلة', 'expenses_paid' => 'المصروفات المدفوعة', 'net_profit' => 'صافي الربح',
+            'revenue' => 'الإيرادات', 'cost_of_goods_sold' => 'تكلفة البضاعة المباعة', 'gross_profit' => 'مجمل الربح',
+            'operating_expenses' => 'المصروفات التشغيلية', 'net_profit' => 'صافي الربح',
             'income_by_item' => 'الإيرادات حسب الصنف', 'expenses_by_category' => 'المصروفات حسب الفئة',
             'cash_in' => 'النقد الداخل', 'cash_out' => 'النقد الخارج', 'net_flow' => 'صافي التدفق', 'by_method' => 'حسب طريقة الدفع',
             'movements' => 'الحركات', 'method' => 'الطريقة', 'direction' => 'الاتجاه',
@@ -462,6 +476,7 @@ class ReportExportController extends Controller
             'method_cash' => 'نقدي', 'method_bank' => 'بنك', 'method_visa' => 'فيزا', 'method_instapay' => 'إنستاباي', 'method_wallet' => 'محفظة إلكترونية',
             'status_paid' => 'مدفوع', 'status_partial' => 'مدفوع جزئياً', 'status_unpaid' => 'غير مدفوع',
             'type_sale' => 'بيع', 'type_expense' => 'مصروف', 'type_inventory_purchase' => 'شراء مخزون', 'type_equipment_purchase' => 'شراء معدات',
+            'type_produced' => 'إنتاج', 'type_consumed' => 'استهلاك',
             'report_ledger' => 'كل القيود', 'report_pl' => 'الأرباح والخسائر', 'report_customer_statement' => 'كشف حساب عميل',
             'report_supplier_statement' => 'كشف حساب مورد', 'report_inventory_statement' => 'كشف حساب المخزون', 'report_cashflow' => 'التدفق النقدي',
             'report_trial_balance' => 'ميزان المراجعة', 'report_journal' => 'دفتر اليومية',

@@ -89,7 +89,9 @@ class InventoryPurchaseController extends Controller
 
         return Inertia::render('App/InventoryPurchases/Index', [
             'vendors'         => Vendor::query()->orderBy('name')->get(['id', 'name']),
-            'items'           => Item::query()->orderBy('name')->get(['id', 'name', 'uom', 'qty_per_uom', 'base_unit_name']),
+            // Raw materials aren't sold directly — see the Item type
+            // note in Item.php's class doc comment.
+            'items'           => Item::query()->whereIn('type', ['trading', 'raw_material'])->orderBy('name')->get(['id', 'name', 'uom', 'qty_per_uom', 'base_unit_name']),
             'paymentChannels' => PaymentChannel::query()->orderBy('name')->get(['id', 'name']),
             'purchases'       => $purchases,
         ]);
@@ -203,6 +205,12 @@ class InventoryPurchaseController extends Controller
         $this->authorizeDelete();
 
         DB::transaction(function () use ($inventoryPurchase) {
+            $this->logDeletion(
+                $inventoryPurchase,
+                "Inventory purchase #{$inventoryPurchase->id} — ".($inventoryPurchase->vendor?->name ?? 'Unknown vendor').' — '.number_format((float) $inventoryPurchase->amount, 2),
+                ['lines' => $inventoryPurchase->lines->toArray()]
+            );
+
             $this->journal->reverseAllForPayable($inventoryPurchase);
             $inventoryPurchase->payments()->delete();
             $inventoryPurchase->installments()->delete();

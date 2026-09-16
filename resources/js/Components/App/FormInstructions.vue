@@ -28,7 +28,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { ref, computed, onMounted } from 'vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 
 const props = defineProps({
     // Which screen this belongs to — used as the storage key, so

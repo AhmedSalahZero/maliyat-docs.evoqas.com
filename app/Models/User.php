@@ -15,34 +15,37 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     // ── Fillable ───────────────────────────────────────────────
+    //
+    // Cleaned up (QA audit, Sep 2026): this used to also list
+    // nickname, profession, experience_level, sector, bio, avatar,
+    // show_real_name, notify_jobs, notify_freelance, notify_forum,
+    // notify_surveys, notify_documents, highly_rated_solutions_count,
+    // and highly_rated_replies_count — all leftover from the earlier,
+    // unrelated "InPractice" product this app was built on top of.
+    // Checked against a live export of this app's own production
+    // database: every one of those columns sat empty/default on
+    // every real user row, and nothing in the working application
+    // ever read or wrote any of them. The database columns
+    // themselves were dropped in
+    // 2026_09_16_000001_drop_inpractice_leftover_columns_from_users_table.php;
+    // the two "highly_rated_*" fields were never real columns at
+    // all (dead entries left in this array with no matching column
+    // in any migration), so nothing further was needed for those
+    // beyond removing them from this list.
     protected $fillable = [
         'name',
-        'nickname',
         'email',
         'password',
         'role',
         'company_id',
         'created_by',
-        'profession',
-        'experience_level',
-        'sector',
-        'bio',
-        'avatar',
         'language',
         'theme',
-        'show_real_name',
-        'notify_jobs',
-        'notify_freelance',
-        'notify_forum',
-        'notify_surveys',
-        'notify_documents',
         'is_active',
         'last_login_at',
         'last_activity_at',
         'login_count',
         'phone',
-        'highly_rated_solutions_count',  // Case Practitioner badge track
-        'highly_rated_replies_count',    // Field Advisor badge track
     ];
 
     // ── Hidden ────────────────────────────────────────────────
@@ -59,23 +62,10 @@ class User extends Authenticatable
         'login_count'                   => 'integer',
         'password'                      => 'hashed',
         'theme'                         => 'string',
-        'show_real_name'                => 'boolean',
-        'notify_jobs'                   => 'boolean',
-        'notify_freelance'              => 'boolean',
-        'notify_forum'                  => 'boolean',
-        'notify_surveys'                => 'boolean',
-        'notify_documents'              => 'boolean',
         'is_active'                     => 'boolean',
-        'highly_rated_solutions_count'  => 'integer',
-        'highly_rated_replies_count'    => 'integer',
     ];
 
     // ── Helpers ───────────────────────────────────────────────
-
-    public function getPublicNameAttribute(): string
-    {
-        return $this->show_real_name ? $this->name : $this->nickname;
-    }
 
     public function isSuperAdmin(): bool
     {

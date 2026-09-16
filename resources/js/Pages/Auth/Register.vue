@@ -6,8 +6,8 @@
 
 import { ref, computed, onMounted } from 'vue';
 import { Head, Link, useForm }      from '@inertiajs/vue3';
-import { useAuthStore }             from '@/Stores/useAuthStore';
-import { useAuthTranslations }      from '@/Composables/useAuthTranslations';
+import { useAuthStore }             from '@/stores/useAuthStore';
+import { useAuthTranslations }      from '@/composables/useAuthTranslations';
 import PasswordInput                from '@/Components/PasswordInput.vue';
 
 const authStore = useAuthStore();
@@ -20,17 +20,11 @@ const form = useForm({
     company_name:          '',
     email:                 '',
     currency:              'EGP',
+    business_types:        ['trading'],
     language:              'en',
     password:              '',
     password_confirmation: '',
     _hp: '',
-    // Stamped when the component is created, not in onMounted — a
-    // zero here fails validation, and the error lands on a field the
-    // form cannot show. Setting it at creation means it is never
-    // zero by the time anything can submit. onMounted refreshes it
-    // so the "too fast" window is measured from when the page was
-    // actually usable.
-    _ft: Date.now(),
 });
 
 const isDark  = computed(() => authStore.isDark);
@@ -55,11 +49,24 @@ function toggleLocale() {
 // error that comes back for a key NOT in this list has nowhere to
 // appear, and the user would press Create Account and see the page
 // sit there unchanged — which is exactly what the hidden anti-bot
-// fields (_hp, _ft) used to do.
+// honeypot field (_hp) used to do.
 const VISIBLE_FIELDS = [
-    'name', 'company_name', 'email', 'currency',
+    'name', 'company_name', 'email', 'currency', 'business_types',
     'password', 'password_confirmation',
 ];
+
+function toggleBusinessType(type) {
+    const set = new Set(form.business_types);
+    if (set.has(type)) {
+        set.delete(type);
+    } else {
+        set.add(type);
+    }
+    // At least one must stay checked — falling back to Trading
+    // rather than letting the picker go empty and confusing the
+    // submit error.
+    form.business_types = set.size > 0 ? Array.from(set) : ['trading'];
+}
 
 // A catch-all rather than a list of the two known offenders: a rule
 // added to the request later gets surfaced automatically instead of
@@ -80,7 +87,6 @@ onMounted(() => {
     const savedTheme = localStorage.getItem('ip_theme') ?? 'light';
     authStore.setThemeLocal(savedTheme);
     form.language = locale.value;
-    form._ft      = Date.now();
 });
 </script>
 
@@ -97,10 +103,22 @@ onMounted(() => {
 
         <!-- Controls -->
         <div class="ip-login__controls">
-            <button class="ip-login__ctrl-btn" @click="toggleLocale">
+            <button
+                type="button"
+                class="ip-login__ctrl-btn"
+                :title="locale === 'en' ? 'العربية' : 'English'"
+                :aria-label="locale === 'en' ? 'العربية' : 'English'"
+                @click="toggleLocale"
+            >
                 <span class="ip-login__ctrl-label">{{ locale === 'en' ? 'ع' : 'EN' }}</span>
             </button>
-            <button class="ip-login__ctrl-btn" @click="toggleTheme">
+            <button
+                type="button"
+                class="ip-login__ctrl-btn"
+                :title="isDark ? (locale === 'ar' ? 'الوضع الفاتح' : 'Light theme') : (locale === 'ar' ? 'الوضع الداكن' : 'Dark theme')"
+                :aria-label="isDark ? (locale === 'ar' ? 'الوضع الفاتح' : 'Light theme') : (locale === 'ar' ? 'الوضع الداكن' : 'Dark theme')"
+                @click="toggleTheme"
+            >
                 <svg v-if="isDark" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
                 </svg>
@@ -241,6 +259,33 @@ onMounted(() => {
                             <option v-for="code in CURRENCIES" :key="code" :value="code">{{ code }}</option>
                         </select>
                         <p v-if="form.errors.currency" class="ip-login__error">{{ form.errors.currency }}</p>
+                    </div>
+
+                    <!-- Business type -->
+                    <div class="ip-form-group">
+                        <label class="ip-login__label">
+                            {{ locale === 'ar' ? 'نوع النشاط' : 'What kind of business is this?' }}
+                        </label>
+                        <div style="display: flex; flex-wrap: wrap; gap: 14px; margin-top: 4px;">
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer;">
+                                <input type="checkbox" :checked="form.business_types.includes('service')" @change="toggleBusinessType('service')">
+                                {{ locale === 'ar' ? 'خدمات' : 'Service' }}
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer;">
+                                <input type="checkbox" :checked="form.business_types.includes('trading')" @change="toggleBusinessType('trading')">
+                                {{ locale === 'ar' ? 'تجارة' : 'Trading' }}
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer;">
+                                <input type="checkbox" :checked="form.business_types.includes('production')" @change="toggleBusinessType('production')">
+                                {{ locale === 'ar' ? 'تصنيع' : 'Production / manufacturing' }}
+                            </label>
+                        </div>
+                        <p class="ip-register__hint">
+                            {{ locale === 'ar'
+                                ? 'اختر واحدًا أو أكثر — يمكنك تغييره لاحقًا من الإعدادات.'
+                                : 'Pick one or more — you can change this later from Settings.' }}
+                        </p>
+                        <p v-if="form.errors.business_types" class="ip-login__error">{{ form.errors.business_types }}</p>
                     </div>
 
                     <!-- Password -->

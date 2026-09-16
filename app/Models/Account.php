@@ -25,6 +25,12 @@ class Account extends Model
     public const CUSTODY_ADVANCES = '1400';
     public const ACCOUNTS_PAYABLE = '2000';
     public const VAT_PAYABLE     = '2100';
+    // Production Labor Accrued — a clearing account. Production
+    // Orders credit it (labor cost applied to inventory value);
+    // the real payroll Expense (checked "Production Labor") debits
+    // it back off. See JournalService::postProductionOrder() /
+    // postProductionLaborExpense().
+    public const PRODUCTION_LABOR_ACCRUED = '2200';
     public const OWNERS_EQUITY   = '3000';
     public const RETAINED_EARNINGS = '3900';
     public const SALES_REVENUE   = '4000';
@@ -43,6 +49,7 @@ class Account extends Model
         self::CUSTODY_ADVANCES  => ['Custody Advances',        'عهد نقدية',            'asset'],
         self::ACCOUNTS_PAYABLE  => ['Accounts Payable',        'ذمم دائنة (موردون)',   'liability'],
         self::VAT_PAYABLE       => ['VAT Payable (Output)',    'ضريبة مخرجات مستحقة',  'liability'],
+        self::PRODUCTION_LABOR_ACCRUED => ['Production Labor Accrued', 'عمالة إنتاج مستحقة', 'liability'],
         self::OWNERS_EQUITY     => ["Owner's Equity",          'حقوق الملكية',         'equity'],
         self::RETAINED_EARNINGS => ['Retained Earnings',       'الأرباح المحتجزة',     'equity'],
         self::SALES_REVENUE     => ['Sales Revenue',           'إيرادات المبيعات',     'income'],

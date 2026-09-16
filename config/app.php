@@ -122,5 +122,22 @@ return [
         'driver' => env('APP_MAINTENANCE_DRIVER', 'file'),
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
+    /*
+    |--------------------------------------------------------------------------
+    | Platform Super Admin
+    |--------------------------------------------------------------------------
+    |
+    | Read by SuperAdminSeeder, which creates the one super_admin account
+    | that can read every company on the platform. DEFAULT_PASSWORD has no
+    | fallback on purpose: the seeder refuses to run without it rather than
+    | inventing a credential or, as it once did, shipping one in the repo.
+    | It is used only when the account is first created — re-seeding never
+    | resets an existing password.
+    |
+    */
+
+    'super_admin_email' => env('SUPER_ADMIN_EMAIL', 'admin@maliyatdocs.app'),
+    'super_admin_name'  => env('SUPER_ADMIN_NAME', 'Maliyat Docs Admin'),
+    'default_password'  => env('DEFAULT_PASSWORD'),
 
 ];

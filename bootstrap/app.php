@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\EnsureBusinessType;
 use App\Http\Middleware\EnsureMember;
 use App\Http\Middleware\PostDueDepreciation;
 use App\Http\Middleware\PreventDuplicateSubmission;
@@ -58,6 +59,26 @@ return Application::configure(basePath: dirname(__DIR__))
             PostDueDepreciation::class,
         ]);
 
+        // ── AuthenticateSession ────────────────────────────────
+        //
+        // Compares each request's session marker against the user's
+        // current password hash, and signs the session out if they
+        // no longer agree.
+        //
+        // This is what gives Auth::logoutOtherDevices() any effect at
+        // all. Without it that call re-hashes a marker nothing reads,
+        // so "change your password" — the one action somebody takes
+        // when they believe their account is compromised — left every
+        // other session, including the attacker's, working exactly as
+        // before.
+        //
+        // Registered as an alias rather than globally: it only means
+        // anything for an authenticated request, and the auth route
+        // groups are where those are.
+        $middleware->alias([
+            'auth.session' => \Illuminate\Session\Middleware\AuthenticateSession::class,
+        ]);
+
         // ── Register named middleware aliases ──────────────────
         // These names are used in route files:
         //   Route::middleware(['auth', 'admin'])
@@ -71,6 +92,12 @@ return Application::configure(basePath: dirname(__DIR__))
             // with the same credentials is a legitimate repeat, and
             // this would refuse it.
             'no-duplicate' => PreventDuplicateSubmission::class,
+
+            // Gates a screen on what the company actually does —
+            // used as `business-type:production`. The Production
+            // screens were previously gated only by the frontend
+            // deciding not to draw a menu entry.
+            'business-type' => EnsureBusinessType::class,
         ]);
 
     })

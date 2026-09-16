@@ -16,7 +16,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import ComboSelect from '@/Components/App/ComboSelect.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 
 const props = defineProps({
     modelValue: { type: String, default: 'cash' },       // method

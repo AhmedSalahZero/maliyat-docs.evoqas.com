@@ -380,6 +380,11 @@ class PaymentController extends Controller
         $this->authorizeDelete();
 
         DB::transaction(function () use ($payment) {
+            $this->logDeletion(
+                $payment,
+                "Payment #{$payment->id} — ".($payment->direction === 'in' ? 'received' : 'paid').' — '.number_format((float) $payment->amount, 2)
+            );
+
             $this->journal->reverseEntriesFor($payment);
             $payment->delete();
         });

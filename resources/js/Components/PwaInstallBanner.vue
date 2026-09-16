@@ -98,8 +98,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { router } from '@inertiajs/vue3'
-import { initPwaInstallListener, usePwaInstall } from '@/Composables/usePwaInstall'
-import { useAuthStore } from '@/Stores/useAuthStore'
+import { initPwaInstallListener, usePwaInstall } from '@/composables/usePwaInstall'
+import { useAuthStore } from '@/stores/useAuthStore'
 
 const authStore = useAuthStore()
 const isRTL = computed(() => authStore.locale === 'ar')

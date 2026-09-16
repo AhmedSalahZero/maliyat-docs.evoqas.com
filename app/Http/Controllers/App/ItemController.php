@@ -28,7 +28,7 @@ class ItemController extends Controller
     public function index(): Response
     {
         $items = Item::query()->orderBy('name')->get([
-            'id', 'name', 'uom', 'qty_per_uom', 'base_unit_name',
+            'id', 'name', 'type', 'uom', 'qty_per_uom', 'base_unit_name',
         ]);
 
         return Inertia::render('App/Lookups/Index', [

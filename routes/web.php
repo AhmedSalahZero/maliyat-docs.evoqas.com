@@ -14,6 +14,7 @@ use App\Http\Controllers\App\InventoryPurchaseController;
 use App\Http\Controllers\App\ItemController;
 use App\Http\Controllers\App\OpeningBalanceController;
 use App\Http\Controllers\App\PaymentController;
+use App\Http\Controllers\App\ProductionOrderController;
 use App\Http\Controllers\App\ProfileController;
 use App\Http\Controllers\App\ReportController;
 use App\Http\Controllers\App\ReportExportController;
@@ -69,7 +70,7 @@ Route::get('/', function () {
 // ══════════════════════════════════════════════════════════════════
 //  ADMIN ROUTES (super_admin) — Prefix: /admin — Name: admin.*
 // ══════════════════════════════════════════════════════════════════
-Route::middleware(['auth', 'verified', 'admin', 'no-duplicate'])
+Route::middleware(['auth', 'auth.session', 'verified', 'admin', 'no-duplicate'])
     ->prefix('admin')
     ->name('admin.')
     ->group(function () {
@@ -88,7 +89,7 @@ Route::middleware(['auth', 'verified', 'admin', 'no-duplicate'])
 // ══════════════════════════════════════════════════════════════════
 //  APP ROUTES (company_admin + employee) — Prefix: /app — Name: app.*
 // ══════════════════════════════════════════════════════════════════
-Route::middleware(['auth', 'verified', 'member', 'no-duplicate'])
+Route::middleware(['auth', 'auth.session', 'verified', 'member', 'no-duplicate'])
     ->prefix('app')
     ->name('app.')
     ->group(function () {
@@ -136,6 +137,19 @@ Route::middleware(['auth', 'verified', 'member', 'no-duplicate'])
         Route::post('/inventory-purchases', [InventoryPurchaseController::class, 'store'])->name('inventory-purchases.store');
         Route::put('/inventory-purchases/{inventoryPurchase}', [InventoryPurchaseController::class, 'update'])->name('inventory-purchases.update');
         Route::delete('/inventory-purchases/{inventoryPurchase}', [InventoryPurchaseController::class, 'destroy'])->name('inventory-purchases.destroy');
+
+        // ── Production Orders ("Day Production") ─────────────────────
+        //
+        //  Gated on the company having Production switched on, on the
+        //  SERVER. It used to be gated only by the frontend choosing
+        //  not to draw the menu entry, which is a convention rather
+        //  than a rule — see EnsureBusinessType.
+        Route::middleware('business-type:production')->group(function () {
+            Route::get('/production-orders', [ProductionOrderController::class, 'index'])->name('production-orders.index');
+            Route::post('/production-orders', [ProductionOrderController::class, 'store'])->name('production-orders.store');
+            Route::put('/production-orders/{productionOrder}', [ProductionOrderController::class, 'update'])->name('production-orders.update');
+            Route::delete('/production-orders/{productionOrder}', [ProductionOrderController::class, 'destroy'])->name('production-orders.destroy');
+        });
 
         // ── Equipment & Vehicles ─────────────────────────────────────
         Route::get('/equipment-purchases', [EquipmentPurchaseController::class, 'index'])->name('equipment-purchases.index');
@@ -223,6 +237,8 @@ Route::middleware(['auth', 'verified', 'member', 'no-duplicate'])
         Route::get('/profile', [ProfileController::class, 'index'])->name('profile.index');
         Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
         Route::patch('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
+        // Company-admin only — see ProfileController::updateBusinessTypes().
+        Route::patch('/profile/business-types', [ProfileController::class, 'updateBusinessTypes'])->name('profile.business-types');
 
         // Called by the theme/locale toggles — idempotent, one field, no page reload needed.
         //

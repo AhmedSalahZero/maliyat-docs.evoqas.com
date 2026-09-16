@@ -32,17 +32,22 @@
 
 import { ref, computed, onMounted, watch } from 'vue';
 import { usePage, Link } from '@inertiajs/vue3';
-import { useAuthStore } from '@/Stores/useAuthStore';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 import AppIcon from '@/Components/App/AppIcon.vue';
 import QuickRecordSheet from '@/Components/App/QuickRecordSheet.vue';
 import MenuSheet from '@/Components/App/MenuSheet.vue';
 import { QUICK_RECORD_ACTIONS } from '@/constants/quickRecordActions';
 import { REPORTS } from '@/constants/reports';
+import { useBusinessType } from '@/composables/useBusinessType';
 
 const authStore = useAuthStore();
 const page      = usePage();
 const { t }     = useAppTranslations();
+const { visibleFor } = useBusinessType();
+
+const visibleQuickActions = computed(() => visibleFor(QUICK_RECORD_ACTIONS));
+const visibleReports      = computed(() => visibleFor(REPORTS));
 
 const auth = computed(() => page.props.auth);
 
@@ -211,7 +216,7 @@ watch(() => page.props.flash, (flash) => {
                         <span class="step-label">{{ t('nav_home') }}</span>
                     </Link>
                     <Link
-                        v-for="action in QUICK_RECORD_ACTIONS"
+                        v-for="action in visibleQuickActions"
                         :key="action.key"
                         :href="route(action.route)"
                         class="step"
@@ -224,7 +229,7 @@ watch(() => page.props.flash, (flash) => {
 
                 <nav class="step-nav">
                     <Link
-                        v-for="report in REPORTS"
+                        v-for="report in visibleReports"
                         :key="report.key"
                         :href="route(report.route)"
                         class="step"

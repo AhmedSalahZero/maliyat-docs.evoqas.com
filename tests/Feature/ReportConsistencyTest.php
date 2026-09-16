@@ -328,43 +328,58 @@ class ReportConsistencyTest extends TestCase
     }
 
     /**
-     * KNOWN GAP — pinned deliberately, not endorsed.
+     * The headline and the breakdown are the same figure.
      *
-     * The headline "expenses paid" counts every payment that left the
-     * company, which includes the 600 paid for STOCK. The category
-     * breakdown underneath reads the expenses table and the custody
-     * settlements, so it does not. The two halves of one report
-     * therefore disagree by exactly the amount spent on inventory
-     * and equipment.
+     * This test used to pin the OPPOSITE — a measured 600 gap between
+     * the two halves, left visible on purpose because closing it
+     * moves every profit figure the owner has already read. That
+     * decision has now been taken: capital spend leaves the P&L, and
+     * both halves are built from one set of rows, so they cannot
+     * drift apart again whatever is added to the app later.
      *
      * Buying stock is not an expense — it is swapping cash for goods
-     * you still own, which is why the ledger correctly books it to
-     * Inventory (see the stock test above). The same is true of the
-     * van. Custody used to sit in this same hole and was lifted out
-     * of it; inventory and equipment have not been, because changing
-     * the treatment moves every profit figure the owner has already
-     * read and that is a decision to take deliberately rather than
-     * as a side effect.
-     *
-     * This test exists so the gap is visible and measured. If the
-     * treatment is ever corrected, this test fails loudly and should
-     * be replaced with an equality assertion — which is the point.
+     * you still own, which is why the ledger books it to Inventory
+     * (see the stock test above). The same is true of the van. What
+     * the stock cost reaches the books through Cost of Goods Sold
+     * when it is sold, and the van through depreciation.
      */
-    public function test_the_headline_and_the_breakdown_disagree_by_the_capital_spend(): void
+    public function test_the_headline_is_exactly_what_the_breakdown_adds_up_to(): void
     {
         $profitAndLoss = $this->reports()->profitAndLoss('2026-03-01', '2026-03-31');
 
         $headline  = $profitAndLoss['expenses_paid'];
         $breakdown = round(collect($profitAndLoss['expenses_by_category'])->sum('total'), 2);
 
-        $this->assertEquals(1250.00, $headline, 'rent 400 + stock payment 600 + float spend 250');
-        $this->assertEquals(650.00, $breakdown, 'rent 400 + float spend 250 — no stock');
+        $this->assertEquals(650.00, $headline, 'rent 400 + float spend 250 — no stock, no van');
+        $this->assertEquals($headline, $breakdown, 'One report cannot hold two different totals');
+    }
+
+    /**
+     * The 600 paid off the stock bill and the 5,000 van are still
+     * real money and a real asset — they have moved reports, not
+     * vanished. Asserted here so "excluded from the P&L" can never
+     * quietly become "excluded from everywhere".
+     */
+    public function test_capital_spend_leaves_the_p_and_l_but_stays_on_the_other_reports(): void
+    {
+        $breakdown = collect($this->reports()->profitAndLoss('2026-03-01', '2026-03-31')['expenses_by_category']);
+
+        $this->assertNull(
+            $breakdown->firstWhere('category', $this->equipmentCategory->name),
+            'A capital purchase is not a running cost'
+        );
+
+        // The stock bill payment still shows as cash going out.
+        $cashFlow = $this->reports()->cashFlow('2026-03-01', '2026-03-31');
 
         $this->assertEquals(
-            600.00,
-            round($headline - $breakdown, 2),
-            'The gap is exactly the money paid for stock. If this changes, the P&L treatment changed with it.'
+            1300.00,
+            round((float) $cashFlow['cash_out'], 2),
+            'rent 400 + stock 600 + float handed out 300'
         );
+
+        // And the van is still an asset on the books.
+        $this->assertEquals(5000.00, $this->ledger(Account::EQUIPMENT_ASSET));
     }
 
     // ── Corrections must not disturb any of the above ────────────

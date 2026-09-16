@@ -9,6 +9,7 @@ use App\Http\Requests\App\UpdateExpenseRequest;
 use App\Models\Category;
 use App\Models\Expense;
 use App\Models\PaymentChannel;
+use App\Models\ProductionOrder;
 use App\Models\Vendor;
 use App\Services\JournalService;
 use App\Services\PaymentRecorderService;
@@ -82,6 +83,7 @@ class ExpenseController extends Controller
                 'recurring_id'     => $expense->recurring_id,
                 'recurring_index'  => $expense->recurring_index,
                 'recurring_count'  => $expense->recurring_count,
+                'is_production_labor' => $expense->is_production_labor,
             ]);
 
         return Inertia::render('App/Expenses/Index', [
@@ -120,9 +122,10 @@ class ExpenseController extends Controller
                 'amount'      => $data['amount'],
                 'due_date'    => $dueDate,
                 'created_by'  => auth()->id(),
+                'is_production_labor' => (bool) ($data['is_production_labor'] ?? false),
             ]);
 
-            $this->journal->postExpenseInvoice($expense);
+            $this->postExpenseJournal($expense);
 
             $payment = $this->paymentRecorder->apply($expense, 'out', $data['mode'], [
                 'date'       => $data['date'],
@@ -157,9 +160,10 @@ class ExpenseController extends Controller
                 'amount'      => $data['amount'],
                 // Correctable now — see the note in the Update*Request.
                 'due_date'    => array_key_exists('due_date', $data) ? $data['due_date'] : $expense->due_date,
+                'is_production_labor' => (bool) ($data['is_production_labor'] ?? false),
             ]);
 
-            $this->journal->postExpenseInvoice($expense->fresh());
+            $this->postExpenseJournal($expense->fresh());
         });
 
         return back()->with('success', 'Expense updated.');
@@ -175,6 +179,11 @@ class ExpenseController extends Controller
         $this->authorizeDelete();
 
         DB::transaction(function () use ($expense) {
+            $this->logDeletion(
+                $expense,
+                "Expense #{$expense->id} — ".($expense->vendor?->name ?? 'Unknown vendor').' — '.number_format((float) $expense->amount, 2)
+            );
+
             $this->journal->reverseAllForPayable($expense);
             $expense->payments()->delete();
             $expense->installments()->delete();
@@ -204,6 +213,46 @@ class ExpenseController extends Controller
     }
 
     /**
+     * Posts the normal expense journal entry — UNLESS this expense
+     * is checked "Production Labor", in which case it reconciles
+     * against this month's Production Orders instead (see
+     * JournalService::postProductionLaborExpense()'s doc comment
+     * for the full reasoning).
+     *
+     * "Applied so far this month" is this month's total labor cost
+     * from Production Orders, minus whatever earlier Production
+     * Labor expenses in the same month already claimed (their
+     * stored snapshot) — so a second payroll entry in one month
+     * (e.g. two weekly runs) doesn't double-clear the same amount.
+     * The amount THIS expense actually claims is stored back onto
+     * it, so editing/deleting it later can be reversed correctly.
+     */
+    private function postExpenseJournal(Expense $expense): void
+    {
+        if (! $expense->is_production_labor) {
+            $this->journal->postExpenseInvoice($expense);
+
+            return;
+        }
+
+        $totalForMonth = ProductionOrder::totalLaborForMonth($expense->company_id, $expense->date->toDateString());
+
+        $alreadyClaimed = (float) Expense::query()
+            ->where('company_id', $expense->company_id)
+            ->where('is_production_labor', true)
+            ->where('id', '!=', $expense->id)
+            ->whereYear('date', $expense->date->year)
+            ->whereMonth('date', $expense->date->month)
+            ->sum('production_labor_applied_snapshot');
+
+        $availableToApply = max(0, round($totalForMonth - $alreadyClaimed, 2));
+
+        $expense->forceFill(['production_labor_applied_snapshot' => $availableToApply])->save();
+
+        $this->journal->postProductionLaborExpense($expense, $availableToApply);
+    }
+
+    /**
      * One summary row per recurring series — vendor/category/amount
      * (from the first occurrence), how many of the total are paid,
      * and the next due date — for the "Recurring plans" section of
@@ -212,32 +261,110 @@ class ExpenseController extends Controller
      */
     private function recurringSeriesSummary(): array
     {
-        return Expense::query()
-            ->whereNotNull('recurring_id')
-            ->with(['vendor:id,name', 'category:id,name'])
-            ->get()
-            ->groupBy('recurring_id')
-            ->map(function ($occurrences) {
-                $first = $occurrences->sortBy('recurring_index')->first();
-                $paidCount = $occurrences->filter(fn (Expense $e) => $e->isPaid())->count();
-                $nextDue = $occurrences
-                    ->filter(fn (Expense $e) => ! $e->isPaid())
-                    ->sortBy('date')
-                    ->first()?->due_date?->toDateString();
+        $companyId = (int) auth()->user()->company_id;
 
-                return [
-                    'recurring_id'    => $first->recurring_id,
-                    'vendor'          => $first->vendor?->name,
-                    'category'        => $first->category?->name,
-                    'amount'          => (float) $first->amount,
-                    'frequency'       => $first->recurring_frequency,
-                    'paid_count'      => $paidCount,
-                    'total_count'     => $occurrences->count(),
-                    'next_due'        => $nextDue,
-                    'has_unpaid'      => $paidCount < $occurrences->count(),
-                ];
-            })
-            ->values()
-            ->all();
+        // "Paid" here must mean exactly what Expense::isPaid() means
+        // everywhere else — payments cover the amount within the
+        // same 0.004 float-noise tolerance DashboardController and
+        // PaymentController's worklist already use — so this can't
+        // quietly disagree with what the rest of the app calls paid.
+        $unpaidCondition = 'COALESCE((
+            SELECT SUM(p.amount) FROM payments p
+            WHERE p.payable_type = '.DB::getPdo()->quote(Expense::class).'
+              AND p.payable_id = expenses.id
+              AND p.company_id = ?
+        ), 0) < expenses.amount - 0.004';
+
+        // One row per series: how many occurrences it has, and how
+        // many of those are still unpaid. addBinding() is needed
+        // (rather than a plain whereRaw binding) because the
+        // placeholder sits inside a SELECT-level CASE expression,
+        // not a WHERE clause — same reason DashboardController's
+        // topCustomers() does the same thing for its own correlated
+        // subquery.
+        $counts = DB::table('expenses')
+            ->where('company_id', $companyId)
+            ->whereNotNull('recurring_id')
+            ->groupBy('recurring_id')
+            ->select([
+                'recurring_id',
+                DB::raw('COUNT(*) as total_count'),
+                DB::raw("SUM(CASE WHEN {$unpaidCondition} THEN 1 ELSE 0 END) as unpaid_count"),
+            ])
+            ->addBinding([$companyId], 'select')
+            ->get()
+            ->keyBy('recurring_id');
+
+        if ($counts->isEmpty()) {
+            return [];
+        }
+
+        // The first occurrence of each series (lowest recurring_index)
+        // is what carries the vendor/category/amount/frequency the
+        // summary row shows — found via a join back to the minimum
+        // index per series, rather than loading every occurrence to
+        // pick one out in PHP.
+        $firstOccurrence = DB::table('expenses as e')
+            ->joinSub(
+                DB::table('expenses')
+                    ->where('company_id', $companyId)
+                    ->whereNotNull('recurring_id')
+                    ->groupBy('recurring_id')
+                    ->select('recurring_id', DB::raw('MIN(recurring_index) as first_index')),
+                'first_row',
+                fn ($join) => $join->on('e.recurring_id', '=', 'first_row.recurring_id')
+                    ->on('e.recurring_index', '=', 'first_row.first_index')
+            )
+            ->where('e.company_id', $companyId)
+            ->leftJoin('vendors', 'vendors.id', '=', 'e.vendor_id')
+            ->leftJoin('categories', 'categories.id', '=', 'e.category_id')
+            ->select([
+                'e.recurring_id', 'e.amount', 'e.recurring_frequency',
+                'vendors.name as vendor_name', 'categories.name as category_name',
+            ])
+            ->get()
+            ->keyBy('recurring_id');
+
+        // The soonest-due UNPAID occurrence in each series — same
+        // "among the unpaid ones, take the earliest by date, then
+        // read that row's due_date" rule the original version used.
+        // The outer MIN(due_date) collapses a same-day tie to one
+        // deterministic answer rather than leaving it to whichever
+        // row the database happens to return first.
+        $nextDue = DB::table('expenses as e')
+            ->joinSub(
+                DB::table('expenses')
+                    ->where('company_id', $companyId)
+                    ->whereNotNull('recurring_id')
+                    ->whereRaw($unpaidCondition, [$companyId])
+                    ->groupBy('recurring_id')
+                    ->select('recurring_id', DB::raw('MIN(date) as min_date')),
+                'soonest',
+                fn ($join) => $join->on('e.recurring_id', '=', 'soonest.recurring_id')
+                    ->on('e.date', '=', 'soonest.min_date')
+            )
+            ->where('e.company_id', $companyId)
+            ->groupBy('e.recurring_id')
+            ->select('e.recurring_id', DB::raw('MIN(e.due_date) as due_date'))
+            ->get()
+            ->keyBy('recurring_id');
+
+        return $counts->map(function ($count, $recurringId) use ($firstOccurrence, $nextDue) {
+            $first       = $firstOccurrence->get($recurringId);
+            $totalCount  = (int) $count->total_count;
+            $unpaidCount = (int) $count->unpaid_count;
+
+            return [
+                'recurring_id' => $recurringId,
+                'vendor'       => $first->vendor_name ?? null,
+                'category'     => $first->category_name ?? null,
+                'amount'       => (float) ($first->amount ?? 0),
+                'frequency'    => $first->recurring_frequency ?? null,
+                'paid_count'   => $totalCount - $unpaidCount,
+                'total_count'  => $totalCount,
+                'next_due'     => $nextDue->get($recurringId)?->due_date,
+                'has_unpaid'   => $unpaidCount > 0,
+            ];
+        })->values()->all();
     }
 }

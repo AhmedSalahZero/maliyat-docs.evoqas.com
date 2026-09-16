@@ -13,9 +13,14 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { Link } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import AppIcon from '@/Components/App/AppIcon.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 import { QUICK_RECORD_ACTIONS } from '@/constants/quickRecordActions';
+import { useBusinessType } from '@/composables/useBusinessType';
+
+const { visibleFor } = useBusinessType();
+const visibleQuickActions = computed(() => visibleFor(QUICK_RECORD_ACTIONS));
 
 const props = defineProps({
     open: { type: Boolean, default: false },
@@ -45,7 +50,7 @@ function close() {
 
                 <div class="sheet-list">
                     <Link
-                        v-for="action in QUICK_RECORD_ACTIONS"
+                        v-for="action in visibleQuickActions"
                         :key="action.key"
                         :href="route(action.route)"
                         class="sheet-item"

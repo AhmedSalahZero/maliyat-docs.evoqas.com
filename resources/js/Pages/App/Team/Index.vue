@@ -20,7 +20,7 @@ import { Head, useForm, usePage, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import FormInstructions from '@/Components/App/FormInstructions.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 
 const props = defineProps({
     employees: { type: Array, required: true },

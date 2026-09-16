@@ -23,7 +23,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import FormInstructions from '@/Components/App/FormInstructions.vue';
 import ComboSelect from '@/Components/App/ComboSelect.vue';
 import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 
 const props = defineProps({
     customers:       { type: Array, required: true },
@@ -306,6 +306,7 @@ function submitGenericPay() {
             </div>
 
             <h3 class="sub">{{ t('orLogGenericLbl') }}</h3>
+            <div class="alert warning" style="margin-bottom: 12px;">{{ t('genericReceiveWarning') }}</div>
             <div class="card">
                 <div class="field-row" style="margin-bottom: 4px;">
                     <div class="field">
@@ -389,6 +390,7 @@ function submitGenericPay() {
             </div>
 
             <h3 class="sub">{{ t('orLogGenericLbl') }}</h3>
+            <div class="alert warning" style="margin-bottom: 12px;">{{ t('genericPayWarning') }}</div>
             <div class="card">
                 <div class="field-row" style="margin-bottom: 4px;">
                     <div class="field">

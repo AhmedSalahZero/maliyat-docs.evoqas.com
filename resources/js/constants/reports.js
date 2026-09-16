@@ -3,7 +3,7 @@ export const REPORTS = [
     { key: 'pl',       icon: 'pl',             route: 'app.reports.profit-loss',         titleKey: 'report_pl',                  subKey: 'report_pl_sub',                  tabKey: 'tab_pl' },
     { key: 'cust',     icon: 'statement_cust', route: 'app.reports.customer-statement',  titleKey: 'report_customer_statement',  subKey: 'report_customer_statement_sub',  tabKey: 'tab_statement_cust' },
     { key: 'supp',     icon: 'statement_supp', route: 'app.reports.supplier-statement',  titleKey: 'report_supplier_statement',  subKey: 'report_supplier_statement_sub',  tabKey: 'tab_statement_supp' },
-    { key: 'inv',      icon: 'inv_statement',  route: 'app.reports.inventory-statement', titleKey: 'report_inventory_statement', subKey: 'report_inventory_statement_sub', tabKey: 'tab_inv_statement' },
+    { key: 'inv',      icon: 'inv_statement',  route: 'app.reports.inventory-statement', titleKey: 'report_inventory_statement', subKey: 'report_inventory_statement_sub', tabKey: 'tab_inv_statement', requiresInventory: true },
     { key: 'cashflow', icon: 'cashflow',       route: 'app.reports.cash-flow',           titleKey: 'report_cashflow',            subKey: 'report_cashflow_sub',            tabKey: 'tab_cashflow' },
     // Trial Balance and Journal live behind this one tile — they are
     // the auditor's two screens and are always read together. See

@@ -32,9 +32,10 @@ import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
 import EditPaymentsPanel from '@/Components/App/EditPaymentsPanel.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
-import { scrollToForm } from '@/Composables/useScrollToForm';
-import { usePermissions } from '@/Composables/usePermissions';
+import { useAppTranslations } from '@/composables/useAppTranslations';
+import { scrollToForm } from '@/composables/useScrollToForm';
+import { usePermissions } from '@/composables/usePermissions';
+import { useBusinessType } from '@/composables/useBusinessType';
 
 const props = defineProps({
     vendors:  { type: Array, required: true },
@@ -52,6 +53,7 @@ const formCard = ref(null);
 
 // Delete is company-admin only — mirrors Controller::authorizeDelete().
 const { canDelete } = usePermissions();
+const { isProduction } = useBusinessType();
 const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
 
 function todayIso() { return new Date().toISOString().slice(0, 10); }
@@ -70,6 +72,12 @@ const channelList = ref([...props.paymentChannels]);
 const creatingVendor = ref(false);
 const creatingItemForRow = ref(null);
 const creatingChannel = ref(false);
+
+// Transient — deliberately kept outside form.lines so it's never
+// submitted as part of the purchase itself. Read once, at the
+// moment a brand-new item is actually created (see createItem());
+// meaningless once an existing item is picked instead.
+const newItemIsRawMaterial = ref({});
 
 const editingPurchase = ref(null);
 
@@ -147,11 +155,13 @@ async function createVendor(name) {
 async function createItem(name, rowIndex) {
     creatingItemForRow.value = rowIndex;
     try {
-        const { data } = await axios.post(route('app.items.store'), { name }, { headers: { Accept: 'application/json' } });
+        const type = newItemIsRawMaterial.value[rowIndex] ? 'raw_material' : 'trading';
+        const { data } = await axios.post(route('app.items.store'), { name, type }, { headers: { Accept: 'application/json' } });
         itemList.value.push(data);
         onItemChange(rowIndex, data.id);
     } finally {
         creatingItemForRow.value = null;
+        delete newItemIsRawMaterial.value[rowIndex];
     }
 }
 
@@ -335,13 +345,17 @@ function onConfirmDialogConfirm() {
                                 @update:model-value="(val) => onItemChange(index, val)"
                                 @create="(name) => createItem(name, index)"
                             />
+                            <label v-if="isProduction" class="raw-material-check" @mousedown.prevent>
+                                <input type="checkbox" v-model="newItemIsRawMaterial[index]">
+                                {{ t('newItemIsRawMaterialLbl') }}
+                            </label>
                         </td>
                         <td :data-label="t('qtyLbl')"><input v-model.number="line.qty" type="number" min="0" step="0.01" placeholder="0"></td>
                         <td :data-label="t('uomLbl')"><input v-model="line.uom" type="text" placeholder="Carton"></td>
                         <td :data-label="t('equalsLbl')">
                             <span class="equals-cell">
                                 <span>=</span>
-                                <input v-model.number="line.qty_per_uom" data-role="qtyperuom" type="number" min="0" placeholder="1">
+                                <input v-model.number="line.qty_per_uom" data-role="qtyperuom" type="number" min="0" placeholder="1" style="width:5rem">
                                 <input v-model="line.base_unit_name" data-role="baseunit" type="text" placeholder="unit">
                             </span>
                         </td>
@@ -515,4 +529,12 @@ function onConfirmDialogConfirm() {
     font-size: 12.5px; color: var(--color-text-secondary); font-family: var(--font-mono);
 }
 .settle-top > div:last-child { display: flex; align-items: center; gap: 6px; }
+.raw-material-check {
+    display: flex; align-items: center; gap: 4px;
+    margin-top: 4px; font-size: 11.5px; color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+.raw-material-check input[type="checkbox"] {
+    margin: 0 !important; padding: 0; width: 14px; height: 14px; flex-shrink: 0;
+}
 </style>

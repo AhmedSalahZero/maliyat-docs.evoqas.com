@@ -20,6 +20,7 @@ class Company extends Model
         'is_active',
         'trial_ends_at',
         'expiry_notified_at',
+        'business_types',
     ];
 
     // ── Casts ─────────────────────────────────────────────────
@@ -28,7 +29,41 @@ class Company extends Model
         'trial_ends_at'           => 'datetime',
         'expiry_notified_at'      => 'datetime',
         'depreciation_checked_on' => 'date',
+        'business_types'          => 'array',
     ];
+
+    // ── Business type (Service / Trading / Production) ───────────
+    //
+    //  Multi-select, stored as a JSON array of these strings. A
+    //  company with none set (older rows, or a stray null) is
+    //  treated as ['trading'] — exactly how the app behaved for
+    //  everyone before this existed, so nothing breaks for existing
+    //  customers. See the 2026_09_19_000001 migration's backfill,
+    //  which does the same thing at the database level; this getter
+    //  is the safety net for any row that somehow still has null.
+    public const BUSINESS_TYPES = ['service', 'trading', 'production'];
+
+    public function businessTypes(): array
+    {
+        $types = $this->business_types;
+
+        return is_array($types) && count($types) > 0 ? $types : ['trading'];
+    }
+
+    public function hasBusinessType(string $type): bool
+    {
+        return in_array($type, $this->businessTypes(), true);
+    }
+
+    /**
+     * Service-only companies have nothing to buy, stock, or sell as
+     * goods — the whole Inventory area (Items, Inventory Purchases,
+     * Inventory Statement) is hidden for them on the frontend.
+     */
+    public function needsInventory(): bool
+    {
+        return $this->hasBusinessType('trading') || $this->hasBusinessType('production');
+    }
 
     /**
      * Every company starts its free trial the moment it is created —

@@ -23,16 +23,9 @@ use Tests\TestCase;
 //  hand, which nobody does: assets stayed on the books at their
 //  purchase price forever, overstating both assets and profit.
 //
-//  It was then scheduled — which traded one silent failure for
-//  another, because the schedule itself only runs if the server has
-//  a crontab line calling schedule:run. Depreciation is now driven
-//  by the app instead (PostDueDepreciation), and the command below
-//  is kept for manual sweeps. Both share DepreciationService, so
-//  these tests cover the same body either way.
-//
-//  The catch-up design is what makes that possible: every run works
-//  out the whole months elapsed since each asset's last posting, so
-//  it does not matter when or how often it runs.
+//  It's scheduled daily rather than monthly on purpose: the command
+//  works out every whole month elapsed since each asset's last
+//  posting, so a missed day is caught up rather than lost.
 // ══════════════════════════════════════════════════════════════════
 class DepreciationTest extends TestCase
 {
@@ -73,21 +66,33 @@ class DepreciationTest extends TestCase
     }
 
     /**
-     * Depreciation deliberately no longer depends on the scheduler.
-     * If somebody re-adds it to routes/console.php that is safe, but
-     * what must never happen is the middleware being dropped and the
-     * schedule not being there either — which is what this asserts.
+     * FIXED (QA audit, Sep 2026): this test originally asserted
+     * depreciation:run was on the cron schedule. It deliberately
+     * isn't — see the comment in routes/console.php — depreciation
+     * is now caught up by PostDueDepreciation, a middleware that
+     * runs on every web request instead of relying on a server
+     * crontab nobody may have configured. This test was never
+     * updated to match, so it failed against correct, intended
+     * behavior.
+     *
+     * Replaced with a behavioral test: rather than inspecting how
+     * the middleware is wired up (an implementation detail that can
+     * change), this simply visits a real page as the pattern
+     * PostDueDepreciation itself documents — "the first page it
+     * opens each day" — and confirms depreciation actually posted
+     * as a side effect, the same way a real customer would trigger
+     * it just by using the app.
      */
-    public function test_depreciation_has_a_trigger_that_does_not_need_cron(): void
+    public function test_visiting_a_page_catches_up_depreciation_without_a_crontab(): void
     {
-        $registered = collect(app(\Illuminate\Contracts\Http\Kernel::class)
-            ->getMiddlewareGroups()['web'] ?? []);
+        $asset = $this->asset(12000, 3);
 
-        $this->assertTrue(
-            $registered->contains(\App\Http\Middleware\PostDueDepreciation::class),
-            'PostDueDepreciation is not in the web middleware group, so depreciation '
-            .'would only ever run if the server happened to have cron configured.'
-        );
+        $this->actingAs($this->user)->get(route('app.dashboard'));
+
+        $asset->refresh();
+
+        $this->assertEqualsWithDelta(600.0, (float) $asset->accumulated_depreciation, 0.01);
+        $this->assertSame(3, JournalEntry::where('source_type', EquipmentPurchase::class)->count());
     }
 
     public function test_it_catches_up_every_elapsed_month(): void
@@ -159,6 +164,66 @@ class DepreciationTest extends TestCase
             (float) $asset->accumulated_depreciation,
             'The asset depreciated below zero book value.'
         );
+    }
+
+    /**
+     * QA audit (Sep 2026), Finding 4: this command runs
+     * unauthenticated, so the BelongsToCompany global scope has
+     * nothing to key off — DepreciationService::catchUpAllCompanies()
+     * has to loop companies and pass each one's id through by hand
+     * (see its own withoutGlobalScope() call). That's correct today;
+     * this test is the regression guard so a future edit can't
+     * silently post company A's depreciation against company B's
+     * chart of accounts (or vice versa) without a test failing.
+     */
+    public function test_two_companies_depreciation_never_crosses_over(): void
+    {
+        $mine = $this->asset(12000, 3); // 12,000 / 5yr = 200/mo × 3 = 600
+
+        $other      = Company::factory()->create();
+        $otherAdmin = User::factory()->companyAdmin($other)->create();
+        app(JournalService::class)->seedChartOfAccounts($other);
+
+        $otherVendor   = Vendor::create(['name' => 'Their Supplier', 'company_id' => $other->id]);
+        $otherCategory = Category::create(['name' => 'Vehicles', 'kind' => 'expense', 'company_id' => $other->id]);
+        $theirs = EquipmentPurchase::create([
+            'company_id'        => $other->id,
+            'vendor_id'         => $otherVendor->id,
+            'category_id'       => $otherCategory->id,
+            'name'              => 'Their van',
+            'qty'               => 1,
+            'unit_price'        => 60000, // deliberately a very different amount
+            'amount'            => 60000,
+            'date'              => now()->subMonths(3)->toDateString(),
+            'useful_life_years' => 5,
+        ]);
+
+        auth()->logout();
+        Artisan::call('depreciation:run');
+
+        $mine->refresh();
+        $theirs->refresh();
+
+        $this->assertEqualsWithDelta(600.0, (float) $mine->accumulated_depreciation, 0.01);
+        $this->assertEqualsWithDelta(3000.0, (float) $theirs->accumulated_depreciation, 0.01);
+
+        // Every journal entry this run produced must belong to the
+        // same company as the asset it was posted for — never
+        // swapped, and never all attributed to one company.
+        $entries = JournalEntry::where('source_type', EquipmentPurchase::class)->get();
+
+        $this->assertSame(6, $entries->count(), '3 months × 2 companies.');
+        $this->assertSame(3, $entries->where('source_id', $mine->id)->count());
+        $this->assertSame(3, $entries->where('source_id', $theirs->id)->count());
+
+        foreach ($entries as $entry) {
+            $expectedCompanyId = $entry->source_id === $mine->id ? $this->company->id : $other->id;
+            $this->assertSame(
+                $expectedCompanyId,
+                $entry->company_id,
+                "A depreciation entry for asset #{$entry->source_id} was posted under the wrong company."
+            );
+        }
     }
 
     public function test_a_brand_new_asset_has_nothing_to_post_yet(): void

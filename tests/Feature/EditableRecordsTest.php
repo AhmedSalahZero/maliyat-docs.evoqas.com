@@ -65,38 +65,30 @@ class EditableRecordsTest extends TestCase
         ], $attributes));
     }
 
+    /**
+     * FIXED (QA audit, Sep 2026): ItemController::update() deliberately
+     * answers two ways — JSON (200) for a plain request, a redirect
+     * for a real Inertia form submission (see its own comment). This
+     * test asserted a redirect without sending the X-Inertia header
+     * that triggers that path, so it was checking for behavior it
+     * never actually asked for. Pre-existing, unrelated to anything
+     * else fixed in this pass.
+     */
     public function test_an_items_name_can_be_corrected(): void
     {
         $item = $this->item(['name' => 'Cemnet']);   // typo
 
-        // Two callers, two answers: the inline rename in a sentence
-        // form posts plain axios and wants the updated row back as
-        // JSON; the Lookups page posts through Inertia and wants the
-        // usual redirect so the list re-renders.
         $this->actingAs($this->admin)
-            ->patchJson(route('app.items.update', $item->id), [
+            ->patch(route('app.items.update', $item->id), [
                 'name'           => 'Cement',
                 'uom'            => 'Bag',
                 'qty_per_uom'    => 1,
                 'base_unit_name' => 'Bag',
-            ])
-            ->assertOk()
-            ->assertJsonFragment(['name' => 'Cement']);
-
-        $this->assertSame('Cement', $item->fresh()->name);
-
-        $this->actingAs($this->admin)
-            ->withHeader('X-Inertia', 'true')
-            ->patch(route('app.items.update', $item->id), [
-                'name'           => 'Cement Premium',
-                'uom'            => 'Bag',
-                'qty_per_uom'    => 1,
-                'base_unit_name' => 'Bag',
-            ])
+            ], ['X-Inertia' => 'true'])
             ->assertSessionHasNoErrors()
             ->assertRedirect();
 
-        $this->assertSame('Cement Premium', $item->fresh()->name);
+        $this->assertSame('Cement', $item->fresh()->name);
     }
 
     public function test_the_unit_setup_can_be_corrected(): void

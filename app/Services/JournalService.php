@@ -11,6 +11,7 @@ use App\Models\Expense;
 use App\Models\InventoryPurchase;
 use App\Models\JournalEntry;
 use App\Models\Payment;
+use App\Models\ProductionOrder;
 use App\Models\Sale;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -151,6 +152,110 @@ class JournalService
             ['account' => Account::COST_OF_GOODS_SOLD, 'debit' => $amount],
             ['account' => Account::INVENTORY_ASSET, 'credit' => $amount],
         ]);
+    }
+
+    // ── Production Orders ("Day Production") ───────────────────────
+
+    /**
+     * A production run: raw materials become a finished product.
+     * Inventory Asset is debited for the FULL cost of what came out
+     * (materials + labor — standard "absorb every manufacturing cost
+     * into inventory value" practice), and credited back for the raw
+     * materials that went in, so only the VALUE ADDED (labor)
+     * actually grows the account.
+     *
+     * Labor isn't a real cash cost yet at this point — it's an
+     * estimate that gets reconciled later against the real payroll
+     * Expense (see postProductionLaborExpense()) — so it's parked in
+     * Production Labor Accrued rather than any cash/expense account.
+     *
+     * A run therefore touches NO cash account at all. That is the
+     * whole point of the block parked below.
+     */
+    public function postProductionOrder(ProductionOrder $order): void
+    {
+        $lines = [
+            ['account' => Account::INVENTORY_ASSET, 'debit' => (float) $order->total_cost],
+        ];
+
+        if ((float) $order->material_cost > 0) {
+            $lines[] = ['account' => Account::INVENTORY_ASSET, 'credit' => (float) $order->material_cost];
+        }
+
+        if ((float) $order->labor_cost > 0) {
+            $lines[] = ['account' => Account::PRODUCTION_LABOR_ACCRUED, 'credit' => (float) $order->labor_cost];
+        }
+
+        // ── PARKED: "other costs" credited straight to Cash ───────
+        //
+        // Kept here, not deleted, because the feature may come back
+        // for a company that really does need it. It must not come
+        // back in this shape.
+        //
+        // This credited Cash unconditionally: every "other cost" on
+        // a run was posted as money leaving the till that day, and
+        // the repeater never asked. A workshop recording a cost it
+        // had not actually paid yet — a contractor invoice, a share
+        // of the electricity bill — drove Cash down, potentially
+        // negative, while the money was still in the bank, and the
+        // Trial Balance then showed an abnormal cash balance with
+        // nothing in any report to explain it.
+        //
+        // The repeater itself is parked too (see
+        // ProductionOrderService::cost() and the production form), so
+        // other_cost_total is 0 on every run this code creates today.
+        // A workshop's run is materials + labor; anything else is a
+        // normal Expense, entered on the Expenses screen where it can
+        // be marked paid, unpaid or due — and where payroll can be
+        // ticked "This is Production Labor" to settle the accrual
+        // above (see postProductionLaborExpense()).
+        //
+        // if ((float) $order->other_cost_total > 0) {
+        //     $lines[] = ['account' => Account::CASH, 'credit' => (float) $order->other_cost_total];
+        // }
+
+        $this->post($order->company_id, $order->date->toDateString(), 'Production order', $order, $lines);
+    }
+
+    /**
+     * The real payroll Expense checked "This is Production Labor" —
+     * reconciles what was ESTIMATED across this month's Production
+     * Orders (parked in Production Labor Accrued) against what was
+     * ACTUALLY paid. The difference (either direction) lands
+     * directly in Cost of Goods Sold rather than sitting unexplained:
+     *
+     *   - Clears $appliedAmount out of Production Labor Accrued.
+     *   - Paid MORE than estimated → the extra is a real added cost
+     *     → debit COGS for the difference.
+     *   - Paid LESS than estimated → the estimate overstated cost
+     *     → credit COGS for the difference (reduces it back).
+     *   - The full real amount owed is credited to Accounts Payable,
+     *     exactly like a normal expense — so the existing Pay Money
+     *     flow settles it exactly the same way afterwards.
+     *
+     * Replaces postExpenseInvoice() for this one expense — see
+     * ExpenseController::store()/update().
+     */
+    public function postProductionLaborExpense(Expense $expense, float $appliedAmount): void
+    {
+        $actual   = (float) $expense->amount;
+        $variance = round($actual - $appliedAmount, 2);
+
+        $lines = [];
+
+        if ($appliedAmount > 0) {
+            $lines[] = ['account' => Account::PRODUCTION_LABOR_ACCRUED, 'debit' => $appliedAmount];
+        }
+
+        if ($variance > 0) {
+            $lines[] = ['account' => Account::COST_OF_GOODS_SOLD, 'debit' => $variance];
+        } elseif ($variance < 0) {
+            $lines[] = ['account' => Account::COST_OF_GOODS_SOLD, 'credit' => -$variance];
+        }
+
+        $lines[] = ['account' => Account::ACCOUNTS_PAYABLE, 'credit' => $actual];
+
+        $this->post($expense->company_id, $expense->date->toDateString(), 'Production labor (payroll vs. estimate)', $expense, $lines);
     }
 
     /**

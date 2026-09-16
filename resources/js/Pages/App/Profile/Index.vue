@@ -20,13 +20,16 @@
 import { computed } from 'vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
+import { usePermissions } from '@/composables/usePermissions';
 
 const props = defineProps({
     user: { type: Object, required: true },
+    businessTypes: { type: Array, default: () => ['trading'] },
 });
 
 const { t } = useAppTranslations();
+const { isCompanyAdmin } = usePermissions();
 const page = usePage();
 
 const role = computed(() => page.props.auth?.user?.role);
@@ -44,6 +47,27 @@ const passwordForm = useForm({
     password: '',
     password_confirmation: '',
 });
+
+// ── Business type (company_admin only) ──────────────────────────
+const businessTypeForm = useForm({
+    business_types: [...props.businessTypes],
+});
+
+function toggleBusinessType(type) {
+    const set = new Set(businessTypeForm.business_types);
+    if (set.has(type)) {
+        set.delete(type);
+    } else {
+        set.add(type);
+    }
+    businessTypeForm.business_types = set.size > 0 ? Array.from(set) : ['trading'];
+}
+
+function saveBusinessTypes() {
+    businessTypeForm.patch(route('app.profile.business-types'), {
+        preserveScroll: true,
+    });
+}
 
 function saveProfile() {
     profileForm.patch(route('app.profile.update'), {
@@ -105,6 +129,40 @@ function savePassword() {
                         {{ t('profile_save') }}
                     </button>
                     <span v-if="profileForm.recentlySuccessful" class="profile__saved">✓</span>
+                </div>
+            </form>
+        </div>
+
+        <!-- ── Business type (company_admin only) ───────────────
+             Lets a company that predates this feature — or just
+             changed what it does — switch Service/Trading/Production
+             on or off later. See ProfileController::updateBusinessTypes(). -->
+        <div v-if="isCompanyAdmin" class="card">
+            <h2 class="profile__heading">{{ t('profile_business_type_heading') }}</h2>
+            <p class="form-hint">{{ t('profile_business_type_hint') }}</p>
+
+            <form @submit.prevent="saveBusinessTypes">
+                <div style="display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0;">
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer;">
+                        <input type="checkbox" :checked="businessTypeForm.business_types.includes('service')" @change="toggleBusinessType('service')">
+                        {{ t('businessTypeServiceLbl') }}
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer;">
+                        <input type="checkbox" :checked="businessTypeForm.business_types.includes('trading')" @change="toggleBusinessType('trading')">
+                        {{ t('businessTypeTradingLbl') }}
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer;">
+                        <input type="checkbox" :checked="businessTypeForm.business_types.includes('production')" @change="toggleBusinessType('production')">
+                        {{ t('businessTypeProductionLbl') }}
+                    </label>
+                </div>
+                <div v-if="businessTypeForm.errors.business_types" class="form-error">{{ businessTypeForm.errors.business_types }}</div>
+
+                <div class="profile__actions">
+                    <button type="submit" class="btn btn-primary" :disabled="businessTypeForm.processing">
+                        {{ t('profile_save') }}
+                    </button>
+                    <span v-if="businessTypeForm.recentlySuccessful" class="profile__saved">✓</span>
                 </div>
             </form>
         </div>

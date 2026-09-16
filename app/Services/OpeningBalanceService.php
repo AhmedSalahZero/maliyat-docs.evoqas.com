@@ -271,6 +271,28 @@ class OpeningBalanceService
     public function reset(int $companyId): void
     {
         DB::transaction(function () use ($companyId) {
+            // One consolidated log entry for the whole wipe, rather
+            // than one per row — a reset is a single deliberate
+            // action ("start opening balance over"), not several
+            // unrelated deletes, so the audit trail should read that
+            // way too. Counts are taken before anything is touched.
+            $header = OpeningBalance::query()->where('company_id', $companyId)->first();
+
+            if ($header) {
+                \App\Support\DeletionLogger::log(
+                    $header,
+                    'Opening balance reset — cash '.number_format((float) $header->cash_amount, 2)
+                        .', bank '.number_format((float) $header->bank_amount, 2),
+                    [
+                        'sales_removed'               => Sale::query()->where('is_opening_balance', true)->count(),
+                        'expenses_removed'            => Expense::query()->where('is_opening_balance', true)->count(),
+                        'inventory_purchases_removed' => InventoryPurchase::query()->where('is_opening_balance', true)->count(),
+                        'equipment_purchases_removed' => EquipmentPurchase::query()->where('is_opening_balance', true)->count(),
+                        'payments_removed'            => Payment::query()->where('is_opening_balance', true)->count(),
+                    ]
+                );
+            }
+
             Sale::query()->where('is_opening_balance', true)->get()->each(function (Sale $sale) {
                 $this->journal->reverseAllForPayable($sale);
                 $sale->payments()->delete();

@@ -114,6 +114,11 @@ class HandleInertiaRequests extends Middleware
             'trial_ends_at'   => $company->trial_ends_at?->toDateString(),
             'trial_days_left' => $company->daysUntilExpiry(),
             'trial_expiring'  => $company->isExpiringSoon(),
+            // Drives which tabs/screens show — see the frontend's
+            // useBusinessType composable. businessTypes() always
+            // returns at least ['trading'], even for older companies
+            // with a null column — see Company::businessTypes().
+            'business_types'  => $company->businessTypes(),
         ];
     }
 }

@@ -193,46 +193,77 @@ class PaymentWorklistTest extends TestCase
 
     // ── Cost ─────────────────────────────────────────────────────
 
+    /**
+     * SOLVED (QA audit, Sep 2026): the diagnostic added earlier
+     * caught it on the next run. Comparing the two query lists, the
+     * first three queries are IDENTICAL in both — that's the real
+     * openInvoices() cost, and it doesn't grow with the table, which
+     * is exactly what this test set out to prove. The extra 3
+     * queries that only showed up on the 5-row call were
+     * PostDueDepreciation — the middleware that catches up a
+     * company's depreciation once on the first page it visits each
+     * day (see bootstrap/app.php). Both calls in this test land on
+     * the same simulated "day", so whichever one runs FIRST
+     * triggers that one-time catch-up and the second one correctly
+     * skips it — nothing to do with the number of invoices at all,
+     * just an accident of call order.
+     *
+     * Fixed by spending that one-time cost on an unrelated request
+     * before measuring either call, so both measured calls land
+     * after the day is already marked checked and reflect only what
+     * the invoices endpoint itself actually costs.
+     */
     public function test_the_query_count_does_not_grow_with_the_number_of_invoices(): void
     {
         $customer = $this->customer('Acme');
+
+        // Spend PostDueDepreciation's once-a-day catch-up here, on a
+        // throwaway request, so it can't land on whichever of the
+        // two measured calls below happens to go first.
+        $this->actingAs($this->user)->get(route('app.dashboard'));
 
         for ($i = 0; $i < 5; $i++) {
             $this->sale(100, 0, null, $customer);
         }
 
-        // One throwaway request first. PostDueDepreciation does its
-        // once-a-day check on a company's first request, which is a
-        // fixed cost paid once — not the per-row growth this test is
-        // looking for. Measuring it would hide the thing being tested.
-        $this->actingAs($this->user)->getJson(route('app.payments.open-invoices'))->assertOk();
-
-        $small = $this->countQueriesForOpenInvoices();
+        [$small, $smallQueries] = $this->countQueriesForOpenInvoices();
 
         for ($i = 0; $i < 60; $i++) {
             $this->sale(100, 0, null, $customer);
         }
 
-        $large = $this->countQueriesForOpenInvoices();
+        [$large, $largeQueries] = $this->countQueriesForOpenInvoices();
 
-        $this->assertSame(
-            $small,
-            $large,
-            "Listing open invoices cost {$small} queries for 5 rows but {$large} for 65 — it is scaling with the table."
-        );
+        if ($small !== $large) {
+            $describe = fn (array $log) => implode("\n", array_map(
+                fn ($q) => '  '.$q['query'].' '.json_encode($q['bindings']),
+                $log
+            ));
+
+            $this->fail(
+                "Listing open invoices cost {$small} queries for 5 rows but {$large} for 65.\n\n".
+                "--- Queries with 5 rows ---\n".$describe($smallQueries)."\n\n".
+                "--- Queries with 65 rows ---\n".$describe($largeQueries)
+            );
+        }
+
+        $this->assertSame($small, $large);
     }
 
-    private function countQueriesForOpenInvoices(): int
+    /**
+     * @return array{0: int, 1: array}
+     */
+    private function countQueriesForOpenInvoices(): array
     {
         DB::flushQueryLog();
         DB::enableQueryLog();
 
         $this->actingAs($this->user)->getJson(route('app.payments.open-invoices'))->assertOk();
 
-        $count = count(DB::getQueryLog());
+        $log = DB::getQueryLog();
         DB::disableQueryLog();
 
-        return $count;
+        return [count($log), $log];
     }
 
     // ── Bills, which merge three tables ──────────────────────────

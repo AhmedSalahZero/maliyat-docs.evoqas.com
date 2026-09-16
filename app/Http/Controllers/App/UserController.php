@@ -8,6 +8,7 @@ use App\Http\Requests\App\StoreEmployeeRequest;
 use App\Http\Requests\App\UpdateEmployeeRequest;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -71,15 +72,22 @@ class UserController extends Controller
 
         $data = $request->validated();
 
-        $user->update([
-            'name'  => $data['name'],
-            'email' => $data['email'],
-        ]);
+        // Both writes land on the same row, so the practical risk of
+        // a half-applied edit is small — but every other multi-write
+        // path in this app is wrapped, and an unwrapped one is the
+        // kind of exception that reads like an oversight to whoever
+        // touches this next. Wrapped so the rule has no exceptions.
+        DB::transaction(function () use ($user, $data) {
+            $user->update([
+                'name'  => $data['name'],
+                'email' => $data['email'],
+            ]);
 
-        // Empty means "leave the password alone" — see the request.
-        if (! empty($data['password'])) {
-            $user->update(['password' => $data['password']]);
-        }
+            // Empty means "leave the password alone" — see the request.
+            if (! empty($data['password'])) {
+                $user->update(['password' => $data['password']]);
+            }
+        });
 
         return back()->with('success', 'Employee updated.');
     }

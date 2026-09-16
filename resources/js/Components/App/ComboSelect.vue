@@ -5,7 +5,10 @@
 //
 //  Dumb-ish combo box: renders `options` as a <select> matching the
 //  prototype's .blank-select styling, with a trailing "+ Add new…"
-//  option. Picking it reveals an inline text input; submitting it
+//  option (omit it entirely with :allow-create="false", for pickers
+//  where every option must already exist elsewhere — e.g.
+//  Production's Raw Material list, which only ever lists items
+//  already purchased). Picking it reveals an inline text input; submitting it
 //  emits @create(name) and shows a small "…" state (`creating`
 //  prop) while the parent does the real POST. This component never
 //  talks to the network itself — the four lookup types (Customer/
@@ -17,7 +20,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { ref, computed, nextTick } from 'vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 
 const props = defineProps({
     modelValue: { type: [Number, String, null], default: null },
@@ -27,6 +30,7 @@ const props = defineProps({
     addNewLabel: { type: String, default: '+ Add new…' },
     creating: { type: Boolean, default: false },
     inline: { type: Boolean, default: true }, // .blank-select (sentence) vs .form-select (plain field)
+    allowCreate: { type: Boolean, default: true }, // false hides "+ Add new…" entirely — for pickers where every option must already exist (e.g. Production's Raw Material list)
 });
 
 const emit = defineEmits(['update:modelValue', 'create']);
@@ -94,7 +98,7 @@ defineExpose({ finishAdding });
         <select v-model="selectValue" :class="inline ? 'blank-select' : 'form-select'" :disabled="creating">
             <option value="">{{ placeholder }}</option>
             <option v-for="opt in options" :key="opt.id" :value="opt.id">{{ optionText(opt) }}</option>
-            <option value="__new__">{{ addNewLabel }}</option>
+            <option value="__new__" v-if="allowCreate">{{ addNewLabel }}</option>
         </select>
     </span>
     <span v-else class="combo-select-new">

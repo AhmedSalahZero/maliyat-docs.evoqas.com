@@ -58,6 +58,7 @@ class CompanyController extends Controller
                 'name'     => $data['name'],
                 'name_ar'  => $data['name_ar'] ?? null,
                 'currency' => $data['currency'] ?? 'EGP',
+                'business_types' => $data['business_types'] ?? ['trading'],
             ]);
 
             $admin = User::create([

@@ -27,9 +27,9 @@ import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
 import EditPaymentsPanel from '@/Components/App/EditPaymentsPanel.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
-import { scrollToForm } from '@/Composables/useScrollToForm';
-import { usePermissions } from '@/Composables/usePermissions';
+import { useAppTranslations } from '@/composables/useAppTranslations';
+import { scrollToForm } from '@/composables/useScrollToForm';
+import { usePermissions } from '@/composables/usePermissions';
 
 const props = defineProps({
     vendors:  { type: Array, required: true },

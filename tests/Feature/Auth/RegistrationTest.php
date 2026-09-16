@@ -33,6 +33,7 @@ class RegistrationTest extends TestCase
             '_ft'                   => (now()->timestamp - 10) * 1000,
             'company_name'          => 'Northwind Trading',
             'currency'              => 'SAR',
+            'business_types'        => ['trading'],
             'name'                  => 'Amina Salah',
             'email'                 => 'amina@example.test',
             'password'              => 'secret-pass1',
@@ -64,6 +65,28 @@ class RegistrationTest extends TestCase
         $this->assertSame($company->id, $user->company_id);
         $this->assertSame(UserRole::CompanyAdmin->value, $user->role);
         $this->assertSame('ar', $user->language);
+    }
+
+    /**
+     * Regression test (QA audit, Sep 2026): `nickname` is InPractice
+     * leftover — required + unique in the original users table, and
+     * registration never fills it in. A migration later relaxed the
+     * constraint, but only via a raw MySQL-only statement, so on any
+     * other driver (including this app's own sqlite default) the
+     * column stayed NOT NULL and this exact request failed outright.
+     * Pinning this down explicitly, rather than relying on the
+     * broader "does registration work" test above, so a future
+     * change to that migration — or a fresh `nickname`-requiring
+     * column added the same way — fails loudly here first.
+     */
+    public function test_registration_does_not_require_a_nickname(): void
+    {
+        Notification::fake();
+
+        $this->post('/register', $this->payload())
+            ->assertSessionHasNoErrors();
+
+        $this->assertNull(User::sole()->nickname);
     }
 
     public function test_the_new_company_gets_a_chart_of_accounts(): void
@@ -105,12 +128,31 @@ class RegistrationTest extends TestCase
         $this->assertSame(0, User::count());
     }
 
+    /**
+     * FIXED (QA audit, Sep 2026): the timing guard this test means to
+     * exercise was rewritten to read a timestamp the SERVER stamps
+     * into the session when GET /register is rendered (see
+     * StoreRegisterRequest::FORM_OPENED_AT and its own doc comment
+     * for why — a client-sent timestamp allowed a real customer's
+     * clock skew to reject them). This test still only sent an
+     * inert leftover '_ft' field and never visited the register page
+     * first, so the session stamp was never set — and with no stamp,
+     * the guard intentionally lets the request through rather than
+     * refusing it. It also checked for an error on 'email', but the
+     * guard actually reports on '_hp'. Fixed to visit the real page
+     * first (seeding the stamp) and check the field the code
+     * actually uses.
+     */
     public function test_a_form_submitted_too_fast_is_rejected(): void
     {
-        // Submitted the same instant the page rendered — no human
-        // fills a sign-up form that quickly.
-        $this->post('/register', $this->payload(['_ft' => now()->timestamp * 1000]))
-            ->assertSessionHasErrors('email');
+        // Visiting the real page first is what stamps
+        // FORM_OPENED_AT into the session — posting immediately
+        // after reproduces "submitted the same instant the page
+        // rendered", which no human does.
+        $this->get('/register');
+
+        $this->post('/register', $this->payload())
+            ->assertSessionHasErrors('_hp');
 
         $this->assertSame(0, User::count());
     }

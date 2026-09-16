@@ -1,7 +1,7 @@
 <script setup>
 import { Head, useForm } from '@inertiajs/vue3';
-import { useAuthStore } from '@/Stores/useAuthStore';
-import { useAuthTranslations } from '@/Composables/useAuthTranslations';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { useAuthTranslations } from '@/composables/useAuthTranslations';
 import IpLoginShell from '@/Components/Auth/IpLoginShell.vue';
 import PasswordInput from '@/Components/PasswordInput.vue';
 

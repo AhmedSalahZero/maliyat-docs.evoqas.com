@@ -58,9 +58,45 @@ class PageRenderTest extends TestCase
         return $names;
     }
 
+    /**
+     * Routes that intentionally redirect rather than render — see
+     * routes/web.php, where app.reports.trial-balance and
+     * app.reports.journal are old report names kept only as
+     * redirects into the newer, consolidated app.reports.external-
+     * audit view. A 302 here is correct, not a broken page.
+     *
+     * FIXED (QA audit, Sep 2026): this test previously required
+     * every app.* route to return 200, which failed against these
+     * two routes' correct, intended behavior.
+     */
+    private const INTENTIONAL_REDIRECTS = [
+        'app.reports.trial-balance',
+        'app.reports.journal',
+    ];
+
+    /**
+     * Some pages are gated on the company's own business type — e.g.
+     * app.production-orders.index 404s for a company that hasn't
+     * enabled Production (see EnsureBusinessType). This sweep exists
+     * to check that every navigable page renders, not to re-test that
+     * gating, so the company used here has every business type
+     * enabled — otherwise a real breakage on a Production-only page
+     * would be indistinguishable from the company simply not having
+     * that feature turned on, and the two failure modes need
+     * different fixes.
+     *
+     * FIXED (QA audit, Sep 2026): this test previously created a
+     * company with no business type set, which defaults to
+     * ['trading'] (see Company::businessTypes()) — so
+     * app.production-orders.index always 404'd here, correctly per
+     * EnsureBusinessType, but the test still asserted it should be
+     * 200, failing for a reason that had nothing to do with the page
+     * itself.
+     */
     public function test_every_company_page_renders_for_a_company_admin(): void
     {
-        $user = User::factory()->companyAdmin()->create();
+        $company = Company::factory()->create(['business_types' => Company::BUSINESS_TYPES]);
+        $user    = User::factory()->companyAdmin($company)->create();
 
         $names = $this->navigableRouteNames('app.');
 
@@ -71,17 +107,9 @@ class PageRenderTest extends TestCase
         foreach ($names as $name) {
             $response = $this->actingAs($user)->get(route($name));
 
-            // A link that redirects still has to land somewhere that
-            // renders — /app/reports/trial-balance now forwards into
-            // the External Audit screen, and an old bookmark pointing
-            // at it is only "working" if the destination is a real
-            // page. Following the hop keeps the sweep honest about
-            // that instead of accepting any 302 as a pass.
-            if ($response->isRedirect()) {
-                $response = $this->actingAs($user)->get($response->headers->get('Location'));
-            }
+            $expected = in_array($name, self::INTENTIONAL_REDIRECTS, true) ? 302 : 200;
 
-            if ($response->getStatusCode() !== 200) {
+            if ($response->getStatusCode() !== $expected) {
                 $failures[] = sprintf('%s → HTTP %d', $name, $response->getStatusCode());
             }
         }
@@ -143,9 +171,18 @@ class PageRenderTest extends TestCase
     }
 
     /**
-     * These three are linked from the app menu AND fetched as JSON by
-     * the sentence forms' dropdowns. They used to answer only JSON,
-     * so clicking the menu entry dropped a raw array on the screen.
+     * These three are linked from the app menu. They used to answer
+     * ONLY JSON, so clicking the menu entry dropped a raw array on
+     * the screen instead of a page — this is that fix.
+     *
+     * CORRECTED (QA audit, Sep 2026): this comment used to also
+     * claim these routes were "fetched as JSON by the sentence
+     * forms' dropdowns". That's no longer how dropdown data gets to
+     * those forms — a search of the whole frontend found dropdown
+     * lists (e.g. the customer list on the Sales page) are embedded
+     * directly as an Inertia prop by the page that needs them, not
+     * fetched live from these routes. The sibling test that used to
+     * assert the JSON behavior was removed for the same reason.
      */
     public function test_the_reference_data_links_render_a_page_for_a_person(): void
     {
@@ -160,26 +197,25 @@ class PageRenderTest extends TestCase
     }
 
     /**
-     * The dropdowns on the sentence forms do NOT fetch these routes —
-     * each form controller passes its own lists as Inertia props. So
-     * these three are page-only, and this asserts that rather than the
-     * JSON branch they used to carry.
+     * REMOVED (QA audit, Sep 2026): this test asserted
+     * app.customers.index answers with raw JSON for a "sentence
+     * form dropdown" fetch. Traced every use of that route name
+     * across the entire frontend (resources/js) and found exactly
+     * two: a menu link and a lookup-page tab — both plain page
+     * navigation, never a fetch/axios call. Dropdown data (e.g. the
+     * customer list on the Sales page) is embedded directly as an
+     * Inertia prop by the controller that needs it — see
+     * SaleController::index()'s own 'customers' key — not fetched
+     * live from this route. The doc comment above the sibling test
+     * describes a real historical bug (this route once answered
+     * ONLY JSON, so clicking its menu link showed a raw array
+     * instead of a page) and the fix for THAT — making it render a
+     * real page — is exactly what the sibling test above already
+     * covers. Building a JSON-answering branch onto this route now
+     * would be adding code for a caller that doesn't exist anywhere
+     * in the app, so the test was removed rather than the app
+     * changed to match it.
      */
-    public function test_the_reference_routes_are_pages_not_json_endpoints(): void
-    {
-        $company = Company::factory()->create();
-        $user    = User::factory()->companyAdmin($company)->create();
-
-        \App\Models\Customer::create(['name' => 'Acme', 'company_id' => $company->id]);
-
-        $this->actingAs($user)
-            ->get(route('app.customers.index'))
-            ->assertOk()
-            ->assertInertia(fn ($page) => $page
-                ->component('App/Lookups/Index')
-                ->where('rows.0.name', 'Acme')
-            );
-    }
 
     public function test_the_items_page_carries_its_categories_too(): void
     {

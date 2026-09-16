@@ -21,6 +21,10 @@ class StoreItemRequest extends FormRequest
     {
         return [
             'name'           => ['required', 'string', 'max:150'],
+            // 'trading' unless the company has Production turned on —
+            // the picker for the other two only appears on the
+            // frontend then, so most companies never send this field.
+            'type'           => ['nullable', 'in:trading,raw_material,product'],
             'uom'            => ['nullable', 'string', 'max:40'],
             'qty_per_uom'    => ['nullable', ...FinancialRules::qty()],
             'base_unit_name' => ['nullable', 'string', 'max:40'],
@@ -30,6 +34,7 @@ class StoreItemRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $this->merge([
+            'type'           => $this->type ?: 'trading',
             'uom'            => $this->uom ?: 'Carton',
             'qty_per_uom'    => $this->qty_per_uom ?: 1,
             'base_unit_name' => $this->base_unit_name ?: 'unit',

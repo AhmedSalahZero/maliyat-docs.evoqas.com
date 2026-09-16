@@ -7,6 +7,7 @@ use App\Http\Requests\Auth\StoreRegisterRequest;
 use App\Services\RegisterService;
 use App\Support\AuthVerification;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -32,8 +33,18 @@ class RegisteredUserController extends Controller
     /**
      * Show the registration page.
      */
-    public function create(): Response
+    public function create(Request $request): Response
     {
+        // Stamp WHEN this form was handed over, on the server.
+        //
+        // This is the "was it filled in impossibly fast" guard. It
+        // used to be a timestamp the browser sent back, compared
+        // against the server's clock — two different machines, so a
+        // device running a minute fast made a five-minute form look
+        // instantaneous and the person was refused. See
+        // StoreRegisterRequest::withValidator().
+        $request->session()->put(StoreRegisterRequest::FORM_OPENED_AT, now());
+
         return Inertia::render('Auth/Register');
     }
 
@@ -41,7 +52,7 @@ class RegisteredUserController extends Controller
      * Handle an incoming registration request.
      *
      * Validation is fully handled by StoreRegisterRequest —
-     * including honeypot, time guard, nickname uniqueness, hub validity.
+     * including the honeypot and the timing guard.
      * This method only orchestrates: validate → service → login → redirect.
      */
     public function store(StoreRegisterRequest $request): RedirectResponse

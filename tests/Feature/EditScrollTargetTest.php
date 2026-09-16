@@ -105,7 +105,7 @@ class EditScrollTargetTest extends TestCase
      */
     public function test_the_sticky_header_is_accounted_for(): void
     {
-        $helper = file_get_contents(resource_path('js/Composables/useScrollToForm.js'));
+        $helper = file_get_contents(resource_path('js/composables/useScrollToForm.js'));
 
         $this->assertStringContainsString(
             '.app-header',
@@ -124,7 +124,7 @@ class EditScrollTargetTest extends TestCase
     {
         $this->assertStringContainsString(
             'Math.max(top, 0)',
-            file_get_contents(resource_path('js/Composables/useScrollToForm.js')),
+            file_get_contents(resource_path('js/composables/useScrollToForm.js')),
             'A form near the top of a short page would compute a negative offset'
         );
     }

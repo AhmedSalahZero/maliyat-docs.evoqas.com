@@ -34,6 +34,19 @@ use Inertia\Response;
 //  balance() per row — four unbounded table loads and a query per
 //  record, exactly the pattern that made the Receive/Pay screen
 //  unusable at a few hundred rows.
+//
+//  ⚠ TENANT ISOLATION — READ BEFORE EDITING (QA audit, Sep 2026):
+//  Every other controller in this app gets its company isolation for
+//  free, automatically, from BelongsToCompany's global scope on each
+//  Eloquent model. This controller opts OUT of that safety net on
+//  purpose, for the raw-query performance reasons above (DB::table()
+//  and DB::raw() do not go through Eloquent, so the global scope
+//  never runs). That means every query below has been written to
+//  filter by `company_id` (or `sales.company_id`, etc.) BY HAND —
+//  verified correct as of this audit — and there is nothing that
+//  will warn you if a new or edited query in this file forgets that
+//  filter. If you add a query here, add its own `where('company_id',
+//  $companyId)` explicitly; do not assume it's scoped for you.
 // ══════════════════════════════════════════════════════════════════
 class DashboardController extends Controller
 {
@@ -295,7 +308,18 @@ class DashboardController extends Controller
                     ),
                 'purchases'
             )
-            ->join('vendors', 'vendors.id', '=', 'purchases.vendor_id')
+            // Belt-and-suspenders (QA audit, Sep 2026): vendor_id here
+            // is already guaranteed to belong to this company — every
+            // Store*Request validates vendor_id against the caller's
+            // own company_id before it can ever be saved — but this
+            // file has opted out of the automatic global scope (see
+            // the class doc comment), so every join in it should
+            // state its own company filter explicitly rather than
+            // lean on an assumption holding true elsewhere.
+            ->join('vendors', function ($join) use ($companyId) {
+                $join->on('vendors.id', '=', 'purchases.vendor_id')
+                    ->where('vendors.company_id', $companyId);
+            })
             ->groupBy('vendors.id', 'vendors.name')
             ->select([
                 'vendors.id',

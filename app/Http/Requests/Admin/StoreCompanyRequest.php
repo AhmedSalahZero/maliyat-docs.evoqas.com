@@ -23,6 +23,10 @@ class StoreCompanyRequest extends FormRequest
             'name'          => ['required', 'string', 'max:150'],
             'name_ar'       => ['nullable', 'string', 'max:150'],
             'currency'      => ['nullable', 'string', 'max:8'],
+            // Optional — defaults to Trading in the controller, same
+            // as any company that predates this feature.
+            'business_types'   => ['nullable', 'array'],
+            'business_types.*' => ['string', 'in:service,trading,production'],
 
             'admin_name'     => ['required', 'string', 'min:2', 'max:100'],
             'admin_email'    => ['required', 'string', 'email', 'max:255', 'unique:users,email'],

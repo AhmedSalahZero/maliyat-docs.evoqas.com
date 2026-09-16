@@ -24,8 +24,8 @@ import { ref, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
-import { usePermissions } from '@/Composables/usePermissions';
+import { useAppTranslations } from '@/composables/useAppTranslations';
+import { usePermissions } from '@/composables/usePermissions';
 
 const props = defineProps({
     payments: { type: Array, default: () => [] },

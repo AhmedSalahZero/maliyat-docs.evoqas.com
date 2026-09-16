@@ -180,6 +180,19 @@ class FrontendIntegrityTest extends TestCase
      * Pages are excluded: Inertia resolves them by name at runtime,
      * so they are never imported by another file.
      */
+    /**
+     * FIXED (QA audit, Sep 2026): this test built file paths with
+     * PHP's RecursiveDirectoryIterator, which returns
+     * backslash-separated paths on Windows (Layouts\AppLayout.vue).
+     * It then compared those directly against import strings from
+     * the source code, which always use forward slashes regardless
+     * of OS — that's just JavaScript/Vue import syntax, on Windows,
+     * Mac, or Linux alike (from '@/Layouts/AppLayout.vue'). On
+     * Windows those two never matched, so the test believed nothing
+     * imported anything and flagged nearly every real, in-use file
+     * as an "orphan". Normalizing every path to forward slashes
+     * before comparing fixes it for every OS the suite might run on.
+     */
     public function test_no_frontend_file_is_left_unreferenced(): void
     {
         $root = resource_path('js');
@@ -198,7 +211,8 @@ class FrontendIntegrityTest extends TestCase
             foreach ($relative[1] as $target) {
                 $resolved = realpath(dirname($path).'/'.$target)
                     ?: dirname($path).'/'.$target;
-                $imported[ltrim(str_replace($root, '', $resolved), '/')] = true;
+                $normalized = str_replace('\\', '/', $resolved);
+                $imported[ltrim(str_replace(str_replace('\\', '/', $root), '', $normalized), '/')] = true;
             }
         }
 
@@ -206,7 +220,7 @@ class FrontendIntegrityTest extends TestCase
         $orphans     = [];
 
         foreach ($this->frontendFiles() as $path) {
-            $relative = ltrim(str_replace($root, '', $path), '/');
+            $relative = str_replace('\\', '/', ltrim(str_replace($root, '', $path), '/\\'));
 
             if (in_array($relative, $entryPoints, true) || str_starts_with($relative, 'Pages/')) {
                 continue;

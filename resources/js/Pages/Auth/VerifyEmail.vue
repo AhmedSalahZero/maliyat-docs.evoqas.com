@@ -1,8 +1,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { Head, useForm } from '@inertiajs/vue3';
-import { useAuthStore } from '@/Stores/useAuthStore';
-import { useAuthTranslations } from '@/Composables/useAuthTranslations';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { useAuthTranslations } from '@/composables/useAuthTranslations';
 import IpLoginShell from '@/Components/Auth/IpLoginShell.vue';
 
 const props = defineProps({

@@ -28,7 +28,7 @@ class UpdatePaymentRequest extends FormRequest
     {
         // The company scope on route-model binding has already 404'd
         // anything belonging to someone else.
-        return (bool) $this->user();
+        return (bool) $this->user()?->company_id;
     }
 
     public function rules(): array

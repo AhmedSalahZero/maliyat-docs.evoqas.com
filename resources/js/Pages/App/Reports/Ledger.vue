@@ -16,7 +16,7 @@ import { ref, computed } from 'vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import ReportToolbar from '@/Components/App/ReportToolbar.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 
 const props = defineProps({
     entries: { type: Array, required: true },

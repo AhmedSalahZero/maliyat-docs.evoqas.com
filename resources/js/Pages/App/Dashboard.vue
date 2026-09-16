@@ -27,8 +27,12 @@ import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import AppIcon from '@/Components/App/AppIcon.vue';
 import DonutChart3D from '@/Components/App/DonutChart3D.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 import { QUICK_RECORD_ACTIONS } from '@/constants/quickRecordActions';
+import { useBusinessType } from '@/composables/useBusinessType';
+
+const { visibleFor } = useBusinessType();
+const visibleQuickActions = computed(() => visibleFor(QUICK_RECORD_ACTIONS));
 
 const props = defineProps({
     period:              { type: String, default: 'month' },
@@ -238,7 +242,7 @@ const panels = computed(() => [
         <!-- Quick-record cards — mobile only -->
         <div class="home-actions">
             <Link
-                v-for="action in QUICK_RECORD_ACTIONS"
+                v-for="action in visibleQuickActions"
                 :key="action.key"
                 :href="route(action.route)"
                 class="card card--interactive home-action"

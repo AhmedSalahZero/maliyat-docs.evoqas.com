@@ -3,7 +3,6 @@
 namespace App\Services\Reports;
 
 use App\Models\Account;
-use App\Models\Custody;
 use App\Models\Customer;
 use App\Models\Expense;
 use App\Models\EquipmentPurchase;
@@ -13,6 +12,8 @@ use App\Models\Item;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
 use App\Models\Payment;
+use App\Models\ProductionOrder;
+use App\Models\ProductionOrderMaterialLine;
 use App\Models\Sale;
 use App\Models\SaleLine;
 use App\Models\Vendor;
@@ -34,11 +35,12 @@ use Illuminate\Support\Collection;
 //  service exists so that can't happen. Screen and file are always
 //  reading the same numbers.
 //
-//  All reports are CASH-BASIS — see the note this class inherited
-//  from ReportController's original doc comment: "income received"
-//  / "expenses paid" come from actual Payment rows, not invoice/bill
-//  totals, matching the prototype's simple bookkeeping model built
-//  for micro-companies (no accrual accounting).
+//  Profit & Loss, the Trial Balance, and every statement/ledger
+//  report are ACCRUAL — read from the general ledger (JournalLine),
+//  which is itself posted at invoice/bill/production date throughout
+//  the app (see JournalService). Cash movement — what actually came
+//  into or left the till/bank — is a separate, genuinely different
+//  question, answered by cashFlow() alone.
 // ══════════════════════════════════════════════════════════════════
 class ReportDataService
 {
@@ -96,40 +98,112 @@ class ReportDataService
         return $rows->sortByDesc('date')->values();
     }
 
+    /**
+     * Revenue earned vs. expenses incurred, ACCRUAL basis — this is
+     * the company's real Income Statement, and it is read straight
+     * off the general ledger (JournalLine/JournalEntry/Account), the
+     * exact same rows the Trial Balance is built from. That is a
+     * deliberate design choice, not just a convenient shortcut:
+     *
+     *   - Every entry in this system is already posted at the
+     *     invoice/bill/production date, never the payment date (see
+     *     JournalService — postSaleInvoice(), postExpenseInvoice(),
+     *     postCustodySettlement(), postProductionLaborExpense() all
+     *     date their entry from the underlying document, not from
+     *     any later payment). So reading the ledger for a date range
+     *     IS reading accrual activity for that range.
+     *   - Opening balances never touch an income or expense account
+     *     — the "other side" of every opening-balance entry is
+     *     Owner's Equity (see the opening-balance block in
+     *     JournalService). Filtering to account type income/expense
+     *     therefore excludes them automatically, with no separate
+     *     is_opening_balance flag to remember to check.
+     *   - Every expense category already has its own ledger account
+     *     (JournalService::expenseAccountFor() creates one per
+     *     Category, code "EXP-{id}"), and a settled custody debits
+     *     that same account on its settlement date. So the category
+     *     breakdown below falls out of the same query as the
+     *     headline — one source, not two that can quietly drift
+     *     apart (which is exactly what the cash-basis version of
+     *     this report used to risk).
+     *
+     * This report used to be cash basis ("income received" / "expenses
+     * paid", built from Payment rows) while the rest of the system —
+     * revenue recognised at invoice date, expenses recognised at bill
+     * date, COGS at sale date — was accrual throughout. That made this
+     * one report the odd one out, and its numbers could not be
+     * reconciled against the Trial Balance. Cash movement in/out is a
+     * genuinely different, still-useful question — it has its own
+     * report, see cashFlow() below — but it does not belong here
+     * twice.
+     */
     public function profitAndLoss(string $from, string $to): array
     {
-        // Opening-balance rows are excluded throughout this report —
-        // they're a starting position recognised once, not income or
-        // expense that happened during the selected period. They
-        // still appear correctly on the Trial Balance / Balance Sheet.
-        $incomeReceived = round((float) $this->periodPayments($from, $to, 'in')->sum('amount'), 2);
+        $accountTotals = JournalLine::query()
+            ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
+            ->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
+            ->whereBetween('journal_entries.date', [$from, $to])
+            ->whereIn('accounts.type', ['income', 'expense'])
+            ->groupBy('accounts.id', 'accounts.code', 'accounts.name')
+            ->selectRaw('accounts.id, accounts.code, accounts.name, accounts.type,
+                SUM(journal_lines.debit) as total_debit, SUM(journal_lines.credit) as total_credit')
+            ->get();
 
-        // Custody is deliberately absent from both of these — see
-        // custodyExpenses() for the whole reasoning. What a custody
-        // really costs the company is added back in below.
-        $expensesPaid = round(
-            (float) $this->periodPayments($from, $to, 'out')->sum('amount')
-            + $this->custodyExpenses($from, $to)->sum('total'),
-            2
-        );
+        $revenue = 0.0;
+        $cogs    = 0.0;
+        $expensesByCategory = collect();
 
-        $expensesByCategory = Expense::query()
-            ->whereBetween('date', [$from, $to])
-            ->where('is_opening_balance', false)
-            ->join('categories', 'categories.id', '=', 'expenses.category_id')
-            ->selectRaw('categories.name as category, SUM(expenses.amount) as total')
-            ->groupBy('categories.name')
-            ->orderByDesc('total')
-            ->get()
-            ->concat($this->custodyExpenses($from, $to))
-            ->groupBy('category')
-            ->map(fn ($rows, $category) => (object) [
-                'category' => $category,
-                'total'    => $rows->sum('total'),
-            ])
-            ->sortByDesc('total')
-            ->values();
+        foreach ($accountTotals as $row) {
+            $debit  = (float) $row->total_debit;
+            $credit = (float) $row->total_credit;
 
+            if ($row->type === 'income') {
+                // Income accounts are credit-normal.
+                $revenue += $credit - $debit;
+
+                continue;
+            }
+
+            // Expense accounts (including Cost of Goods Sold) are
+            // debit-normal.
+            $net = $debit - $credit;
+
+            if ($row->code === Account::COST_OF_GOODS_SOLD) {
+                // Kept apart from the category breakdown so Gross
+                // Profit can be shown on its own line — COGS already
+                // carries both the per-sale cost (postCostOfGoodsSold())
+                // and any production-labor variance
+                // (postProductionLaborExpense()), exactly as in the
+                // worked example in production-cycle_EN.md §10.
+                $cogs += $net;
+
+                continue;
+            }
+
+            $expensesByCategory->push((object) [
+                'category' => $row->name,
+                'total'    => round($net, 2),
+            ]);
+        }
+
+        $expensesByCategory = $expensesByCategory->sortByDesc('total')->values();
+
+        // Summed from the rounded category totals rather than the raw
+        // ledger sums, so the headline is exactly what the bars
+        // underneath it add up to — not a cent adrift of them.
+        $operatingExpenses = round((float) $expensesByCategory->sum('total'), 2);
+
+        $revenue     = round($revenue, 2);
+        $cogs        = round($cogs, 2);
+        $grossProfit = round($revenue - $cogs, 2);
+        $netProfit   = round($grossProfit - $operatingExpenses, 2);
+
+        // Per-item revenue breakdown — built the same way it always
+        // was, straight from the sales invoices themselves. This was
+        // already accrual before today's change (it never looked at
+        // Payment rows), and sale_lines.line_total sums to exactly
+        // the same figure the ledger's Sales Revenue account shows,
+        // so it ties to $revenue above.
         $incomeByItem = Sale::query()
             ->whereBetween('sales.date', [$from, $to])
             ->where('sales.is_opening_balance', false)
@@ -142,77 +216,14 @@ class ReportDataService
 
         return [
             'from' => $from, 'to' => $to,
-            'income_received'      => $incomeReceived,
-            'expenses_paid'        => $expensesPaid,
-            'net_profit'           => round($incomeReceived - $expensesPaid, 2),
+            'revenue'              => $revenue,
+            'cost_of_goods_sold'   => $cogs,
+            'gross_profit'         => $grossProfit,
+            'operating_expenses'   => $operatingExpenses,
+            'net_profit'           => $netProfit,
             'expenses_by_category' => $expensesByCategory,
             'income_by_item'       => $incomeByItem,
         ];
-    }
-
-    /**
-     * Cash that moved in the period and belongs in the Profit & Loss.
-     *
-     * Custody movements are excluded on purpose. Handing an employee
-     * a float is not spending — it is moving the company's own cash
-     * from the till into that employee's pocket, and the company
-     * still owns every penny of it. Counting the hand-out as an
-     * expense made a 10,000 float read as a 10,000 loss in the month
-     * it was given, and the unspent change coming back read as
-     * REVENUE in the month it was returned. Neither figure described
-     * anything that happened to the business.
-     *
-     * The Cash Flow report deliberately still shows these movements
-     * — cash genuinely left the drawer and came back, and that is
-     * exactly the question a cash-flow statement answers.
-     */
-    private function periodPayments(string $from, string $to, string $direction)
-    {
-        return Payment::query()
-            ->whereBetween('date', [$from, $to])
-            ->where('direction', $direction)
-            ->where('is_opening_balance', false)
-            ->where(function ($query) {
-                $query->whereNull('payable_type')
-                    ->orWhere('payable_type', '!=', Custody::class);
-            });
-    }
-
-    /**
-     * What custodies settled in this period actually cost, per
-     * category.
-     *
-     * This is the other half of periodPayments(): the real expense
-     * is what the holder came back and said they spent, recognised
-     * on the day they said it, not the size of the float they were
-     * handed weeks earlier. A float still out — handed over but not
-     * yet squared up — contributes nothing here, which is correct:
-     * nobody knows yet what it bought.
-     *
-     * A settlement line with no category falls under Miscellaneous,
-     * matching how JournalService::expenseAccountFor() posts the
-     * same line to the ledger.
-     *
-     * @return Collection<int, object{category: string, total: float}>
-     */
-    private function custodyExpenses(string $from, string $to): Collection
-    {
-        // Based on Custody rather than the settlement line, so
-        // BelongsToCompany's global scope applies — custody_settlement_lines
-        // carries no company_id of its own and would otherwise reach
-        // across tenants.
-        return Custody::query()
-            ->join('custody_settlement_lines', 'custody_settlement_lines.custody_id', '=', 'custodies.id')
-            ->leftJoin('categories', 'categories.id', '=', 'custody_settlement_lines.category_id')
-            ->where('custodies.settled', true)
-            ->whereBetween('custodies.settlement_date', [$from, $to])
-            ->selectRaw("COALESCE(categories.name, 'Miscellaneous') as category, SUM(custody_settlement_lines.amount) as total")
-            ->groupBy('category')
-            ->get()
-            ->map(fn ($row) => (object) [
-                'category' => $row->category,
-                'total'    => (float) $row->total,
-            ]);
     }
 
     /**
@@ -363,67 +374,79 @@ class ReportDataService
     /**
      * Per-item stock levels (quantity + weighted-average value).
      * When $itemId is given, also returns that one item's full
-     * purchase/sale transaction history with a running stock
-     * balance — this is the drill-down the prototype had
-     * (renderInvItemDetail) that the summary-only table dropped.
+     * activity history — purchases, sales, and Production Order
+     * output/consumption — with a running stock balance; this is the
+     * drill-down the prototype had (renderInvItemDetail) that the
+     * summary-only table dropped, now extended to cover Production.
      *
      * @return array{items: Collection, total_stock_value: float, selected: ?array, history: Collection}
      */
     public function inventoryStatement(?int $itemId = null, ?string $from = null, ?string $to = null): array
     {
+        // Same four relations Item::currentStock() / Item::averagePurchaseCost()
+        // read (purchaseLines/producedBatches/saleLines/consumedInProduction),
+        // just summed for every item in one query each instead of one
+        // query per item per relation — a summary table with N items
+        // otherwise costs roughly 5N queries (GuardsRawMaterialStock
+        // and postCogsForLines() only ever ask about ONE item at a
+        // time, so that per-item cost is fine there; a report listing
+        // every item is a different shape of question). Correctness
+        // is guaranteed to track Item's own methods, not just resemble
+        // them, because InventoryStatementMatchesItemModelTest asserts
+        // this report's numbers equal Item::currentStock()/
+        // averagePurchaseCost() for every item in a mixed
+        // purchase+production+sale scenario — if this query and that
+        // model method are ever edited out of step, that test fails.
+        $itemIds = Item::query()->pluck('id');
+
+        $beforeFrom = $from ? $this->dayBefore($from) : null;
+
+        $asOf   = $this->itemStockTotals($itemIds, $to);
+        $before = $from ? $this->itemStockTotals($itemIds, $beforeFrom) : null;
+
         $items = Item::query()
             ->orderBy('name')
-            ->addSelect([
-                // Everything up to the END of the window — this is
-                // what "stock on hand" means on a given date, and it
-                // is what the closing figure and the stock value are
-                // built from. A range must never make stock look
-                // lower than it is by hiding purchases made before it.
-                'purchased_base' => $this->purchasedBase(null, $to),
-                'purchase_cost'  => $this->purchaseCost(null, $to),
-                'sold_base'      => $this->soldBase(null, $to),
-
-                // Movements inside the window, and the position going
-                // into it — so the table can show "started with X,
-                // bought Y, sold Z, left with W" instead of a bare
-                // total that says nothing about the period asked for.
-                'opening_purchased' => $this->purchasedBase(null, $from ? $this->dayBefore($from) : null),
-                'opening_sold'      => $this->soldBase(null, $from ? $this->dayBefore($from) : null),
-                'period_purchased'  => $this->purchasedBase($from, $to),
-                'period_sold'       => $this->soldBase($from, $to),
-            ])
             ->get()
-            ->map(function (Item $item) use ($from) {
-                $purchased = (float) $item->purchased_base;
-                $sold      = (float) $item->sold_base;
-                $stock     = $purchased - $sold;
+            ->map(function (Item $item) use ($asOf, $before, $from) {
+                $t = $asOf->get($item->id);
 
-                $openingStock = $from
-                    ? (float) $item->opening_purchased - (float) $item->opening_sold
-                    : 0.0;
+                $stockIn  = round($t->purchased + $t->produced, 2);
+                $stockOut = round($t->sold + $t->consumed, 2);
+                $stock    = round($stockIn - $stockOut, 2);
 
-                // Weighted average across every purchase, same
-                // definition as Item::averagePurchaseCost(); null when
-                // the item has never been bought, so the report shows
-                // a blank rather than a fabricated zero cost.
-                $avgCost = $purchased > 0 ? (float) $item->purchase_cost / $purchased : null;
+                $totalBase = $t->purchased + $t->produced;
+                $avgCost   = $totalBase > 0 ? ($t->purchase_cost + $t->produced_cost) / $totalBase : null;
+
+                $openingStock = 0.0;
+                $periodIn     = $stockIn;
+                $periodOut    = $stockOut;
+
+                if ($from) {
+                    $b = $before->get($item->id);
+                    $openingStock = round(($b->purchased + $b->produced) - ($b->sold + $b->consumed), 2);
+                    $periodIn     = round($stockIn - round($b->purchased + $b->produced, 2), 2);
+                    $periodOut    = round($stockOut - round($b->sold + $b->consumed, 2), 2);
+                }
 
                 return [
-                    'id'                   => $item->id,
-                    'name'                 => $item->name,
-                    'total_purchased_base' => $purchased,
-                    'total_sold_base'      => $sold,
-                    'current_stock'        => $stock,
-                    'opening_stock'        => round($openingStock, 2),
-                    'period_purchased'     => round((float) $item->period_purchased, 2),
-                    'period_sold'          => round((float) $item->period_sold, 2),
-                    'avg_purchase_cost'    => $avgCost,
-                    'stock_value'          => $avgCost !== null ? round($stock * $avgCost, 2) : 0.0,
-                    'base_unit_name'       => $item->base_unit_name,
+                    'id'                => $item->id,
+                    'name'              => $item->name,
+                    'total_in_base'     => $stockIn,
+                    'total_out_base'    => $stockOut,
+                    'current_stock'     => $stock,
+                    'opening_stock'     => $openingStock,
+                    'period_in_base'    => $periodIn,
+                    'period_out_base'   => $periodOut,
+                    // Null when the item has never been bought or made,
+                    // so the report shows a blank rather than a
+                    // fabricated zero cost.
+                    'avg_purchase_cost' => $avgCost,
+                    'stock_value'       => $avgCost !== null ? round($stock * $avgCost, 2) : 0.0,
+                    'base_unit_name'    => $item->base_unit_name,
                     // Flags the summary table can badge without the
                     // Vue layer re-deriving thresholds of its own.
-                    'is_negative'          => $stock < 0,
-                    'is_out_of_stock'      => $stock <= 0 && $purchased > 0,
+                    'is_negative'       => $stock < 0,
+                    'is_out_of_stock'   => $stock <= 0 && $stockIn > 0,
                 ];
             });
 
@@ -448,54 +471,61 @@ class ReportDataService
     }
 
     /**
-     * The three stock subqueries, each optionally bounded by the
-     * report's window. They are built here rather than inline so the
-     * "up to the end of the range" and "inside the range" versions
-     * cannot drift apart — they are the same query with different
-     * bounds, and a difference between them would be invisible in
-     * the output but wrong in the totals.
+     * Purchased/produced/sold/consumed base-unit quantities AND cost,
+     * for every item id given, optionally only activity on or before
+     * $asOf — four grouped queries regardless of how many items are
+     * in $itemIds. This is the batch form of exactly what
+     * Item::totalPurchasedBase() / totalProducedBase() / totalSoldBase() /
+     * totalConsumedInProductionBase() compute one item at a time; see
+     * the doc comment on inventoryStatement() for why both exist and
+     * what keeps them from drifting apart.
      *
-     * The date lives on the parent document (inventory_purchases /
-     * sales), not on the line, so each one joins back to it.
+     * @param  \Illuminate\Support\Collection<int, int>  $itemIds
+     * @return \Illuminate\Support\Collection<int, object{purchased: float, purchase_cost: float, produced: float, produced_cost: float, sold: float, consumed: float}>
      */
-    private function purchasedBase(?string $from, ?string $to)
+    private function itemStockTotals(Collection $itemIds, ?string $asOf): Collection
     {
-        return $this->stockSubquery(
-            InventoryPurchaseLine::query()->selectRaw('COALESCE(SUM(inventory_purchase_lines.qty * inventory_purchase_lines.qty_per_uom), 0)'),
-            'inventory_purchases', 'inventory_purchase_lines.inventory_purchase_id', $from, $to
-        );
-    }
+        $purchased = InventoryPurchaseLine::query()
+            ->whereIn('inventory_purchase_lines.item_id', $itemIds)
+            ->join('inventory_purchases', 'inventory_purchases.id', '=', 'inventory_purchase_lines.inventory_purchase_id')
+            ->when($asOf, fn ($q) => $q->where('inventory_purchases.date', '<=', $asOf))
+            ->groupBy('inventory_purchase_lines.item_id')
+            ->selectRaw('inventory_purchase_lines.item_id as item_id,
+                SUM(inventory_purchase_lines.qty * inventory_purchase_lines.qty_per_uom) as base,
+                SUM(inventory_purchase_lines.line_total) as cost')
+            ->get()->keyBy('item_id');
 
-    private function purchaseCost(?string $from, ?string $to)
-    {
-        return $this->stockSubquery(
-            InventoryPurchaseLine::query()->selectRaw('COALESCE(SUM(inventory_purchase_lines.line_total), 0)'),
-            'inventory_purchases', 'inventory_purchase_lines.inventory_purchase_id', $from, $to
-        );
-    }
+        $produced = ProductionOrder::query()
+            ->whereIn('item_id', $itemIds)
+            ->when($asOf, fn ($q) => $q->where('date', '<=', $asOf))
+            ->groupBy('item_id')
+            ->selectRaw('item_id, SUM(qty_produced) as base, SUM(total_cost) as cost')
+            ->get()->keyBy('item_id');
 
-    private function soldBase(?string $from, ?string $to)
-    {
-        return $this->stockSubquery(
-            SaleLine::query()->selectRaw('COALESCE(SUM(sale_lines.qty), 0)'),
-            'sales', 'sale_lines.sale_id', $from, $to
-        );
-    }
+        $sold = SaleLine::query()
+            ->whereIn('sale_lines.item_id', $itemIds)
+            ->join('sales', 'sales.id', '=', 'sale_lines.sale_id')
+            ->when($asOf, fn ($q) => $q->where('sales.date', '<=', $asOf))
+            ->groupBy('sale_lines.item_id')
+            ->selectRaw('sale_lines.item_id as item_id, SUM(sale_lines.qty) as base')
+            ->get()->keyBy('item_id');
 
-    private function stockSubquery($query, string $parentTable, string $foreignKey, ?string $from, ?string $to)
-    {
-        $query->join($parentTable, "{$parentTable}.id", '=', $foreignKey)
-            ->whereColumn('item_id', 'items.id');
+        $consumed = ProductionOrderMaterialLine::query()
+            ->whereIn('production_order_material_lines.item_id', $itemIds)
+            ->join('production_orders', 'production_orders.id', '=', 'production_order_material_lines.production_order_id')
+            ->when($asOf, fn ($q) => $q->where('production_orders.date', '<=', $asOf))
+            ->groupBy('production_order_material_lines.item_id')
+            ->selectRaw('production_order_material_lines.item_id as item_id, SUM(production_order_material_lines.qty) as base')
+            ->get()->keyBy('item_id');
 
-        if ($from) {
-            $query->where("{$parentTable}.date", '>=', $from);
-        }
-
-        if ($to) {
-            $query->where("{$parentTable}.date", '<=', $to);
-        }
-
-        return $query;
+        return $itemIds->mapWithKeys(fn ($id) => [$id => (object) [
+            'purchased'     => (float) ($purchased->get($id)->base ?? 0),
+            'purchase_cost' => (float) ($purchased->get($id)->cost ?? 0),
+            'produced'      => (float) ($produced->get($id)->base ?? 0),
+            'produced_cost' => (float) ($produced->get($id)->cost ?? 0),
+            'sold'          => (float) ($sold->get($id)->base ?? 0),
+            'consumed'      => (float) ($consumed->get($id)->base ?? 0),
+        ]]);
     }
 
     private function dayBefore(string $date): string
@@ -504,10 +534,13 @@ class ReportDataService
     }
 
     /**
-     * One item's purchase + sale lines merged into a single
-     * chronological ledger with a running stock balance — every
-     * quantity here is in base units so the running total lines up
-     * with `current_stock` above.
+     * One item's full activity — purchases, sales, and (new) Production
+     * Order output/consumption — merged into a single chronological
+     * ledger with a running stock balance. Every quantity here is in
+     * base units so the running total lines up with `current_stock`
+     * above; it has to, since both are now built from the same
+     * relations on Item (purchaseLines/saleLines/producedBatches/
+     * consumedInProduction), not two independently-written queries.
      */
     private function inventoryItemHistory(int $itemId, ?string $from = null, ?string $to = null): Collection
     {
@@ -553,7 +586,45 @@ class ReportDataService
                 'unit_price' => (float) $row->unit_price,
             ]);
 
-        $rows = $purchases->concat($sales)->sortBy('date')->values();
+        // NEW — this item made via a Production Order (stock in), at
+        // the batch's own unit cost. Only meaningful for a 'product'
+        // item; simply empty for anything else.
+        $produced = ProductionOrder::query()
+            ->where('item_id', $itemId)
+            ->select(['id as doc_id', 'date', 'qty_produced', 'unit_cost'])
+            ->get()
+            ->map(fn ($row) => [
+                'date'       => Carbon::parse($row->date)->toDateString(),
+                'type'       => 'produced',
+                'ref'        => "Production order #{$row->doc_id}",
+                'qty'        => (float) $row->qty_produced,
+                'unit_price' => (float) $row->unit_cost,
+            ]);
+
+        // NEW — this item consumed as a raw material by a Production
+        // Order (stock out), at the cost it was actually costed at
+        // that day (unit_cost_snapshot — see the migration's note on
+        // why this is stored, not recalculated). Only meaningful for
+        // a 'raw_material' item.
+        $consumed = ProductionOrderMaterialLine::query()
+            ->where('production_order_material_lines.item_id', $itemId)
+            ->join('production_orders', 'production_orders.id', '=', 'production_order_material_lines.production_order_id')
+            ->select([
+                'production_orders.id as doc_id',
+                'production_orders.date as date',
+                'production_order_material_lines.qty as qty',
+                'production_order_material_lines.unit_cost_snapshot as unit_price',
+            ])
+            ->get()
+            ->map(fn ($row) => [
+                'date'       => Carbon::parse($row->date)->toDateString(),
+                'type'       => 'consumed',
+                'ref'        => "Production order #{$row->doc_id}",
+                'qty'        => -1 * (float) $row->qty,
+                'unit_price' => (float) $row->unit_price,
+            ]);
+
+        $rows = $purchases->concat($sales)->concat($produced)->concat($consumed)->sortBy('date')->values();
 
         // The running stock has to start from what was already on the
         // shelf when the window opened, not from zero — otherwise a

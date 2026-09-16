@@ -89,7 +89,9 @@ class SaleController extends Controller
 
         return Inertia::render('App/Sales/Index', [
             'customers'      => Customer::query()->orderBy('name')->get(['id', 'name']),
-            'items'          => Item::query()->orderBy('name')->get(['id', 'name']),
+            // Raw materials are consumed by Production Orders, not
+            // sold directly — see the Item type note in Item.php.
+            'items'          => Item::query()->whereIn('type', ['trading', 'product'])->orderBy('name')->get(['id', 'name']),
             'paymentChannels'=> PaymentChannel::query()->orderBy('name')->get(['id', 'name']),
             'sales'          => $sales,
         ]);
@@ -232,6 +234,16 @@ class SaleController extends Controller
         $this->authorizeDelete();
 
         DB::transaction(function () use ($sale) {
+            // Captured before anything is touched, so the snapshot
+            // reflects exactly what existed the instant before
+            // deletion — including the lines, which are gone from
+            // the row itself by the time anyone reads this back.
+            $this->logDeletion(
+                $sale,
+                "Sale #{$sale->id} — ".($sale->customer?->name ?? 'Unknown customer').' — '.number_format((float) $sale->amount, 2),
+                ['lines' => $sale->lines->toArray()]
+            );
+
             $this->journal->reverseAllForPayable($sale);
             $sale->payments()->delete();
             $sale->installments()->delete();

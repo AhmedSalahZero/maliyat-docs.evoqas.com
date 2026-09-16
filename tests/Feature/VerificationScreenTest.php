@@ -52,8 +52,8 @@ class VerificationScreenTest extends TestCase
             'language'              => 'en',
             'password'              => 'password123',
             'password_confirmation' => 'password123',
+            'business_types'        => ['trading'],
             '_hp'                   => '',
-            '_ft'                   => (now()->timestamp * 1000) - 10000,
         ])->assertSessionHasNoErrors();
     }
 

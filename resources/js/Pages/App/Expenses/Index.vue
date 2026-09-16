@@ -28,9 +28,10 @@ import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
 import EditPaymentsPanel from '@/Components/App/EditPaymentsPanel.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
-import { useAppTranslations } from '@/Composables/useAppTranslations';
-import { scrollToForm } from '@/Composables/useScrollToForm';
-import { usePermissions } from '@/Composables/usePermissions';
+import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useBusinessType } from '@/composables/useBusinessType';
+import { scrollToForm } from '@/composables/useScrollToForm';
+import { usePermissions } from '@/composables/usePermissions';
 
 const props = defineProps({
     vendors:         { type: Array, required: true },
@@ -42,6 +43,7 @@ const props = defineProps({
 
 const page = usePage();
 const { t, locale } = useAppTranslations();
+const { isProduction } = useBusinessType();
 
 // The form card, so pressing Edit can bring the FORM into view
 // rather than the top of the document — see useScrollToForm.
@@ -123,6 +125,7 @@ const defaultFormState = () => ({
     due_in_days: 14,
     installment_count: 3,
     installment_interval_days: 30,
+    is_production_labor: false,
 });
 
 const form = useForm(defaultFormState());
@@ -175,6 +178,7 @@ function startEdit(expense) {
     form.date = expense.date;
     form.amount = expense.amount;
     form.due_date = editingExpense.value?.due_date ?? null;
+    form.is_production_labor = expense.is_production_labor ?? false;
     form.clearErrors();
     scrollToForm(formCard);
 }
@@ -228,6 +232,7 @@ function doSubmitEdit(id) {
         date: data.date,
         amount: data.amount,
             due_date: data.due_date || null,
+        is_production_labor: data.is_production_labor,
     })).put(route('app.expenses.update', id), {
         preserveScroll: true,
         onSuccess: () => cancelEdit(),
@@ -329,6 +334,12 @@ function freqLabel(freq) {
                     <AppIcon name="pencil" />
                 </button>
             </div>
+
+            <label v-if="isProduction" class="checkbox-row" style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+                <input v-model="form.is_production_labor" type="checkbox">
+                <span>{{ t('isProductionLaborLbl') }}</span>
+            </label>
+            <p v-if="isProduction && form.is_production_labor" class="form-hint">{{ t('isProductionLaborHint') }}</p>
             <div v-if="form.errors.vendor_id" class="form-error">{{ form.errors.vendor_id }}</div>
             <div v-if="form.errors.category_id" class="form-error">{{ form.errors.category_id }}</div>
             <div v-if="form.errors.amount" class="form-error">{{ form.errors.amount }}</div>
@@ -471,6 +482,7 @@ function freqLabel(freq) {
                         <div class="who">
                             {{ expense.vendor }} — {{ expense.category }}
                             <span v-if="expense.is_recurring" class="badge info">{{ expense.recurring_index }}/{{ expense.recurring_count }}</span>
+                            <span v-if="expense.is_production_labor" class="badge info">{{ t('isProductionLaborBadge') }}</span>
                         </div>
                         <div class="meta">
                             {{ expense.date }} ·

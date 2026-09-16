@@ -9,9 +9,9 @@ import { createInertiaApp, router } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 import { createI18n } from 'vue-i18n';
-import { initPwaInstallListener, registerServiceWorker, setPwaLoginContext } from '@/Composables/usePwaInstall';
-import { markPwaColdStart, routePwaEntry } from '@/Composables/usePwaEntry';
-import { forceScrollToTop, shouldResetScroll } from '@/Composables/useScrollToTop';
+import { initPwaInstallListener, registerServiceWorker, setPwaLoginContext } from '@/composables/usePwaInstall';
+import { markPwaColdStart, routePwaEntry } from '@/composables/usePwaEntry';
+import { forceScrollToTop, shouldResetScroll } from '@/composables/useScrollToTop';
 import { syncCsrfMetaFromPage } from '@/Utils/csrf';
 
 // ══════════════════════════════════════════════════════════════════
