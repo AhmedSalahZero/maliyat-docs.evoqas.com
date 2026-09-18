@@ -144,7 +144,7 @@ class ReportDataService
             ->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
             ->whereBetween('journal_entries.date', [$from, $to])
             ->whereIn('accounts.type', ['income', 'expense'])
-            ->groupBy('accounts.id', 'accounts.code', 'accounts.name')
+            ->groupBy('accounts.id', 'accounts.code', 'accounts.name', 'accounts.type')
             ->selectRaw('accounts.id, accounts.code, accounts.name, accounts.type,
                 SUM(journal_lines.debit) as total_debit, SUM(journal_lines.credit) as total_credit')
             ->get();
