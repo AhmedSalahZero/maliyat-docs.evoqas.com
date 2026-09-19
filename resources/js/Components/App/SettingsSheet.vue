@@ -44,6 +44,7 @@ const links = computed(() => {
     const items = [
         { key: 'customers', icon: 'team',     route: 'app.customers.index', title: t('menu_customers'),        sub: t('menu_customers_sub') },
         { key: 'vendors',   icon: 'building', route: 'app.vendors.index',   title: t('menu_vendors'),          sub: t('menu_vendors_sub') },
+        { key: 'owners',    icon: 'owner',    route: 'app.owners.index',    title: t('menu_owners'),           sub: t('menu_owners_sub') },
     ];
 
     // A service-only company has nothing to name items for — see

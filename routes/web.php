@@ -13,6 +13,8 @@ use App\Http\Controllers\App\ExpenseController;
 use App\Http\Controllers\App\InventoryPurchaseController;
 use App\Http\Controllers\App\ItemController;
 use App\Http\Controllers\App\OpeningBalanceController;
+use App\Http\Controllers\App\OwnerController;
+use App\Http\Controllers\App\OwnerTransactionController;
 use App\Http\Controllers\App\PaymentController;
 use App\Http\Controllers\App\ProductionOrderController;
 use App\Http\Controllers\App\ProfileController;
@@ -107,6 +109,10 @@ Route::middleware(['auth', 'auth.session', 'verified', 'member', 'no-duplicate']
         Route::post('/vendors', [VendorController::class, 'store'])->name('vendors.store');
         Route::patch('/vendors/{vendor}', [VendorController::class, 'update'])->name('vendors.update');
 
+        Route::get('/owners', [OwnerController::class, 'index'])->name('owners.index');
+        Route::post('/owners', [OwnerController::class, 'store'])->name('owners.store');
+        Route::patch('/owners/{owner}', [OwnerController::class, 'update'])->name('owners.update');
+
         Route::get('/categories', [CategoryController::class, 'index'])->name('categories.index');
         Route::post('/categories', [CategoryController::class, 'store'])->name('categories.store');
         Route::patch('/categories/{category}', [CategoryController::class, 'update'])->name('categories.update');
@@ -182,6 +188,16 @@ Route::middleware(['auth', 'auth.session', 'verified', 'member', 'no-duplicate']
         Route::patch('/payments/{payment}', [PaymentController::class, 'update'])->name('payments.update');
         Route::delete('/payments/{payment}', [PaymentController::class, 'destroy'])->name('payments.destroy');
 
+        // ── Owner Injection / Withdrawal ─────────────────────────────
+        //  Sits right after Receive / Pay in the step-nav (see
+        //  quickRecordActions.js) — a deliberately separate screen
+        //  from it, not folded into the Payment worklist above, since
+        //  an owner transaction is never against an invoice or bill.
+        Route::get('/owner-transactions', [OwnerTransactionController::class, 'index'])->name('owner-transactions.index');
+        Route::post('/owner-transactions', [OwnerTransactionController::class, 'store'])->name('owner-transactions.store');
+        Route::put('/owner-transactions/{ownerTransaction}', [OwnerTransactionController::class, 'update'])->name('owner-transactions.update');
+        Route::delete('/owner-transactions/{ownerTransaction}', [OwnerTransactionController::class, 'destroy'])->name('owner-transactions.destroy');
+
         // ── Reports ───────────────────────────────────────────────────
         Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
         Route::get('/reports/ledger', [ReportController::class, 'ledger'])->name('reports.ledger');
@@ -193,6 +209,8 @@ Route::middleware(['auth', 'auth.session', 'verified', 'member', 'no-duplicate']
         Route::get('/reports/inventory-statement', [ReportController::class, 'inventoryStatement'])
             ->name('reports.inventory-statement');
         Route::get('/reports/cash-flow', [ReportController::class, 'cashFlow'])->name('reports.cash-flow');
+        Route::get('/reports/owner-statement/{owner?}', [ReportController::class, 'ownerStatement'])
+            ->name('reports.owner-statement');
 
         // ── Report exports (Excel / PDF, {format} is "excel" or "pdf") ──
         Route::get('/reports/ledger/export/{format}', [ReportExportController::class, 'ledger'])

@@ -15,4 +15,5 @@ export const QUICK_RECORD_ACTIONS = [
     { key: 'equipment', icon: 'equipment', route: 'app.equipment-purchases.index', titleKey: 'action_equipment_title', subKey: 'action_equipment_sub', tabKey: 'tab_equipment' },
     { key: 'custody',   icon: 'custody',   route: 'app.custodies.index',           titleKey: 'action_custody_title',   subKey: 'action_custody_sub',   tabKey: 'tab_custody' },
     { key: 'payment',   icon: 'cashflow',  route: 'app.payments.index',            titleKey: 'action_payment_title',   subKey: 'action_payment_sub',   tabKey: 'tab_payment' },
+    { key: 'owner',     icon: 'owner',     route: 'app.owner-transactions.index',  titleKey: 'action_owner_title',     subKey: 'action_owner_sub',     tabKey: 'tab_owner' },
 ];

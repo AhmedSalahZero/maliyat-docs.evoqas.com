@@ -1090,19 +1090,40 @@ class SeedPizzaRestaurantDemo extends Command
         $this->addCategory($company->id, 'الصيانة', 'expense');
 
         // ── Raw ingredients ──────────────────────────────────────
+        // purchase_qty ranges below are DERIVED from actual expected
+        // consumption, not guessed — same fix as SeedThreeDemoCompanies'
+        // trading/production catalogs, and for the same reason: with
+        // ingredients picked uniformly at random per purchase line
+        // (not weighted by how much a recipe actually needs), a
+        // batch size picked independently of demand silently buys
+        // several times more than 800 production runs (~11,200
+        // pizzas total) could ever consume. That was happening here —
+        // e.g. the old range for بيبروني (used only by one of five
+        // pizzas) bought roughly 4-5x what any pizza recipe called
+        // for. The result wasn't a P&L problem (COGS is still priced
+        // correctly off what's actually consumed, via
+        // MovingAverageCostingService) — it was a CASH problem: real
+        // money kept leaving for ingredients that just sat in
+        // Inventory unsold, which is exactly what was dragging Cash
+        // Balance negative despite Net Profit looking fine on paper.
+        // Each range below is [expected total consumption for this
+        // ingredient across the whole run × a 25% buffer] ÷ [how many
+        // purchase-lines this ingredient is expected to appear in
+        // across 150 purchase events × 3-6 lines each] — a realistic
+        // restocking amount, not an unbounded guess.
         $ingredients = $this->makeItems($company->id, [
-            ['name' => 'دقيق بيتزا',        'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [18, 24],  'purchase_qty' => [60, 110]],
-            ['name' => 'خميرة',             'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [70, 90],  'purchase_qty' => [2, 5]],
-            ['name' => 'زيت زيتون',         'type' => 'raw_material', 'uom' => 'لتر',  'buy' => [150, 190],'purchase_qty' => [8, 18]],
-            ['name' => 'صلصة طماطم',        'type' => 'raw_material', 'uom' => 'لتر',  'buy' => [35, 48],  'purchase_qty' => [20, 45]],
-            ['name' => 'جبنة موتزاريلا',    'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [180, 230],'purchase_qty' => [25, 55]],
-            ['name' => 'جبنة شيدر',         'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [200, 250],'purchase_qty' => [10, 22]],
-            ['name' => 'بيبروني',           'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [220, 270],'purchase_qty' => [8, 18]],
-            ['name' => 'فطر',               'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [45, 65],  'purchase_qty' => [6, 14]],
-            ['name' => 'فلفل ألوان',        'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [30, 45],  'purchase_qty' => [6, 14]],
-            ['name' => 'زيتون أسود',        'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [90, 120], 'purchase_qty' => [4, 10]],
-            ['name' => 'دجاج مشوي مفروم',   'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [130, 160],'purchase_qty' => [10, 22]],
-            ['name' => 'أعشاب وتوابل',      'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [60, 90],  'purchase_qty' => [2, 5]],
+            ['name' => 'دقيق بيتزا',        'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [18, 24],  'purchase_qty' => [40, 70]],
+            ['name' => 'خميرة',             'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [70, 90],  'purchase_qty' => [2, 3]],
+            ['name' => 'زيت زيتون',         'type' => 'raw_material', 'uom' => 'لتر',  'buy' => [150, 190],'purchase_qty' => [4, 6]],
+            ['name' => 'صلصة طماطم',        'type' => 'raw_material', 'uom' => 'لتر',  'buy' => [35, 48],  'purchase_qty' => [17, 28]],
+            ['name' => 'جبنة موتزاريلا',    'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [180, 230],'purchase_qty' => [26, 44]],
+            ['name' => 'جبنة شيدر',         'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [200, 250],'purchase_qty' => [3.6, 6]],
+            ['name' => 'بيبروني',           'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [220, 270],'purchase_qty' => [3, 5]],
+            ['name' => 'فطر',               'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [45, 65],  'purchase_qty' => [1.7, 2.9]],
+            ['name' => 'فلفل ألوان',        'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [30, 45],  'purchase_qty' => [1.7, 2.9]],
+            ['name' => 'زيتون أسود',        'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [90, 120], 'purchase_qty' => [1, 1.7]],
+            ['name' => 'دجاج مشوي مفروم',   'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [130, 160],'purchase_qty' => [3.1, 5.2]],
+            ['name' => 'أعشاب وتوابل',      'type' => 'raw_material', 'uom' => 'كيلو', 'buy' => [60, 90],  'purchase_qty' => [0.6, 1]],
         ]);
         $ingredientsByName = collect($ingredients)->keyBy(fn ($row) => $row['item']->name)->map(fn ($row) => $row['item']);
 
@@ -1155,6 +1176,16 @@ class SeedPizzaRestaurantDemo extends Command
         ]);
         $this->line('  · opening balance posted');
 
+        // This opening stock is real inventory in the DB from day
+        // one (OpeningBalanceService posts it as a purchase that
+        // MovingAverageCostingService counts as inbound like any
+        // other), but the in-memory $stock tracker below — used only
+        // to stop recordProductionOrder()/recordSale() from ever
+        // drawing more than is on hand — started empty and didn't
+        // know about it. Same fix as SeedThreeDemoCompanies.
+        $stock[$ingredientsByName['دقيق بيتزا']->id] = 80.0;
+        $stock[$ingredientsByName['جبنة موتزاريلا']->id] = 30.0;
+
         // Guaranteed initial ingredient stock-up before any dough
         // goes in the oven.
         $this->recordPurchase($company, collect([$vendors[0], $vendors[1]]), $ingredients, $channels, $openingDate->copy()->addDays(1), $stock, lineCount: 8, qtyMultiplier: 3.0);
@@ -1179,7 +1210,15 @@ class SeedPizzaRestaurantDemo extends Command
         // tickets, than a furniture workshop — target ~2 sales/day
         // on average, growing over time via the same weight shape.
         $saleCounts = $this->spreadCounts($totalDays, 1250, $weights);
-        $purchaseCounts = $this->spreadCounts($totalDays, 150, array_fill(0, $totalDays, 1.0));
+        // Purchases now follow the same growth curve as sales and
+        // production instead of a flat one, so ingredient restocking
+        // scales up with demand over time — see SeedThreeDemoCompanies'
+        // matching fix for the full reasoning (a flat restocking pace
+        // against growing demand means supply increasingly lags in
+        // the later, busier months — exactly the months a "This
+        // Month/Quarter/Year" dashboard view is most likely to land
+        // on).
+        $purchaseCounts = $this->spreadCounts($totalDays, 150, $weights);
         // Production has to comfortably outpace total pizzas sold
         // (sales draw from real stock) — 800 runs x ~14 pizzas/run
         // average gives a healthy buffer over estimated demand, so

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\App;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Item;
+use App\Models\Owner;
 use App\Models\Vendor;
 use App\Services\Reports\ReportDataService;
 use Illuminate\Http\Request;
@@ -112,6 +113,35 @@ class ReportController extends Controller
             'entries'         => $data['entries'],
             'balance'         => $data['balance'],
             'opening_balance' => $data['opening_balance'],
+            'from'            => $from,
+            'to'              => $to,
+        ]);
+    }
+
+    /**
+     * Owner Statement — Withdrawals or Profit Pay, for one owner (via
+     * the route's optional {owner}) or every owner at once (route
+     * with no owner segment). `?type=` picks which of the two —
+     * defaults to withdrawals.
+     */
+    public function ownerStatement(Request $request, ?Owner $owner = null): Response
+    {
+        [$from, $to] = $this->statementRange($request);
+
+        $type = $request->string('type')->value() === 'profit' ? 'profit' : 'withdrawals';
+
+        $owners = Owner::query()->orderBy('name')->get(['id', 'name']);
+        $data   = $this->reports->ownerStatement($owner, $type, $from, $to);
+
+        return Inertia::render('App/Reports/OwnerStatement', [
+            'owners'          => $owners,
+            'owner'           => $owner?->only(['id', 'name']),
+            'type'            => $type,
+            'entries'         => $data['entries'],
+            'total_in'        => $data['total_in'],
+            'total_out'       => $data['total_out'],
+            'net'             => $data['net'],
+            'running_balance' => $data['running_balance'],
             'from'            => $from,
             'to'              => $to,
         ]);

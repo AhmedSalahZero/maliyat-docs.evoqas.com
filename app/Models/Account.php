@@ -32,6 +32,15 @@ class Account extends Model
     // postProductionLaborExpense().
     public const PRODUCTION_LABOR_ACCRUED = '2200';
     public const OWNERS_EQUITY   = '3000';
+    // Owner Injection/Withdrawal feature (2026 Sep). Kept apart from
+    // OWNERS_EQUITY (3000) above — that account is only ever touched
+    // by Opening Balance postings ("the business already had this on
+    // day one"), never by a real owner cash movement — so a Balance
+    // Sheet reader can still tell "what the owner started the books
+    // with" apart from "what they've put in/taken out/been paid
+    // since" at a glance, rather than one account blending both.
+    public const OWNER_CONTRIBUTIONS_WITHDRAWALS = '3100';
+    public const OWNER_PROFIT_DISTRIBUTIONS      = '3200';
     public const RETAINED_EARNINGS = '3900';
     public const SALES_REVENUE   = '4000';
     public const COST_OF_GOODS_SOLD = '5000';
@@ -51,6 +60,8 @@ class Account extends Model
         self::VAT_PAYABLE       => ['VAT Payable (Output)',    'ضريبة مخرجات مستحقة',  'liability'],
         self::PRODUCTION_LABOR_ACCRUED => ['Production Labor Accrued', 'عمالة إنتاج مستحقة', 'liability'],
         self::OWNERS_EQUITY     => ["Owner's Equity",          'حقوق الملكية',         'equity'],
+        self::OWNER_CONTRIBUTIONS_WITHDRAWALS => ['Owner Contributions & Withdrawals', 'رأس مال وسحوبات الملاك', 'equity'],
+        self::OWNER_PROFIT_DISTRIBUTIONS      => ['Owner Profit Distributions',       'أرباح موزعة للملاك',    'equity'],
         self::RETAINED_EARNINGS => ['Retained Earnings',       'الأرباح المحتجزة',     'equity'],
         self::SALES_REVENUE     => ['Sales Revenue',           'إيرادات المبيعات',     'income'],
         self::COST_OF_GOODS_SOLD => ['Cost of Goods Sold',     'تكلفة البضاعة المباعة', 'expense'],

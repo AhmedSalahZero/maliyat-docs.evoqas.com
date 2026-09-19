@@ -10,6 +10,7 @@ use App\Models\EquipmentPurchase;
 use App\Models\Expense;
 use App\Models\InventoryPurchase;
 use App\Models\JournalEntry;
+use App\Models\OwnerTransaction;
 use App\Models\Payment;
 use App\Models\ProductionOrder;
 use App\Models\Sale;
@@ -431,6 +432,54 @@ class JournalService
         }
 
         $this->post($custody->company_id, $custody->settlement_date->toDateString(), 'Custody settled', $custody, $lines);
+    }
+
+    // ── Owner Injection / Withdrawal ────────────────────────────────
+
+    /**
+     * Money moving between the business and one of its owners.
+     * Posted directly against the OwnerTransaction itself (source),
+     * the same way Custody's give/settlement are — not against the
+     * Payment row created alongside it for cash-figures purposes
+     * (see OwnerTransaction::payments()'s doc comment).
+     *
+     * capital_injection and repay_withdrawal both credit
+     * OWNER_CONTRIBUTIONS_WITHDRAWALS — they're the same accounting
+     * fact (equity going up) and only differ in which label the
+     * Owner Statement shows; withdrawal debits that same account
+     * back down. profit_distribution is kept in its OWN account
+     * (OWNER_PROFIT_DISTRIBUTIONS) rather than folded into the same
+     * one, because — unlike a withdrawal of capital — it's also read
+     * back out explicitly by ReportDataService::profitAndLoss() to
+     * show what was actually paid out against the period's profit.
+     */
+    public function postOwnerTransaction(OwnerTransaction $transaction): void
+    {
+        $cash = $this->cashAccountFor($transaction->method);
+        $amount = (float) $transaction->amount;
+
+        $equityAccount = $transaction->category === 'profit_distribution'
+            ? Account::OWNER_PROFIT_DISTRIBUTIONS
+            : Account::OWNER_CONTRIBUTIONS_WITHDRAWALS;
+
+        $lines = $transaction->direction === 'in'
+            ? [
+                ['account' => $cash, 'debit' => $amount],
+                ['account' => $equityAccount, 'credit' => $amount],
+            ]
+            : [
+                ['account' => $equityAccount, 'debit' => $amount],
+                ['account' => $cash, 'credit' => $amount],
+            ];
+
+        $memo = match ($transaction->category) {
+            'capital_injection'   => 'Owner capital injection',
+            'repay_withdrawal'    => 'Owner repaying withdrawal',
+            'withdrawal'          => 'Owner withdrawal',
+            'profit_distribution' => 'Owner profit distribution',
+        };
+
+        $this->post($transaction->company_id, $transaction->date->toDateString(), $memo, $transaction, $lines);
     }
 
     /**

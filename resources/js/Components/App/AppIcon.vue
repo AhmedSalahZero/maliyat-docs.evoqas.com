@@ -62,6 +62,9 @@ const NEW_ICONS = {
 
     // A small "factory" glyph — Production Orders tab/card.
     production: '<path d="M3 17V9l4 3V9l4 3V6l6 4v7z"/><line x1="3" y1="17" x2="17" y2="17"/>',
+
+    // A person with a coin — Owner Injection/Withdrawal tab/card.
+    owner: '<circle cx="8" cy="6.5" r="3"/><path d="M2.5 17c0-3.6 2.5-6 5.5-6s5.5 2.4 5.5 6"/><circle cx="15" cy="14.5" r="3"/><line x1="15" y1="13.2" x2="15" y2="15.8"/><path d="M14.1 15.3c.2.4.6.6 1 .5.5-.1.8-.5.7-.9-.1-.5-.7-.6-1.1-.7-.4-.1-.9-.3-1-.7-.1-.4.2-.8.7-.9.4-.1.8.1 1 .5"/>',
 };
 
 const ALL_ICONS = { ...PROTOTYPE_ICONS, ...NEW_ICONS };

@@ -39,6 +39,7 @@ const { isProduction } = useBusinessType();
 const TABS = [
     { key: 'customers', route: 'app.customers.index', labelKey: 'lookup_customers' },
     { key: 'vendors',   route: 'app.vendors.index',   labelKey: 'lookup_vendors' },
+    { key: 'owners',    route: 'app.owners.index',    labelKey: 'lookup_owners' },
     { key: 'items',     route: 'app.items.index',     labelKey: 'lookup_items' },
 ];
 
@@ -92,6 +93,7 @@ function cancelEdit() {
 const updateRoute = computed(() => ({
     customers: 'app.customers.update',
     vendors:   'app.vendors.update',
+    owners:    'app.owners.update',
     items:     'app.items.update',
 }[props.tab]));
 
@@ -156,6 +158,7 @@ function cancelAddNew() {
 const createRoute = computed(() => ({
     customers: 'app.customers.store',
     vendors:   'app.vendors.store',
+    owners:    'app.owners.store',
     items:     'app.items.store',
 }[props.tab]));
 

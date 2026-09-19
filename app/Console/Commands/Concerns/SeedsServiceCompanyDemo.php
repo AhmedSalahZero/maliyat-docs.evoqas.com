@@ -88,8 +88,20 @@ trait SeedsServiceCompanyDemo
         ]);
         $this->line('  · opening balance posted');
 
-        $this->recordRecurringSeries($company, $key, $vendors[2], $this->expenseCategory($company->id, 'Rent'), $channels, $openingDate->copy()->addDays(4), 15000, 20, 'Office rent — Business Center Maadi');
-        $this->recordRecurringSeries($company, $key, $payrollVendor, $this->expenseCategory($company->id, 'Salaries'), $channels, $openingDate->copy()->addDays(25), 46000, 20, 'Staff salaries');
+        // Salaries/rent below were far too light for a firm delivering
+        // ~460 billable engagements a year across 8 service lines —
+        // with no cost of goods sold at all (correct for a pure
+        // service business) and only these two recurring lines as
+        // real overhead, net profit came out near 84% of revenue,
+        // which no real services firm sustains once you account for
+        // the delivery staff actually doing the work. A growing
+        // service book needs a growing team: this now starts with a
+        // smaller core team and adds a second payroll tranche partway
+        // through the run as the business scales, instead of one flat
+        // salary line for the whole ~20 months.
+        $this->recordRecurringSeries($company, $key, $vendors[2], $this->expenseCategory($company->id, 'Rent'), $channels, $openingDate->copy()->addDays(4), 22000, 20, 'Office rent — Business Center Maadi');
+        $this->recordRecurringSeries($company, $key, $payrollVendor, $this->expenseCategory($company->id, 'Salaries'), $channels, $openingDate->copy()->addDays(25), 75000, 20, 'Staff salaries');
+        $this->recordRecurringSeries($company, $key, $payrollVendor, $this->expenseCategory($company->id, 'Salaries'), $channels, $openingDate->copy()->addDays(300), 45000, 12, 'Additional delivery staff (team growth)');
 
         $equipmentPlan = [
             [45, 'Office Laptops Set (5x)', 45000, $mobileCat, 3],
@@ -126,7 +138,13 @@ trait SeedsServiceCompanyDemo
                 $amount = match ($cat->name) {
                     'Software' => $this->money(300, 2500),
                     'Travel' => $this->money(500, 4000),
-                    'Consulting' => $this->money(1500, 8000),
+                    // Outsourced delivery capacity (subcontracted
+                    // developers/designers/trainers for overflow work)
+                    // — a service firm's closest equivalent to a
+                    // trading company's cost of goods, so it's sized
+                    // to actually matter against revenue rather than
+                    // read as an occasional minor expense.
+                    'Consulting' => $this->money(3000, 16000),
                     'Office Supplies' => $this->money(200, 1500),
                     'Meals' => $this->money(150, 900),
                     default => $this->money(200, 2000),

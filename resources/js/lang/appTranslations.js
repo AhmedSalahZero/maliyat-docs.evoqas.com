@@ -60,6 +60,7 @@ export const appTranslations = {
         tab_equipment: 'Equipment & Vehicles',
         tab_custody: 'Custody',
         tab_payment: 'Receive / Pay',
+        tab_owner: 'Owner Transactions',
         tab_settings: 'Settings',
         tab_ledger: 'All Entries',
         tab_pl: 'Profit & Loss',
@@ -67,6 +68,7 @@ export const appTranslations = {
         tab_statement_supp: 'Supplier Statement',
         tab_inv_statement: 'Inventory Statement',
         tab_cashflow: 'Cash Flow',
+        tab_owner_statement: 'Owner Statement',
 
         // ── The six quick-record actions (Home cards + New Record sheet) ──
         // ── Guided entry forms (shared across Sales/Expenses/
@@ -253,6 +255,22 @@ export const appTranslations = {
         noteLbl: 'Note (optional)',
         loadingLbl: 'Loading…',
 
+        // ── Owner Injection / Withdrawal page ──────────────────────
+        owner_receive_toggle: 'Receive money from owner',
+        owner_pay_toggle: 'Pay money to owner',
+        owner_receiveFromLbl: 'Receive from',
+        owner_payToLbl: 'Pay to',
+        owner_categoryLbl: 'As',
+        owner_category_capital_injection: 'Capital injection',
+        owner_category_repay_withdrawal: 'Repay withdrawal',
+        owner_category_withdrawal: 'Withdrawal',
+        owner_category_profit_distribution: 'Profit distribution',
+        addNewOwner: '+ Add new owner…',
+        ownerNotePlaceholder: 'What is this for? (optional)',
+        recordOwnerTxBtn: 'Record',
+        ownerIndexTitle: 'Owner transactions',
+        noOwnerTxYet: 'No owner transactions recorded yet.',
+
         // ── Expenses page ────────────────────────────────────────
         recordExpenseBtn: 'Record expense',
         oneTimeLbl: 'One-time',
@@ -290,6 +308,8 @@ export const appTranslations = {
         action_custody_sub: 'Cash handed to an employee',
         action_payment_title: 'Receive / pay money',
         action_payment_sub: 'Collect from a customer or settle a bill',
+        action_owner_title: 'Owner injection / withdrawal',
+        action_owner_sub: 'Money in from, or paid out to, an owner',
 
         new_record_sheet_title: 'New record',
         settings_sheet_title: 'Settings',
@@ -300,6 +320,8 @@ export const appTranslations = {
         menu_customers_sub: 'People and companies who buy from you',
         menu_vendors: 'Vendors',
         menu_vendors_sub: 'Suppliers and service providers you pay',
+        menu_owners: 'Owners',
+        menu_owners_sub: 'Who the business belongs to',
         menu_items_categories: 'Items & categories',
         menu_items_categories_sub: 'Products, stock items, expense categories',
         menu_all_entries: 'All entries',
@@ -317,6 +339,7 @@ export const appTranslations = {
         // ── Reference data page (Lookups/Index.vue) ──────────────
         lookup_customers: 'Customers',
         lookup_vendors: 'Suppliers',
+        lookup_owners: 'Owners',
         lookup_items: 'Items & categories',
         lookup_categories: 'Expense categories',
         lookup_name: 'Name',
@@ -425,6 +448,12 @@ export const appTranslations = {
         howto_custody_4: 'Enter the settlement date, then one line per thing they spent on.',
         howto_custody_5: 'Any money left over comes back to you; anything they spent out of pocket, you pay back. Both are worked out for you.',
         howto_custody_tip: 'Money handed over is not an expense yet — it is still yours. It only counts as spent once you settle it.',
+
+        howto_owner_1: 'Choose whether money is coming in from an owner or going out to one.',
+        howto_owner_2: 'Pick the date, the owner, and the amount.',
+        howto_owner_3: 'Choose what kind of movement this is — capital injection, repaying a withdrawal, a withdrawal, or a profit distribution.',
+        howto_owner_4: 'Set how it was paid (cash, bank, etc.) and press Record.',
+        howto_owner_tip: 'A profit distribution is the only one of these that shows up as its own line on the Profit & Loss report — a plain capital withdrawal never touches the P&L, only the Balance Sheet.',
 
         // ── Receive / Pay money ──
         howto_payment_1: 'Choose Receive if money is coming in, or Pay if it is going out.',
@@ -557,6 +586,8 @@ export const appTranslations = {
         report_inventory_statement_sub: 'Stock bought, item by item',
         report_cashflow: 'Cash flow',
         report_cashflow_sub: 'Money in and out over time',
+        report_owner_statement: 'Owner statement',
+        report_owner_statement_sub: 'Capital and profit paid to owners',
 
         // ── Report toolbar (print / export) ──────────────────────
         printLbl: 'Print',
@@ -596,18 +627,30 @@ export const appTranslations = {
         operatingExpensesLbl: 'Operating expenses',
         totalOperatingExpensesLbl: 'Total Operating Expenses',
         netProfitLbl: 'Net profit',
+        ownersProfitPayLbl: "Owners' profit pay",
+        netProfitAfterOwnersDrawLbl: 'Net profit after owners\' profit pay',
         incomeByItemLbl: 'Income by item',
         expensesByCategoryLbl: 'Expenses by category',
         costOfGoodsSoldByItemLbl: 'Cost of goods sold by item',
         percentOfRevenueLbl: '% of revenue',
 
-        // ── Customer / Supplier statements ─────────────────────────
+        // ── Customer / Supplier / Owner statements ──────────────────
         selectCustomerLbl: 'Select a customer',
         selectVendorLbl: 'Select a vendor / employee',
         chooseCustomerPrompt: 'Choose a customer above to see their statement.',
         chooseVendorPrompt: 'Choose a vendor above to see their statement.',
         owedToYouLbl: 'Owed to you',
         owedByYouLbl: 'You owe',
+        ownerLbl: 'Owner',
+        totalsLbl: 'Totals',
+        selectOwnerLbl: 'Select an owner',
+        allOwnersLbl: 'All owners',
+        owner_withdrawals_statement_toggle: 'Withdrawals statement',
+        owner_profit_statement_toggle: 'Profit pay statement',
+        owner_net_contributed_lbl: 'Net capital contributed',
+        owner_total_profit_paid_lbl: 'Total profit paid',
+        owner_amountInLbl: 'In',
+        owner_amountOutLbl: 'Out',
 
         // ── Cash flow ──────────────────────────────────────────────
         cashInLbl: 'Cash in',
@@ -687,6 +730,7 @@ export const appTranslations = {
         tab_equipment: 'معدات ومركبات',
         tab_custody: 'عهدة',
         tab_payment: 'تحصيل / دفع',
+        tab_owner: 'معاملات الملاك',
         tab_settings: 'الإعدادات',
         tab_ledger: 'كل القيود',
         tab_pl: 'الأرباح والخسائر',
@@ -694,6 +738,7 @@ export const appTranslations = {
         tab_statement_supp: 'كشف حساب مورد',
         tab_inv_statement: 'كشف المخزون',
         tab_cashflow: 'التدفق النقدي',
+        tab_owner_statement: 'كشف حساب الملاك',
 
         sellTo: 'بيع إلى',
         salesChannelLbl: 'قناة البيع',
@@ -871,6 +916,22 @@ export const appTranslations = {
         noteLbl: 'ملاحظة (اختياري)',
         loadingLbl: 'جارٍ التحميل…',
 
+        // ── شاشة إيداع/سحب الملاك ────────────────────────────────
+        owner_receive_toggle: 'استلام أموال من مالك',
+        owner_pay_toggle: 'دفع أموال لمالك',
+        owner_receiveFromLbl: 'استلام من',
+        owner_payToLbl: 'دفع إلى',
+        owner_categoryLbl: 'بصفتها',
+        owner_category_capital_injection: 'ضخ رأس مال',
+        owner_category_repay_withdrawal: 'سداد سحب سابق',
+        owner_category_withdrawal: 'سحب',
+        owner_category_profit_distribution: 'توزيع أرباح',
+        addNewOwner: '+ إضافة مالك جديد…',
+        ownerNotePlaceholder: 'ما سبب هذه العملية؟ (اختياري)',
+        recordOwnerTxBtn: 'تسجيل',
+        ownerIndexTitle: 'معاملات الملاك',
+        noOwnerTxYet: 'لا توجد معاملات ملاك مسجلة بعد.',
+
         recordExpenseBtn: 'تسجيل المصروف',
         oneTimeLbl: 'مرة واحدة',
         recurringLbl: 'متكرر',
@@ -907,6 +968,8 @@ export const appTranslations = {
         action_custody_sub: 'نقدية تُسلَّم لموظف',
         action_payment_title: 'تحصيل / دفع نقدية',
         action_payment_sub: 'تحصيل من عميل أو تسوية فاتورة',
+        action_owner_title: 'إيداع / سحب مالك',
+        action_owner_sub: 'أموال واردة من مالك أو مدفوعة له',
 
         new_record_sheet_title: 'قيد جديد',
         settings_sheet_title: 'الإعدادات',
@@ -916,6 +979,8 @@ export const appTranslations = {
         menu_customers_sub: 'الأشخاص والشركات التي تشتري منك',
         menu_vendors: 'الموردون',
         menu_vendors_sub: 'الموردون ومقدمو الخدمات الذين تدفع لهم',
+        menu_owners: 'الملاك',
+        menu_owners_sub: 'من تعود إليهم ملكية الشركة',
         menu_items_categories: 'الأصناف والتصنيفات',
         menu_items_categories_sub: 'المنتجات وأصناف المخزون وتصنيفات المصروفات',
         menu_all_entries: 'كل القيود',
@@ -933,6 +998,7 @@ export const appTranslations = {
         // ── Reference data page (Lookups/Index.vue) ──────────────
         lookup_customers: 'العملاء',
         lookup_vendors: 'الموردون',
+        lookup_owners: 'الملاك',
         lookup_items: 'الأصناف والتصنيفات',
         lookup_categories: 'تصنيفات المصروفات',
         lookup_name: 'الاسم',
@@ -1041,6 +1107,12 @@ export const appTranslations = {
         howto_custody_4: 'اكتب تاريخ التسوية، ثم سطراً لكل بند صرف عليه.',
         howto_custody_5: 'ما تبقى من المبلغ يعود إليك، وما صرفه من جيبه تردّه له. الحساب يتم تلقائياً.',
         howto_custody_tip: 'المبلغ المسلَّم ليس مصروفاً بعد — فهو ما زال مالك. ولا يُحتسب مصروفاً إلا بعد التسوية.',
+
+        howto_owner_1: 'اختر ما إذا كانت الأموال واردة من مالك أم مدفوعة له.',
+        howto_owner_2: 'حدد التاريخ والمالك والمبلغ.',
+        howto_owner_3: 'اختر نوع الحركة — ضخ رأس مال، أو سداد سحب سابق، أو سحب، أو توزيع أرباح.',
+        howto_owner_4: 'حدد طريقة الدفع (نقدي، بنك، ...) ثم اضغط تسجيل.',
+        howto_owner_tip: 'توزيع الأرباح هو النوع الوحيد من هذه الحركات الذي يظهر كسطر مستقل في تقرير الأرباح والخسائر — أما السحب العادي فلا يؤثر على الأرباح والخسائر إطلاقاً، بل يظهر فقط في الميزانية العمومية.',
 
         // ── تحصيل / دفع ──
         howto_payment_1: 'اختر "تحصيل" لو المال داخل، أو "دفع" لو خارج.',
@@ -1172,6 +1244,8 @@ export const appTranslations = {
         report_inventory_statement_sub: 'البضاعة المشتراة، صنفاً بصنف',
         report_cashflow: 'التدفق النقدي',
         report_cashflow_sub: 'النقدية الداخلة والخارجة عبر الزمن',
+        report_owner_statement: 'كشف حساب الملاك',
+        report_owner_statement_sub: 'رأس المال والأرباح المدفوعة للملاك',
 
         // ── شريط أدوات التقرير (طباعة / تصدير) ─────────────────────
         printLbl: 'طباعة',
@@ -1211,6 +1285,8 @@ export const appTranslations = {
         operatingExpensesLbl: 'المصروفات التشغيلية',
         totalOperatingExpensesLbl: 'إجمالي المصروفات التشغيلية',
         netProfitLbl: 'صافي الربح',
+        ownersProfitPayLbl: 'أرباح موزعة للملاك',
+        netProfitAfterOwnersDrawLbl: 'صافي الربح بعد أرباح الملاك الموزعة',
         incomeByItemLbl: 'الإيرادات حسب الصنف',
         expensesByCategoryLbl: 'المصروفات حسب الفئة',
         costOfGoodsSoldByItemLbl: 'تكلفة البضاعة المباعة حسب الصنف',
@@ -1223,6 +1299,16 @@ export const appTranslations = {
         chooseVendorPrompt: 'اختر مورداً أعلاه لعرض كشف حسابه.',
         owedToYouLbl: 'مستحق لك',
         owedByYouLbl: 'مستحق عليك',
+        ownerLbl: 'المالك',
+        totalsLbl: 'الإجماليات',
+        selectOwnerLbl: 'اختر مالكاً',
+        allOwnersLbl: 'كل الملاك',
+        owner_withdrawals_statement_toggle: 'كشف السحوبات',
+        owner_profit_statement_toggle: 'كشف توزيع الأرباح',
+        owner_net_contributed_lbl: 'صافي رأس المال المُساهم به',
+        owner_total_profit_paid_lbl: 'إجمالي الأرباح المدفوعة',
+        owner_amountInLbl: 'وارد',
+        owner_amountOutLbl: 'صادر',
 
         // ── التدفق النقدي ─────────────────────────────────────────────
         cashInLbl: 'النقد الداخل',

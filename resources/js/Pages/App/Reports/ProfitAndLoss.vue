@@ -39,6 +39,10 @@ const props = defineProps({
     operating_expenses_percent: { type: Number, default: 0 },
     net_profit: { type: Number, default: 0 },
     net_profit_percent: { type: Number, default: 0 },
+    owners_profit_pay: { type: Number, default: 0 },
+    owners_profit_pay_percent: { type: Number, default: 0 },
+    net_profit_after_owners_draw: { type: Number, default: 0 },
+    net_profit_after_owners_draw_percent: { type: Number, default: 0 },
     expenses_by_category: { type: Array, default: () => [] },
     income_by_item: { type: Array, default: () => [] },
     cost_of_goods_sold_by_item: { type: Array, default: () => [] },
@@ -92,6 +96,17 @@ const rows = computed(() => {
     list.push({ kind: 'total', label: t('totalOperatingExpensesLbl'), amount: props.operating_expenses, percent: props.operating_expenses_percent });
 
     list.push({ kind: 'result', label: t('netProfitLbl'), amount: props.net_profit, percent: props.net_profit_percent });
+
+    // Appropriation of the period's profit, not a component of it —
+    // Net Profit above is what the business earned; these two rows
+    // show what it then paid owners out of that. Only ever shown
+    // when something was actually paid out, so a company that's
+    // never used Owner Injection/Withdrawal sees the P&L exactly as
+    // it always looked.
+    if (props.owners_profit_pay !== 0) {
+        list.push({ kind: 'child', label: t('ownersProfitPayLbl'), amount: -props.owners_profit_pay, percent: props.owners_profit_pay_percent });
+        list.push({ kind: 'result', label: t('netProfitAfterOwnersDrawLbl'), amount: props.net_profit_after_owners_draw, percent: props.net_profit_after_owners_draw_percent });
+    }
 
     return list;
 });

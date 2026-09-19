@@ -12,6 +12,8 @@ use App\Models\InventoryStockLedger;
 use App\Models\Item;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
+use App\Models\Owner;
+use App\Models\OwnerTransaction;
 use App\Models\Payment;
 use App\Models\ProductionOrder;
 use App\Models\ProductionOrderMaterialLine;
@@ -219,6 +221,24 @@ class ReportDataService
         $grossProfit = round($revenue - $cogs, 2);
         $netProfit   = round($grossProfit - $operatingExpenses, 2);
 
+        // Profit actually paid out to owners this period — a
+        // separate appropriation line BELOW Net Profit, not a
+        // component of it: Net Profit is what the business earned;
+        // this is what it then chose to hand out from that. Read
+        // straight off OWNER_PROFIT_DISTRIBUTIONS (an equity account,
+        // credit-normal) rather than looped in with the income/expense
+        // accounts above, since it isn't either of those — see
+        // JournalService::postOwnerTransaction().
+        $ownersProfitPay = round((float) JournalLine::query()
+            ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
+            ->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
+            ->where('accounts.code', Account::OWNER_PROFIT_DISTRIBUTIONS)
+            ->whereBetween('journal_entries.date', [$from, $to])
+            ->selectRaw('COALESCE(SUM(journal_lines.debit) - SUM(journal_lines.credit), 0) as net')
+            ->value('net'), 2);
+
+        $netProfitAfterOwnersDraw = round($netProfit - $ownersProfitPay, 2);
+
         // Per-item revenue breakdown — built the same way it always
         // was, straight from the sales invoices themselves. This was
         // already accrual before today's change (it never looked at
@@ -295,6 +315,14 @@ class ReportDataService
             'gross_profit'         => $grossProfit,
             'operating_expenses'   => $operatingExpenses,
             'net_profit'           => $netProfit,
+            // Appropriation of the period's profit — see the
+            // computation above. `net_profit` above is unaffected by
+            // either of these; they exist purely as the two extra
+            // rows requested below it.
+            'owners_profit_pay'              => $ownersProfitPay,
+            'owners_profit_pay_percent'      => $percentOf($ownersProfitPay),
+            'net_profit_after_owners_draw'   => $netProfitAfterOwnersDraw,
+            'net_profit_after_owners_draw_percent' => $percentOf($netProfitAfterOwnersDraw),
             // % of revenue for the summary/total rows themselves —
             // the table's Vue page and its export both need these to
             // render the Total Revenue / Total COGS / Gross Profit /
@@ -457,6 +485,91 @@ class ReportDataService
             ]));
 
         return $this->windowStatement($entries, $from, $to, 'credit_owed', 'debit');
+    }
+
+    /**
+     * Owner Injection/Withdrawal activity — either the Withdrawals
+     * Statement (capital in: capital_injection/repay_withdrawal, and
+     * capital out: withdrawal) or the Profit Pay Statement (only
+     * profit_distribution rows), for one owner or, with $owner null,
+     * every owner at once.
+     *
+     * Unlike customerStatement()/supplierStatement(), this has no
+     * "brought forward" collapsing (windowStatement()) — those exist
+     * because a customer/supplier balance is a running debt that
+     * predates any window you might ask for. An owner's contributed
+     * capital is exactly that same kind of running balance too, which
+     * is why a running `balance` column is still computed below when
+     * $owner is given — it just isn't collapsed into an opening
+     * figure when $from is given, since nothing here has asked for
+     * that (yet). With $owner null (every owner combined), a single
+     * running balance would mix unrelated owners' equity into one
+     * meaningless number, so entries carry the owner's name instead
+     * and only the period's totals are returned.
+     *
+     * @return array{
+     *     entries: Collection,
+     *     total_in: float, total_out: float, net: float,
+     *     owner: ?array, running_balance: bool,
+     * }
+     */
+    public function ownerStatement(?Owner $owner, string $type, ?string $from = null, ?string $to = null): array
+    {
+        $categories = $type === 'profit'
+            ? ['profit_distribution']
+            : ['capital_injection', 'repay_withdrawal', 'withdrawal'];
+
+        $labels = [
+            'capital_injection'   => 'Capital Injection',
+            'repay_withdrawal'    => 'Repay Withdrawal',
+            'withdrawal'          => 'Withdrawal',
+            'profit_distribution' => 'Profit Distribution',
+        ];
+
+        $query = OwnerTransaction::query()
+            ->with('owner:id,name')
+            ->whereIn('category', $categories)
+            ->when($owner, fn ($q) => $q->where('owner_id', $owner->id))
+            ->when($from, fn ($q) => $q->whereDate('date', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('date', '<=', $to))
+            ->orderBy('date')
+            ->orderBy('id');
+
+        $running = 0.0;
+        $totalIn = 0.0;
+        $totalOut = 0.0;
+
+        $entries = $query->get()->map(function (OwnerTransaction $tx) use (&$running, &$totalIn, &$totalOut, $labels) {
+            $amountIn  = $tx->direction === 'in' ? (float) $tx->amount : 0.0;
+            $amountOut = $tx->direction === 'out' ? (float) $tx->amount : 0.0;
+
+            $totalIn  += $amountIn;
+            $totalOut += $amountOut;
+            $running  += $amountIn - $amountOut;
+
+            return [
+                'date'       => $tx->date->toDateString(),
+                'owner'      => $tx->owner?->name,
+                'type'       => $tx->category,
+                'ref'        => $labels[$tx->category] ?? ucfirst($tx->category),
+                'note'       => $tx->note,
+                'amount_in'  => round($amountIn, 2),
+                'amount_out' => round($amountOut, 2),
+                'balance'    => round($running, 2),
+            ];
+        });
+
+        return [
+            'entries'         => $entries,
+            'total_in'        => round($totalIn, 2),
+            'total_out'       => round($totalOut, 2),
+            'net'             => round($totalIn - $totalOut, 2),
+            'owner'           => $owner?->only(['id', 'name']),
+            // The frontend only shows the running `balance` column
+            // when one specific owner is selected — see this method's
+            // doc comment for why it's meaningless combined.
+            'running_balance' => (bool) $owner,
+        ];
     }
 
     /**
@@ -809,6 +922,7 @@ class ReportDataService
                     Expense::class           => ['vendor:id,name'],
                     InventoryPurchase::class => ['vendor:id,name'],
                     EquipmentPurchase::class => ['vendor:id,name'],
+                    OwnerTransaction::class  => ['owner:id,name'],
                 ]),
             ])
             ->orderByDesc('date')
@@ -823,6 +937,7 @@ class ReportDataService
                     ?? $p->vendor?->name
                     ?? $p->payable?->customer?->name
                     ?? $p->payable?->vendor?->name
+                    ?? $p->payable?->owner?->name
                     ?? '—',
             ]);
 

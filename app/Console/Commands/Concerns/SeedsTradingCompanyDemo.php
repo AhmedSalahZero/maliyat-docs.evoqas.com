@@ -59,8 +59,26 @@ trait SeedsTradingCompanyDemo
         // in an earlier version of this file).
         $items = $this->makeItems($company->id, [
             ['name' => 'Portland Cement 50kg', 'type' => 'trading', 'uom' => 'Bag', 'buy' => [130, 150], 'sell' => [165, 185], 'purchase_qty' => [22.5, 42.2], 'sale_qty' => [5, 60]],
-            ['name' => 'Steel Rebar 12mm', 'type' => 'trading', 'uom' => 'Ton', 'buy' => [24000, 26000], 'sell' => [28500, 30500], 'purchase_qty' => [1.56, 2.92], 'sale_qty' => [0.5, 4]],
-            ['name' => 'Steel Rebar 16mm', 'type' => 'trading', 'uom' => 'Ton', 'buy' => [24500, 26500], 'sell' => [29000, 31000], 'purchase_qty' => [1.56, 2.92], 'sale_qty' => [0.5, 4]],
+            // Sell ranges widened vs buy ranges (was ~15% markup,
+            // the thinnest of any item here by a wide margin while
+            // also being by far the highest-value line item — a ton
+            // of rebar is worth 100-300x a typical line elsewhere).
+            // Since items are picked uniformly at random for both
+            // sales and purchases (not weighted by value), a handful
+            // of rebar transactions landing in any given reporting
+            // window carries outsized weight; a 15% margin left
+            // almost no cushion against that concentration, and a
+            // short run of buy-side prices near the top of the range
+            // against sell-side prices near the bottom could — over
+            // just a quarter or a year rather than the full ~20
+            // months — read as a near break-even or loss-making
+            // product line, which a construction-materials distributor
+            // would not realistically carry. ~24% keeps rebar the
+            // slimmest margin in the catalog (still realistic for
+            // steel distribution) without it being able to tip a
+            // reporting period negative on its own.
+            ['name' => 'Steel Rebar 12mm', 'type' => 'trading', 'uom' => 'Ton', 'buy' => [24000, 26000], 'sell' => [31500, 33500], 'purchase_qty' => [1.56, 2.92], 'sale_qty' => [0.5, 4]],
+            ['name' => 'Steel Rebar 16mm', 'type' => 'trading', 'uom' => 'Ton', 'buy' => [24500, 26500], 'sell' => [32000, 34000], 'purchase_qty' => [1.56, 2.92], 'sale_qty' => [0.5, 4]],
             ['name' => 'Ceramic Floor Tile 60x60', 'type' => 'trading', 'uom' => 'Sqm', 'buy' => [90, 110], 'sell' => [150, 172], 'purchase_qty' => [31.2, 58.5], 'sale_qty' => [10, 80]],
             ['name' => 'Ceramic Wall Tile 30x60', 'type' => 'trading', 'uom' => 'Sqm', 'buy' => [70, 85], 'sell' => [118, 138], 'purchase_qty' => [24.2, 45.5], 'sale_qty' => [10, 60]],
             ['name' => 'White Emulsion Paint 20L', 'type' => 'trading', 'uom' => 'Bucket', 'buy' => [900, 1000], 'sell' => [1300, 1450], 'purchase_qty' => [4.5, 8.4], 'sale_qty' => [1, 12]],
@@ -110,6 +128,23 @@ trait SeedsTradingCompanyDemo
         ]);
         $this->line('  · opening balance posted');
 
+        // The opening balance above is real stock in the DB from day
+        // one (OpeningBalanceService posts it as an is_opening_balance
+        // InventoryPurchase, which MovingAverageCostingService counts
+        // as inbound like any other purchase) — but this seeder's own
+        // in-memory $stock tracker (used only to stop recordSale()
+        // from ever selling more than is on hand) started empty and
+        // was never told about it. That silently under-counted these
+        // two items' available stock for the rest of the run — not
+        // an oversell risk (the gate only ever errs conservative,
+        // never lets qty exceed what it thinks is available), but it
+        // did mean cement and tile could sell noticeably less often
+        // than the other 18 items for no real-world reason. Seeding
+        // $stock from the same quantities keeps it a true mirror of
+        // the real ledger from day one.
+        $stock[$itemsByName['Portland Cement 50kg']['item']->id] = 300.0;
+        $stock[$itemsByName['Ceramic Floor Tile 60x60']['item']->id] = 250.0;
+
         // Guaranteed initial stock-up, from two different vendors, so
         // production/sales never starve for stock while the
         // probabilistic weekly restocking below ramps up.
@@ -132,7 +167,20 @@ trait SeedsTradingCompanyDemo
         $totalDays = $this->totalDays();
         $weights = $this->dailyWeights($totalDays, dampenWeekend: true);
         $saleCounts = $this->spreadCounts($totalDays, 550, $weights);
-        $purchaseCounts = $this->spreadCounts($totalDays, 138, array_fill(0, $totalDays, 1.0));
+        // Purchases used to be spread FLAT across the whole run while
+        // sales followed the same growth ramp as the rest of the
+        // business (dailyWeights: ~0.65x at the start to ~1.5x by the
+        // end). Restocking that doesn't grow with demand means supply
+        // increasingly lags behind it in the later months — exactly
+        // the months a "This Month/Quarter/Year" dashboard view is
+        // most likely to land on — so items run out of stock more
+        // often late in the run, sales get skipped or shrink to
+        // whatever little is left, and the resulting per-period mix
+        // (and margin) swings around in a way no real business would
+        // show. Restocking now follows the same growth curve as
+        // sales, so supply keeps pace with demand throughout instead
+        // of only balancing out on average over the full ~20 months.
+        $purchaseCounts = $this->spreadCounts($totalDays, 138, $weights);
         $expenseCounts = $this->spreadCounts($totalDays, 110, array_fill(0, $totalDays, 1.0));
 
         $expenseCats = collect(['Transport', 'Marketing', 'Utilities', 'Office Supplies', 'Other'])

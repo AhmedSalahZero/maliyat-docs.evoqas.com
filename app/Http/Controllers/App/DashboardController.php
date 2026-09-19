@@ -83,7 +83,7 @@ class DashboardController extends Controller
             'open_bills_count'    => $this->openBillsCount($companyId),
 
             // ── What is selling, and to whom ─────────────────────
-            'sku_sales'     => $this->skuSales($companyId, $from, $to),
+            ...$this->skuSales($companyId, $from, $to),
             'sales_by_channel' => $this->salesByChannel($companyId, $from, $to),
             'top_customers' => $this->topCustomers($companyId, $from, $to),
             'top_suppliers' => $this->topSuppliers($companyId, $from, $to),
@@ -237,17 +237,37 @@ class DashboardController extends Controller
 
     /**
      * Sales per stock item: how much moved, what it earned, and how
-     * many separate sales it appeared in. Drives both the donut and
-     * the three "top item" cards, so all four read from one query.
+     * many separate sales it appeared in.
+     *
+     * Three things come back, not one:
+     *
+     *  - `sku_sales`: the top TOP_LIMIT items by value, unchanged —
+     *    real items only, no synthetic rows. Drives the three
+     *    "top item" leaderboard panels, where a made-up "Other"
+     *    entry would be actively wrong (it could out-value every
+     *    real item and wrongly "win" Top Item by Value).
+     *  - `sku_sales_chart`: the same top (TOP_LIMIT - 1) items plus
+     *    one synthetic "Other" row folding in everything past that —
+     *    for the donut only, so a company with more products than
+     *    fit on the chart still draws a full circle instead of a
+     *    wedge that quietly stops partway round.
+     *  - `sku_sales_total`: the TRUE total across every item with a
+     *    sale line in the period, not just whichever ones made either
+     *    list above. The donut's center label reads from this, not
+     *    from summing `sku_sales_chart` — previously the donut's
+     *    total WAS that sum, so a company selling more than
+     *    TOP_LIMIT distinct items showed a "Total sales" figure
+     *    inside the donut that quietly undercounted the real number
+     *    sitting right next to it on the Sales card above, which is
+     *    exactly the sort of thing that makes a dashboard look
+     *    untrustworthy.
      *
      * Lines with no item_id are free-text/service lines with nothing
-     * to attribute, so they're excluded rather than lumped together
-     * under a misleading label. This is a REAL, INTENTIONAL reason
-     * this donut's total can sit a little below the Sales figure on
-     * the top row: any free-text line still counts as revenue, but
-     * has no item to show it under here. That's a genuinely
-     * different (and smaller) gap than what was wrong with the
-     * Sales-by-Channel donut above — see that method's doc comment.
+     * to attribute, so they're excluded from all three rather than
+     * lumped in under a misleading label. That's a real, intentional
+     * reason `sku_sales_total` can still sit a little below the Sales
+     * figure on the top row — any free-text line still counts as
+     * revenue there, but has no item to show it under here.
      *
      * `is_opening_balance` sales are excluded explicitly, though in
      * practice they never reach this query anyway — they're created
@@ -257,7 +277,7 @@ class DashboardController extends Controller
      */
     private function skuSales(int $companyId, string $from, string $to): array
     {
-        return DB::table('sale_lines')
+        $rows = DB::table('sale_lines')
             ->join('sales', 'sales.id', '=', 'sale_lines.sale_id')
             ->join('items', 'items.id', '=', 'sale_lines.item_id')
             ->where('sales.company_id', $companyId)
@@ -272,16 +292,39 @@ class DashboardController extends Controller
                 DB::raw('COUNT(DISTINCT sale_lines.sale_id) AS transactions'),
             ])
             ->orderByDesc('value')
-            ->limit(self::TOP_LIMIT)
-            ->get()
-            ->map(fn ($row) => [
-                'id'           => (int) $row->id,
-                'name'         => $row->name,
-                'volume'       => round((float) $row->volume, 2),
-                'value'        => round((float) $row->value, 2),
-                'transactions' => (int) $row->transactions,
-            ])
-            ->all();
+            ->get();
+
+        $total = round((float) $rows->sum('value'), 2);
+
+        $mapRow = fn ($row) => [
+            'id'           => (int) $row->id,
+            'name'         => $row->name,
+            'volume'       => round((float) $row->volume, 2),
+            'value'        => round((float) $row->value, 2),
+            'transactions' => (int) $row->transactions,
+        ];
+
+        $top = $rows->take(self::TOP_LIMIT)->map($mapRow)->values()->all();
+
+        $chartLimit = self::TOP_LIMIT - 1;
+        $chart = $rows->take($chartLimit)->map($mapRow);
+        $rest = $rows->slice($chartLimit);
+
+        if ($rest->isNotEmpty()) {
+            $chart->push([
+                'id'           => null,
+                'name'         => __('Other'),
+                'volume'       => round((float) $rest->sum('volume'), 2),
+                'value'        => round((float) $rest->sum('value'), 2),
+                'transactions' => (int) $rest->sum('transactions'),
+            ]);
+        }
+
+        return [
+            'sku_sales'       => $top,
+            'sku_sales_chart' => $chart->values()->all(),
+            'sku_sales_total' => $total,
+        ];
     }
 
     /**

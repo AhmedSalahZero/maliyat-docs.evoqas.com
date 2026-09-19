@@ -34,7 +34,7 @@ import { QUICK_RECORD_ACTIONS } from '@/constants/quickRecordActions';
 import { useBusinessType } from '@/composables/useBusinessType';
 import { useMoneyFormat } from '@/composables/useMoneyFormat';
 
-const { visibleFor } = useBusinessType();
+const { visibleFor, needsInventory } = useBusinessType();
 const visibleQuickActions = computed(() => visibleFor(QUICK_RECORD_ACTIONS));
 
 const props = defineProps({
@@ -58,6 +58,8 @@ const props = defineProps({
     open_invoices_count: { type: Number, default: 0 },
     open_bills_count:    { type: Number, default: 0 },
     sku_sales:           { type: Array, default: () => [] },
+    sku_sales_chart:     { type: Array, default: () => [] },
+    sku_sales_total:     { type: Number, default: 0 },
     sales_by_channel:    { type: Array, default: () => [] },
     top_customers:       { type: Array, default: () => [] },
     top_suppliers:       { type: Array, default: () => [] },
@@ -92,13 +94,24 @@ function setPeriod(period) {
 }
 
 // ── SKU donut ────────────────────────────────────────────────────
+// Reads from sku_sales_chart (top items + a synthetic "Other" row
+// for the remainder), NOT sku_sales (the plain top-item list used by
+// the leaderboard panels below) — an "Other" wedge is exactly right
+// for a chart slice, but would be wrong to ever crown "Top Item" in
+// a leaderboard, since it isn't a real item and can outweigh every
+// individual one.
 const donutSlices = computed(() =>
-    props.sku_sales.map((row) => ({ name: row.name, value: row.value }))
+    props.sku_sales_chart.map((row) => ({ name: row.name, value: row.value }))
 );
 
-const skuTotal = computed(() =>
-    props.sku_sales.reduce((sum, row) => sum + (row.value || 0), 0)
-);
+// Reads from the backend's true per-period total (every item with a
+// sale line, not just the ones on the donut) rather than summing
+// props.sku_sales — that list is capped at TOP_LIMIT rows (the tail
+// folded into one "Other" slice), so re-summing it here was only
+// ever correct for companies with few enough distinct items to fit
+// under the cap; anyone else saw this figure quietly undercount the
+// real Sales total sitting right above it.
+const skuTotal = computed(() => props.sku_sales_total || 0);
 
 // Compact ("1.5M") rather than grouped ("1,500,745"): this sits
 // inside the donut's hole, where a full-length figure simply does
@@ -208,7 +221,14 @@ const panels = computed(() => [
                 <div class="home-stat__label">{{ t('home_sales') }}</div>
                 <div class="home-stat__value">{{ money(props.revenue) }}</div>
             </div>
-            <div class="home-stat home-stat--cogs">
+            <!-- A pure-service company (no trading/production) never
+                 carries inventory, so Cost of Goods Sold is always
+                 exactly zero for them — not a real figure worth a
+                 card, just noise that reads like something's broken.
+                 Hidden with the same needsInventory check the rest of
+                 the app already uses to hide Inventory-only screens
+                 for these companies (see useBusinessType). -->
+            <div v-if="needsInventory" class="home-stat home-stat--cogs">
                 <div class="home-stat__label">{{ t('home_cogs') }}</div>
                 <div class="home-stat__value">{{ money(props.cost_of_goods_sold) }}</div>
             </div>

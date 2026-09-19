@@ -75,17 +75,31 @@ trait SeedsProductionCompanyDemo
         $rawByName = collect($rawMaterials)->keyBy(fn ($row) => $row['item']->name)->map(fn ($row) => $row['item']);
 
         // name => [sell range, labor per unit, qty-per-run range, recipe (material name => qty consumed per unit)]
+        //
+        // Labor-per-unit figures below are roughly doubled from an
+        // earlier version of this file. Material cost alone (a few
+        // planks/boards/hinges at the buy prices above) came out to
+        // only ~10-15% of the sell price for most of these products,
+        // and with labor left at its old, token level too, net profit
+        // for the whole company landed close to ~50% of revenue —
+        // implausible for a furniture *manufacturer* carrying rent,
+        // machinery, and a full production floor, versus a trading or
+        // service business with lighter overhead. Real furniture
+        // manufacturing typically runs cost-of-goods (materials +
+        // direct labor) at 55-70% of the sell price; these levels,
+        // combined with the added opex below, bring the demo company
+        // to a still-healthy but far more believable net margin.
         $productDefs = [
-            'Dining Table'        => [[4500, 6500], 250, [3, 8], ['Oak Wood Plank' => 3.0, 'Metal Legs Set' => 1.0, 'Varnish' => 0.4, 'Wood Screws' => 0.3]],
-            'Office Desk'         => [[3200, 4500], 200, [3, 8], ['MDF Board' => 2.5, 'Metal Legs Set' => 1.0, 'Varnish' => 0.3, 'Wood Screws' => 0.25]],
-            'Bookshelf Unit'      => [[2800, 3800], 180, [3, 10], ['Plywood Sheet' => 3.0, 'Wood Screws' => 0.4, 'Sandpaper' => 2.0, 'Varnish' => 0.25, 'Wood Glue' => 0.2]],
-            'Wooden Dining Chair' => [[950, 1400], 80, [6, 20], ['Pine Wood Plank' => 1.2, 'Wood Screws' => 0.15, 'Varnish' => 0.1, 'Sandpaper' => 1.0]],
-            'Sofa Frame 3-Seater' => [[6500, 9000], 400, [2, 6], ['Pine Wood Plank' => 4.0, 'Foam Padding' => 6.0, 'Upholstery Fabric' => 8.0, 'Wood Screws' => 0.5]],
-            'Bed Frame Queen'     => [[5200, 7200], 280, [2, 6], ['Oak Wood Plank' => 3.5, 'Metal Legs Set' => 1.0, 'Wood Screws' => 0.4, 'Varnish' => 0.35]],
-            'Wardrobe 3-Door'     => [[7500, 10500], 350, [2, 5], ['MDF Board' => 5.0, 'Metal Hinges' => 6.0, 'Wood Screws' => 0.6, 'Varnish' => 0.5]],
-            'TV Stand Unit'       => [[2200, 3200], 150, [3, 8], ['MDF Board' => 2.0, 'Metal Hinges' => 2.0, 'Wood Screws' => 0.3, 'Varnish' => 0.2, 'Wood Glue' => 0.1]],
-            'Coffee Table'        => [[1600, 2300], 130, [3, 10], ['Pine Wood Plank' => 1.5, 'Metal Legs Set' => 1.0, 'Varnish' => 0.2, 'Sandpaper' => 1.0]],
-            'Kitchen Cabinet Unit'=> [[3800, 5200], 220, [3, 8], ['Plywood Sheet' => 3.5, 'Metal Hinges' => 4.0, 'Wood Screws' => 0.4, 'Varnish' => 0.3, 'Wood Glue' => 0.15]],
+            'Dining Table'        => [[4500, 6500], 550, [3, 8], ['Oak Wood Plank' => 3.0, 'Metal Legs Set' => 1.0, 'Varnish' => 0.4, 'Wood Screws' => 0.3]],
+            'Office Desk'         => [[3200, 4500], 430, [3, 8], ['MDF Board' => 2.5, 'Metal Legs Set' => 1.0, 'Varnish' => 0.3, 'Wood Screws' => 0.25]],
+            'Bookshelf Unit'      => [[2800, 3800], 380, [3, 10], ['Plywood Sheet' => 3.0, 'Wood Screws' => 0.4, 'Sandpaper' => 2.0, 'Varnish' => 0.25, 'Wood Glue' => 0.2]],
+            'Wooden Dining Chair' => [[950, 1400], 180, [6, 20], ['Pine Wood Plank' => 1.2, 'Wood Screws' => 0.15, 'Varnish' => 0.1, 'Sandpaper' => 1.0]],
+            'Sofa Frame 3-Seater' => [[6500, 9000], 850, [2, 6], ['Pine Wood Plank' => 4.0, 'Foam Padding' => 6.0, 'Upholstery Fabric' => 8.0, 'Wood Screws' => 0.5]],
+            'Bed Frame Queen'     => [[5200, 7200], 600, [2, 6], ['Oak Wood Plank' => 3.5, 'Metal Legs Set' => 1.0, 'Wood Screws' => 0.4, 'Varnish' => 0.35]],
+            'Wardrobe 3-Door'     => [[7500, 10500], 750, [2, 5], ['MDF Board' => 5.0, 'Metal Hinges' => 6.0, 'Wood Screws' => 0.6, 'Varnish' => 0.5]],
+            'TV Stand Unit'       => [[2200, 3200], 320, [3, 8], ['MDF Board' => 2.0, 'Metal Hinges' => 2.0, 'Wood Screws' => 0.3, 'Varnish' => 0.2, 'Wood Glue' => 0.1]],
+            'Coffee Table'        => [[1600, 2300], 280, [3, 10], ['Pine Wood Plank' => 1.5, 'Metal Legs Set' => 1.0, 'Varnish' => 0.2, 'Sandpaper' => 1.0]],
+            'Kitchen Cabinet Unit'=> [[3800, 5200], 470, [3, 8], ['Plywood Sheet' => 3.5, 'Metal Hinges' => 4.0, 'Wood Screws' => 0.4, 'Varnish' => 0.3, 'Wood Glue' => 0.15]],
         ];
 
         $productItems = $this->makeItems($company->id, collect($productDefs)->map(fn ($def, $name) => [
@@ -123,13 +137,23 @@ trait SeedsProductionCompanyDemo
         ]);
         $this->line('  · opening balance posted');
 
+        // Same reasoning as the trading company's seeder: this
+        // opening stock is already real inventory in the DB from day
+        // one, but the in-memory $stock tracker below (which only
+        // gates recordProductionOrder()/recordSale() so they never
+        // draw more than is on hand) started empty and didn't know
+        // about it, so these two materials looked scarcer than they
+        // really were for the whole run.
+        $stock[$rawByName['Pine Wood Plank']->id] = 60.0;
+        $stock[$rawByName['MDF Board']->id] = 40.0;
+
         // Guaranteed initial raw-material stock-up before any
         // production runs are scheduled.
         $this->recordPurchase($company, $key, collect([$vendors[0], $vendors[3]]), $rawMaterials, $channels, $openingDate->copy()->addDays(2), $stock, lineCount: 8, qtyMultiplier: 3.0);
         $this->recordPurchase($company, $key, collect([$vendors[1], $vendors[2], $vendors[4]]), $rawMaterials, $channels, $openingDate->copy()->addDays(4), $stock, lineCount: 8, qtyMultiplier: 3.0);
 
-        $this->recordRecurringSeries($company, $key, $vendors[0], $this->expenseCategory($company->id, 'Rent'), $channels, $openingDate->copy()->addDays(3), 28000, 20, 'Workshop rent');
-        $this->recordRecurringSeries($company, $key, $payrollVendor, $this->expenseCategory($company->id, 'Salaries'), $channels, $openingDate->copy()->addDays(25), 40000, 20, 'Admin & sales staff salaries');
+        $this->recordRecurringSeries($company, $key, $vendors[0], $this->expenseCategory($company->id, 'Rent'), $channels, $openingDate->copy()->addDays(3), 32000, 20, 'Workshop rent');
+        $this->recordRecurringSeries($company, $key, $payrollVendor, $this->expenseCategory($company->id, 'Salaries'), $channels, $openingDate->copy()->addDays(25), 52000, 20, 'Admin & sales staff salaries');
 
         $equipmentPlan = [
             [40, 'Wood Cutting Machine', 180000, $machineCat, 10],
@@ -144,7 +168,12 @@ trait SeedsProductionCompanyDemo
         $totalDays = $this->totalDays();
         $weights = $this->dailyWeights($totalDays, dampenWeekend: true);
         $saleCounts = $this->spreadCounts($totalDays, 450, $weights);
-        $purchaseCounts = $this->spreadCounts($totalDays, 118, array_fill(0, $totalDays, 1.0));
+        // Same fix as the trading company: raw-material restocking
+        // now grows with demand instead of staying flat, so the
+        // workshop doesn't start running short of materials (and
+        // skipping production runs / sales) disproportionately in
+        // the later, busier months — see that seeder's comment.
+        $purchaseCounts = $this->spreadCounts($totalDays, 118, $weights);
         $productionCounts = $this->spreadCounts($totalDays, 190, $weights);
         $expenseCounts = $this->spreadCounts($totalDays, 90, array_fill(0, $totalDays, 1.0));
 
