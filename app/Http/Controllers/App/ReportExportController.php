@@ -71,26 +71,50 @@ class ReportExportController extends Controller
         $l = $this->labels();
         $currency = $this->currency();
 
+        $pct = fn (float $v) => number_format($v, 1).'%';
+        $amountCell = fn (float $v) => $this->money($v, $currency);
+
+        // ONE table, top to bottom, exactly matching ProfitAndLoss.vue's
+        // `rows` computed property — a section heading, its child
+        // lines, a total, repeated for Revenue / Cost of Goods Sold /
+        // Operating Expenses, with Gross Profit and Net Profit as
+        // their own bold result rows in the flow. See
+        // ExcelReportExporter's doc comment for the row shape.
+        $rows = [];
+
+        $rows[] = ['cells' => [$l['revenue'], '', ''], 'emphasis' => 'heading'];
+        foreach ($data['income_by_item'] as $r) {
+            $rows[] = ['cells' => [$r->item, $amountCell((float) $r->total), $pct((float) $r->percent_of_revenue)], 'indent' => true];
+        }
+        $rows[] = ['cells' => [$l['total_revenue'], $amountCell($data['revenue']), $pct($data['revenue_percent'])], 'emphasis' => 'total'];
+
+        if ($data['show_cost_of_goods_sold_by_item']) {
+            $rows[] = ['cells' => [$l['cost_of_goods_sold'], '', ''], 'emphasis' => 'heading'];
+            foreach ($data['cost_of_goods_sold_by_item'] as $r) {
+                $rows[] = ['cells' => [$r->item, $amountCell((float) $r->total), $pct((float) $r->percent_of_revenue)], 'indent' => true];
+            }
+            $rows[] = ['cells' => [$l['total_cost_of_goods_sold'], $amountCell($data['cost_of_goods_sold']), $pct($data['cost_of_goods_sold_percent'])], 'emphasis' => 'total'];
+            $rows[] = ['cells' => [$l['gross_profit'], $amountCell($data['gross_profit']), $pct($data['gross_profit_percent'])], 'emphasis' => 'result'];
+        }
+
+        $rows[] = ['cells' => [$l['operating_expenses'], '', ''], 'emphasis' => 'heading'];
+        foreach ($data['expenses_by_category'] as $r) {
+            $rows[] = ['cells' => [$r->category, $amountCell((float) $r->total), $pct((float) $r->percent_of_revenue)], 'indent' => true];
+        }
+        $rows[] = ['cells' => [$l['total_operating_expenses'], $amountCell($data['operating_expenses']), $pct($data['operating_expenses_percent'])], 'emphasis' => 'total'];
+
+        $rows[] = ['cells' => [$l['net_profit'], $amountCell($data['net_profit']), $pct($data['net_profit_percent'])], 'emphasis' => 'result'];
+
         $doc = $this->baseDoc($l['report_pl'], $from, $to, [
             [
-                'heading' => $l['income_by_item'],
-                'columns' => [['label' => $l['item']], ['label' => $l['amount'], 'align' => 'end']],
-                'rows'    => collect($data['income_by_item'])->map(fn ($r) => [$r->item, $this->money((float) $r->total, $currency)])->all(),
-            ],
-            [
-                'heading' => $l['expenses_by_category'],
-                'columns' => [['label' => $l['category']], ['label' => $l['amount'], 'align' => 'end']],
-                'rows'    => collect($data['expenses_by_category'])->map(fn ($r) => [$r->category, $this->money((float) $r->total, $currency)])->all(),
+                'columns' => [
+                    ['label' => $l['description']],
+                    ['label' => $l['amount'], 'align' => 'end'],
+                    ['label' => $l['percent_of_revenue'], 'align' => 'end'],
+                ],
+                'rows' => $rows,
             ],
         ]);
-
-        $doc['stats'] = [
-            ['label' => $l['revenue'], 'value' => $this->money($data['revenue'], $currency), 'tone' => 'income'],
-            ['label' => $l['cost_of_goods_sold'], 'value' => $this->money($data['cost_of_goods_sold'], $currency), 'tone' => 'expense'],
-            ['label' => $l['gross_profit'], 'value' => $this->money($data['gross_profit'], $currency), 'tone' => 'primary'],
-            ['label' => $l['operating_expenses'], 'value' => $this->money($data['operating_expenses'], $currency), 'tone' => 'expense'],
-            ['label' => $l['net_profit'], 'value' => $this->money($data['net_profit'], $currency), 'tone' => 'primary'],
-        ];
 
         return $this->respond($format, $doc, 'profit-and-loss-'.$from.'-to-'.$to);
     }
@@ -290,35 +314,104 @@ class ReportExportController extends Controller
     }
 
     /**
-     * Trial Balance — every account's balance as of a date. Meant
-     * for the company's auditor; see ReportDataService::trialBalance().
+     * Trial Balance — every account's Opening Balance, this period's
+     * Total Debit / Total Credit, and End Balance. Meant for the
+     * company's auditor; see ReportDataService::trialBalance().
      */
     public function trialBalance(Request $request, string $format): Response
     {
-        $asOf = $request->string('as_of')->value() ?: now()->toDateString();
-        $data = $this->reports->trialBalance($asOf);
+        [$from, $to] = $this->reports->yearRange(
+            $request->string('tb_from')->value() ?: null,
+            $request->string('tb_to')->value() ?: null,
+        );
+        $data = $this->reports->trialBalance($from, $to);
         $l = $this->labels();
         $currency = $this->currency();
 
         $rows = collect($data['rows'])->map(fn ($row) => [
             $row['code'],
             (app()->getLocale() === 'ar' && $row['name_ar']) ? $row['name_ar'] : $row['name'],
-            $row['debit_balance'] > 0 ? $this->money($row['debit_balance'], $currency) : '—',
-            $row['credit_balance'] > 0 ? $this->money($row['credit_balance'], $currency) : '—',
+            $row['opening_debit'] > 0 ? $this->money($row['opening_debit'], $currency) : '—',
+            $row['opening_credit'] > 0 ? $this->money($row['opening_credit'], $currency) : '—',
+            $row['period_debit'] > 0 ? $this->money($row['period_debit'], $currency) : '—',
+            $row['period_credit'] > 0 ? $this->money($row['period_credit'], $currency) : '—',
+            $row['closing_debit'] > 0 ? $this->money($row['closing_debit'], $currency) : '—',
+            $row['closing_credit'] > 0 ? $this->money($row['closing_credit'], $currency) : '—',
         ])->all();
 
-        $doc = $this->baseDoc($l['report_trial_balance'].' — '.$l['as_of'].' '.$asOf, null, null, [
+        $doc = $this->baseDoc($l['report_trial_balance'], $from, $to, [
             [
                 'columns' => [
                     ['label' => $l['code']], ['label' => $l['account']],
+                    ['label' => $l['opening_balance'].' — '.$l['debit'], 'align' => 'end'],
+                    ['label' => $l['opening_balance'].' — '.$l['credit'], 'align' => 'end'],
                     ['label' => $l['debit'], 'align' => 'end'], ['label' => $l['credit'], 'align' => 'end'],
+                    ['label' => $l['closing_balance'].' — '.$l['debit'], 'align' => 'end'],
+                    ['label' => $l['closing_balance'].' — '.$l['credit'], 'align' => 'end'],
                 ],
                 'rows' => $rows,
-                'totals' => ['', $l['total_balance'], $this->money($data['total_debit'], $currency), $this->money($data['total_credit'], $currency)],
+                'totals' => [
+                    '', $l['total_balance'],
+                    $this->money($data['total_opening_debit'], $currency), $this->money($data['total_opening_credit'], $currency),
+                    $this->money($data['total_period_debit'], $currency), $this->money($data['total_period_credit'], $currency),
+                    $this->money($data['total_closing_debit'], $currency), $this->money($data['total_closing_credit'], $currency),
+                ],
             ],
         ]);
 
-        return $this->respond($format, $doc, 'trial-balance-'.$asOf);
+        return $this->respond($format, $doc, 'trial-balance-'.$from.'-to-'.$to);
+    }
+
+    /**
+     * Balance Sheet — Assets, Liabilities, and Equity as of a single
+     * date. Meant for the company's auditor; see
+     * ReportDataService::balanceSheet() for why "Net Profit (to
+     * date)" appears as its own line inside Equity.
+     */
+    public function balanceSheet(Request $request, string $format): Response
+    {
+        $asOf = $request->string('bs_as_of')->value() ?: now()->toDateString();
+        $data = $this->reports->balanceSheet($asOf);
+        $l = $this->labels();
+        $currency = $this->currency();
+
+        $accountRow = fn ($row) => [
+            $row['code'],
+            (app()->getLocale() === 'ar' && $row['name_ar']) ? $row['name_ar'] : $row['name'],
+            $this->money($row['balance'], $currency),
+        ];
+
+        $equityRows = collect($data['equity'])->map($accountRow)->push([
+            '', $l['net_profit_to_date'], $this->money($data['net_profit_to_date'], $currency),
+        ])->all();
+
+        $doc = $this->baseDoc($l['balance_sheet'].' — '.$l['as_of'].' '.$asOf, null, null, [
+            [
+                'heading' => $l['assets'],
+                'columns' => [['label' => $l['code']], ['label' => $l['account']], ['label' => $l['amount'], 'align' => 'end']],
+                'rows'    => collect($data['assets'])->map($accountRow)->all(),
+                'totals'  => ['', $l['total_assets'], $this->money($data['total_assets'], $currency)],
+            ],
+            [
+                'heading' => $l['liabilities'],
+                'columns' => [['label' => $l['code']], ['label' => $l['account']], ['label' => $l['amount'], 'align' => 'end']],
+                'rows'    => collect($data['liabilities'])->map($accountRow)->all(),
+                'totals'  => ['', $l['liabilities'], $this->money($data['total_liabilities'], $currency)],
+            ],
+            [
+                'heading' => $l['equity'],
+                'columns' => [['label' => $l['code']], ['label' => $l['account']], ['label' => $l['amount'], 'align' => 'end']],
+                'rows'    => $equityRows,
+                'totals'  => ['', $l['equity'], $this->money($data['total_equity'], $currency)],
+            ],
+        ]);
+
+        $doc['stats'] = [
+            ['label' => $l['total_assets'], 'value' => $this->money($data['total_assets'], $currency), 'tone' => 'primary'],
+            ['label' => $l['total_liabilities_equity'], 'value' => $this->money($data['total_liabilities'] + $data['total_equity'], $currency), 'tone' => 'primary'],
+        ];
+
+        return $this->respond($format, $doc, 'balance-sheet-'.$asOf);
     }
 
     /**
@@ -441,6 +534,9 @@ class ReportExportController extends Controller
             'revenue' => 'Revenue', 'cost_of_goods_sold' => 'Cost of goods sold', 'gross_profit' => 'Gross profit',
             'operating_expenses' => 'Operating expenses', 'net_profit' => 'Net profit',
             'income_by_item' => 'Income by item', 'expenses_by_category' => 'Expenses by category',
+            'percent_of_revenue' => '% of revenue', 'cost_of_goods_sold_by_item' => 'Cost of goods sold by item',
+            'description' => 'Description', 'total_revenue' => 'Total Revenue',
+            'total_cost_of_goods_sold' => 'Total Cost of Goods Sold', 'total_operating_expenses' => 'Total Operating Expenses',
             'cash_in' => 'Cash in', 'cash_out' => 'Cash out', 'net_flow' => 'Net flow', 'by_method' => 'By payment method',
             'movements' => 'Movements', 'method' => 'Method', 'direction' => 'Direction',
             'balance_brought_forward' => 'Balance brought forward',
@@ -452,6 +548,10 @@ class ReportExportController extends Controller
             'report_supplier_statement' => 'Supplier Statement', 'report_inventory_statement' => 'Inventory Statement', 'report_cashflow' => 'Cash Flow',
             'report_trial_balance' => 'Trial Balance', 'report_journal' => 'Journal',
             'as_of' => 'as of', 'code' => 'Code', 'account' => 'Account', 'reversal' => 'Reversal',
+            'opening_balance' => 'Opening Balance', 'closing_balance' => 'End Balance',
+            'balance_sheet' => 'Balance Sheet', 'assets' => 'Assets', 'liabilities' => 'Liabilities',
+            'equity' => 'Equity', 'net_profit_to_date' => 'Net Profit (to date)',
+            'total_assets' => 'Total Assets', 'total_liabilities_equity' => 'Total Liabilities & Equity',
         ];
 
         if (! $ar) {
@@ -470,6 +570,9 @@ class ReportExportController extends Controller
             'revenue' => 'الإيرادات', 'cost_of_goods_sold' => 'تكلفة البضاعة المباعة', 'gross_profit' => 'مجمل الربح',
             'operating_expenses' => 'المصروفات التشغيلية', 'net_profit' => 'صافي الربح',
             'income_by_item' => 'الإيرادات حسب الصنف', 'expenses_by_category' => 'المصروفات حسب الفئة',
+            'percent_of_revenue' => '% من الإيرادات', 'cost_of_goods_sold_by_item' => 'تكلفة البضاعة المباعة حسب الصنف',
+            'description' => 'الوصف', 'total_revenue' => 'إجمالي الإيرادات',
+            'total_cost_of_goods_sold' => 'إجمالي تكلفة البضاعة المباعة', 'total_operating_expenses' => 'إجمالي المصروفات التشغيلية',
             'cash_in' => 'النقد الداخل', 'cash_out' => 'النقد الخارج', 'net_flow' => 'صافي التدفق', 'by_method' => 'حسب طريقة الدفع',
             'movements' => 'الحركات', 'method' => 'الطريقة', 'direction' => 'الاتجاه',
             'balance_brought_forward' => 'رصيد مُرحَّل',
@@ -481,6 +584,10 @@ class ReportExportController extends Controller
             'report_supplier_statement' => 'كشف حساب مورد', 'report_inventory_statement' => 'كشف حساب المخزون', 'report_cashflow' => 'التدفق النقدي',
             'report_trial_balance' => 'ميزان المراجعة', 'report_journal' => 'دفتر اليومية',
             'as_of' => 'حتى تاريخ', 'code' => 'الرمز', 'account' => 'الحساب', 'reversal' => 'عكس قيد',
+            'opening_balance' => 'الرصيد الافتتاحي', 'closing_balance' => 'الرصيد النهائي',
+            'balance_sheet' => 'الميزانية العمومية', 'assets' => 'الأصول', 'liabilities' => 'الخصوم',
+            'equity' => 'حقوق الملكية', 'net_profit_to_date' => 'صافي الربح (حتى تاريخه)',
+            'total_assets' => 'إجمالي الأصول', 'total_liabilities_equity' => 'إجمالي الخصوم وحقوق الملكية',
         ];
     }
 }

@@ -19,6 +19,7 @@ use App\Http\Controllers\App\ProfileController;
 use App\Http\Controllers\App\ReportController;
 use App\Http\Controllers\App\ReportExportController;
 use App\Http\Controllers\App\SaleController;
+use App\Http\Controllers\App\SalesChannelController;
 use App\Http\Controllers\App\UserController as AppUserController;
 use App\Http\Controllers\App\VendorController;
 use Illuminate\Http\Request;
@@ -80,6 +81,7 @@ Route::middleware(['auth', 'auth.session', 'verified', 'admin', 'no-duplicate'])
         Route::post('/companies', [AdminCompanyController::class, 'store'])->name('companies.store');
         Route::patch('/companies/{company}/toggle-active', [AdminCompanyController::class, 'toggleActive'])
             ->name('companies.toggle-active');
+        Route::delete('/companies/{company}', [AdminCompanyController::class, 'destroy'])->name('companies.destroy');
 
         // Who is using the app, one row per person per day — see
         // ActivityController for why it is deduped that way.
@@ -122,6 +124,10 @@ Route::middleware(['auth', 'auth.session', 'verified', 'member', 'no-duplicate']
         Route::post('/sales', [SaleController::class, 'store'])->name('sales.store');
         Route::put('/sales/{sale}', [SaleController::class, 'update'])->name('sales.update');
         Route::delete('/sales/{sale}', [SaleController::class, 'destroy'])->name('sales.destroy');
+
+        Route::get('/sales-channels', [SalesChannelController::class, 'index'])->name('sales-channels.index');
+        Route::post('/sales-channels', [SalesChannelController::class, 'store'])->name('sales-channels.store');
+        Route::patch('/sales-channels/{salesChannel}', [SalesChannelController::class, 'update'])->name('sales-channels.update');
 
         // ── Expenses (one-off + recurring) ──────────────────────────
         Route::get('/expenses', [ExpenseController::class, 'index'])->name('expenses.index');
@@ -203,10 +209,10 @@ Route::middleware(['auth', 'auth.session', 'verified', 'member', 'no-duplicate']
             ->name('reports.cash-flow.export');
 
         // ── External Audit (for the company's auditor) ──────────────
-        //  The Trial Balance and the Journal behind one entry point,
-        //  with a toggle inside — they are read together, so they are
-        //  reached together. ?view=journal picks the second half.
-        //  See ReportController::externalAudit().
+        //  The Trial Balance, the Balance Sheet, and the Journal
+        //  behind one entry point, with a toggle inside — they are
+        //  read together, so they are reached together. ?view=
+        //  picks which one shows. See ReportController::externalAudit().
         Route::get('/reports/external-audit', [ReportController::class, 'externalAudit'])
             ->name('reports.external-audit');
 
@@ -219,6 +225,8 @@ Route::middleware(['auth', 'auth.session', 'verified', 'member', 'no-duplicate']
             ->name('reports.journal');
         Route::get('/reports/trial-balance/export/{format}', [ReportExportController::class, 'trialBalance'])
             ->name('reports.trial-balance.export');
+        Route::get('/reports/balance-sheet/export/{format}', [ReportExportController::class, 'balanceSheet'])
+            ->name('reports.balance-sheet.export');
         Route::get('/reports/journal/export/{format}', [ReportExportController::class, 'journal'])
             ->name('reports.journal.export');
 

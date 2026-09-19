@@ -19,10 +19,15 @@ class Custody extends Model
         'leftover_returned', 'extra_reimbursed', 'created_by',
     ];
 
+    // decimal(12,2) in the database (2026_09_14_000013 migration).
     protected $casts = [
         'given_at' => 'date',
         'settlement_date' => 'date',
         'settled' => 'boolean',
+        'amount' => 'decimal:2',
+        'settlement_total' => 'decimal:2',
+        'leftover_returned' => 'decimal:2',
+        'extra_reimbursed' => 'decimal:2',
     ];
 
     public function holder(): BelongsTo

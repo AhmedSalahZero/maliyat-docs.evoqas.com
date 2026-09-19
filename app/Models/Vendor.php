@@ -18,6 +18,30 @@ class Vendor extends Model
         return $this->hasMany(Expense::class);
     }
 
+    /**
+     * The one reusable vendor/employee a "Cash Expense" (Expense
+     * tab) is filed under, so the person recording it is never
+     * asked to pick a vendor/employee — same pattern as
+     * Customer::cashCustomer(), reused via Company::cash_vendor_id.
+     */
+    public static function cashVendor(int $companyId): self
+    {
+        $company = Company::find($companyId);
+
+        if ($company?->cash_vendor_id) {
+            $existing = static::find($company->cash_vendor_id);
+            if ($existing) {
+                return $existing;
+            }
+        }
+
+        $vendor = static::create(['company_id' => $companyId, 'name' => 'Cash Vendor', 'type' => 'vendor']);
+
+        $company?->forceFill(['cash_vendor_id' => $vendor->id])->save();
+
+        return $vendor;
+    }
+
     public function inventoryPurchases(): HasMany
     {
         return $this->hasMany(InventoryPurchase::class);

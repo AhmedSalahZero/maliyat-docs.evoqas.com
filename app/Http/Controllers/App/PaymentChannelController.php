@@ -21,8 +21,15 @@ class PaymentChannelController extends Controller
 {
     public function index(): JsonResponse
     {
+        // This feeds a dropdown (ComboSelect) on every payment-method
+        // field, which needs the full list at once to filter
+        // client-side — real pagination isn't a fit here the way it
+        // is for a browsable table. A capped limit is the defensive
+        // alternative called out in QA audit M-4: no real company has
+        // anywhere near 500 bank accounts/wallets, so this is
+        // headroom against unbounded growth, not a functional limit.
         return response()->json(
-            PaymentChannel::query()->orderBy('name')->get(['id', 'name'])
+            PaymentChannel::query()->orderBy('name')->limit(500)->get(['id', 'name'])
         );
     }
 

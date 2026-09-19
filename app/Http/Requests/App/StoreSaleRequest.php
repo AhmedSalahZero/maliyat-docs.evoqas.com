@@ -30,8 +30,18 @@ class StoreSaleRequest extends FormRequest
 
         return [
             'customer_id' => [
-                'required',
+                // Nullable so a Cash Sale can be submitted with no
+                // customer chosen — SaleController::store() fills in
+                // Customer::cashCustomer() when this is left blank.
+                'nullable',
                 Rule::exists('customers', 'id')->where('company_id', $companyId),
+            ],
+            'sales_channel_id' => [
+                // Nullable the same way — the form always sends the
+                // default "Direct Sales" channel, but the controller
+                // has its own fallback if it's ever missing.
+                'nullable',
+                Rule::exists('sales_channels', 'id')->where('company_id', $companyId),
             ],
             'date' => ['required', ...FinancialRules::date()],
 

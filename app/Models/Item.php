@@ -159,28 +159,4 @@ class Item extends Model
         return $this->totalPurchasedBase($asOf) + $this->totalProducedBase($asOf)
             - $this->totalSoldBase($asOf) - $this->totalConsumedInProductionBase($asOf);
     }
-
-    /**
-     * Weighted average cost per base unit across EVERY way this
-     * item's stock was ever added — bought (purchase lines) and/or
-     * made (production orders) — matches the prototype's "Average
-     * purchase cost" figure, just fed from two sources now instead
-     * of one. A pure Trading item only ever has purchase lines, so
-     * this is unchanged for it. As with currentStock(), pass $asOf to
-     * ask what the average was as of a past date rather than right now.
-     */
-    public function averagePurchaseCost(?string $asOf = null): ?float
-    {
-        $totalCost = (float) $this->purchaseLines()
-                ->when($asOf, fn ($q) => $q->whereHas(
-                    'inventoryPurchase', fn ($q2) => $q2->where('date', '<=', $asOf)
-                ))
-                ->sum('line_total')
-            + (float) $this->producedBatches()
-                ->when($asOf, fn ($q) => $q->where('date', '<=', $asOf))
-                ->sum('total_cost');
-        $totalBase = $this->totalPurchasedBase($asOf) + $this->totalProducedBase($asOf);
-
-        return $totalBase > 0 ? $totalCost / $totalBase : null;
-    }
 }

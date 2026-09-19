@@ -31,7 +31,14 @@ class CategoryController extends Controller
             $query->where('kind', $request->string('kind'));
         }
 
-        return response()->json($query->get(['id', 'name', 'kind']));
+        // This feeds a dropdown (ComboSelect), which needs the full
+        // list at once to filter client-side — real pagination isn't
+        // a fit here the way it is for a browsable table. A capped
+        // limit is the defensive alternative called out in QA audit
+        // M-4: no real company has anywhere near 500 categories, so
+        // this is headroom against unbounded growth, not a
+        // functional limit.
+        return response()->json($query->limit(500)->get(['id', 'name', 'kind']));
     }
 
     public function store(StoreCategoryRequest $request): RedirectResponse|JsonResponse

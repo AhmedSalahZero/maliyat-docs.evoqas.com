@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\Concerns\BelongsToCompany;
+use App\Support\FinancialRules;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -19,11 +20,18 @@ class EquipmentPurchase extends Model
         'is_opening_balance',
     ];
 
+    // decimal(12,2) in the database (2026_09_14_000012 and
+    // 2026_09_16_000011 migrations) — cast explicitly for the same
+    // reason as Sale::$casts.
     protected $casts = [
         'date' => 'date',
         'due_date' => 'date',
         'last_depreciated_through' => 'date',
         'is_opening_balance' => 'boolean',
+        'qty' => 'decimal:2',
+        'unit_price' => 'decimal:2',
+        'amount' => 'decimal:2',
+        'accumulated_depreciation' => 'decimal:2',
     ];
 
     public function vendor(): BelongsTo
@@ -68,7 +76,7 @@ class EquipmentPurchase extends Model
 
     public function isPaid(): bool
     {
-        return $this->balance() <= 0.004;
+        return $this->balance() <= FinancialRules::AMOUNT_TOLERANCE;
     }
 
     /**
@@ -89,5 +97,10 @@ class EquipmentPurchase extends Model
     public function remainingDepreciableAmount(): float
     {
         return max(0.0, (float) $this->amount - (float) $this->accumulated_depreciation);
+    }
+
+    public function isFullyDepreciated(): bool
+    {
+        return $this->remainingDepreciableAmount() <= FinancialRules::AMOUNT_TOLERANCE;
     }
 }

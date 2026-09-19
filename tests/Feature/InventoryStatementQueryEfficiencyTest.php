@@ -5,11 +5,13 @@ namespace Tests\Feature;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\InventoryPurchase;
+use App\Models\InventoryStockLedger;
 use App\Models\Item;
 use App\Models\ProductionOrder;
 use App\Models\Sale;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Services\MovingAverageCostingService;
 use App\Services\Reports\ReportDataService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -21,12 +23,21 @@ use Tests\TestCase;
 //
 //  1. It used to run its own separate SQL that didn't know about
 //     Production, so its numbers could silently disagree with the
-//     rest of the app (production-cycle_EN.md §12). The rewrite reads
-//     the same relations Item::currentStock()/averagePurchaseCost()
-//     read — this test proves the two stay identical for every item
-//     in a mixed purchase/production/sale/consumption scenario, so a
-//     future edit to one side alone would fail this test rather than
-//     silently drift.
+//     rest of the app (production-cycle_EN.md §12). It was later
+//     rewritten to independently re-derive an average cost — the
+//     same formula the (now-removed) Item::averagePurchaseCost()
+//     used — which turned out to be a SECOND way of getting cost
+//     wrong: it never subtracted what had already been sold. The
+//     report now reads its cost figures (avg_purchase_cost,
+//     stock_value) straight from InventoryStockLedger — the same
+//     table MovingAverageCostingService maintains and actually
+//     prices every sale's Cost of Goods Sold against — so this test
+//     proves the report's numbers equal that ledger's own numbers
+//     for every item in a mixed purchase/production/sale/consumption
+//     scenario, rather than a second, separately-computed guess at
+//     them (quantities — current_stock — are unaffected by any of
+//     this and are still checked against Item::currentStock(), which
+//     was never wrong).
 //
 //  2. Class of bug IndexQueryEfficiencyTest already guards for the
 //     Sales list — a report must not cost more queries just because
@@ -127,12 +138,14 @@ class InventoryStatementQueryEfficiencyTest extends TestCase
     }
 
     /**
-     * The report's bulk-computed numbers must equal what
-     * Item::currentStock() / Item::averagePurchaseCost() say for the
-     * SAME item, one at a time — the canonical, already-trusted
-     * definition used by GuardsRawMaterialStock and
-     * SaleController::postCogsForLines(). A mismatch here means the
-     * report's batch query and the model's per-item formula have
+     * The report's bulk-computed numbers must equal what the real
+     * costing engine says for the SAME item — Item::currentStock()
+     * for quantity (the canonical, already-trusted definition used
+     * by GuardsRawMaterialStock and SaleController), and
+     * InventoryStockLedger's own latest row for cost (the table
+     * MovingAverageCostingService maintains and actually prices
+     * every sale's Cost of Goods Sold against). A mismatch here
+     * means the report's batch query and the real engine have
      * drifted apart, which is exactly the failure mode
      * production-cycle_EN.md §12 described.
      */
@@ -141,7 +154,7 @@ class InventoryStatementQueryEfficiencyTest extends TestCase
         $rawItems = [];
         $productItems = [];
 
-        for ($i = 1; $i <= 3; $i++) {
+        foreach (range(1, 3) as $i) {
             $raw = Item::create([
                 'company_id' => $this->company->id, 'name' => "Raw {$i}",
                 'type' => 'raw_material', 'base_unit_name' => 'kg',
@@ -167,18 +180,24 @@ class InventoryStatementQueryEfficiencyTest extends TestCase
                 'type' => 'product', 'base_unit_name' => 'unit',
             ]);
 
-            // Produced by consuming some of the raw material.
+            // Produced by consuming some of the raw material. Costs
+            // start as placeholders (0 material_cost, unit_cost_snapshot
+            // 0) exactly like a real ProductionOrderService::create()
+            // call leaves them — pricing them for real is exactly
+            // what the onItemMovementChanged() call below does, the
+            // same way ProductionOrderService itself hands off to it.
             $order = ProductionOrder::create([
                 'company_id' => $this->company->id, 'item_id' => $product->id,
                 'date' => '2026-04-15', 'qty_produced' => 40,
-                'material_cost' => 400, 'labor_cost' => 80, 'other_cost_total' => 0,
-                'total_cost' => 480, 'unit_cost' => 12,
+                'material_cost' => 0, 'labor_cost' => 80, 'other_cost_total' => 0,
+                'total_cost' => 80, 'unit_cost' => 2,
             ]);
             $order->materialLines()->create([
-                'item_id' => $raw->id, 'qty' => 30, 'unit_cost_snapshot' => 10, 'line_total' => 300,
+                'item_id' => $raw->id, 'qty' => 30, 'unit_cost_snapshot' => 0, 'line_total' => 0,
             ]);
 
-            // Partially sold.
+            // Partially sold. unit_cost starts null, same as a real
+            // SaleController::store() leaves it before recalculateCostsFor().
             $sale = Sale::create([
                 'company_id' => $this->company->id, 'customer_id' => $this->customer->id, 'date' => '2026-04-20',
                 'subtotal' => 300, 'vat_rate' => 0, 'vat_amount' => 0, 'amount' => 300,
@@ -186,6 +205,18 @@ class InventoryStatementQueryEfficiencyTest extends TestCase
             $sale->lines()->create(['item_id' => $product->id, 'qty' => 25, 'unit_price' => 12, 'line_total' => 300]);
 
             $productItems[] = $product;
+
+            // The one step this test scenario needs that the old
+            // version didn't: actually run the costing engine, the
+            // same way a real purchase/sale/production order
+            // triggers it. Called once, from before every movement,
+            // on the RAW item only — recalculateItem() reads inbound
+            // purchases directly from the source table (not from
+            // prior ledger rows), and pricing the raw item's material
+            // line cascades automatically into repricing the
+            // production order and then the product item's own pool
+            // (see MovingAverageCostingService::repriceProductionOrder()).
+            app(MovingAverageCostingService::class)->onItemMovementChanged($this->company->id, $raw->id, '2026-01-01');
         }
 
         $reports = app(ReportDataService::class);
@@ -201,15 +232,27 @@ class InventoryStatementQueryEfficiencyTest extends TestCase
                 "current_stock for {$item->name} does not match Item::currentStock()."
             );
 
-            $expectedAvg = $item->averagePurchaseCost('2026-04-30');
-            if ($expectedAvg === null) {
+            $ledgerRow = InventoryStockLedger::query()
+                ->where('item_id', $item->id)
+                ->where('date', '<=', '2026-04-30')
+                ->orderByDesc('date')
+                ->first();
+
+            if (! $ledgerRow) {
                 $this->assertNull($row['avg_purchase_cost'], "avg_purchase_cost for {$item->name} should be null.");
-            } else {
-                $this->assertEqualsWithDelta(
-                    $expectedAvg, $row['avg_purchase_cost'], 0.001,
-                    "avg_purchase_cost for {$item->name} does not match Item::averagePurchaseCost()."
-                );
+                $this->assertSame(0.0, $row['stock_value'], "stock_value for {$item->name} should be 0.");
+
+                continue;
             }
+
+            $this->assertEqualsWithDelta(
+                (float) $ledgerRow->average_cost, $row['avg_purchase_cost'], 0.001,
+                "avg_purchase_cost for {$item->name} does not match its InventoryStockLedger row."
+            );
+            $this->assertEqualsWithDelta(
+                (float) $ledgerRow->ending_value, $row['stock_value'], 0.001,
+                "stock_value for {$item->name} does not match its InventoryStockLedger row."
+            );
         }
     }
 }

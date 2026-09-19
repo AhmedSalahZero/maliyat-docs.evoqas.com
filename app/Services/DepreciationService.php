@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Company;
 use App\Models\EquipmentPurchase;
+use App\Support\FinancialRules;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -160,7 +161,7 @@ class DepreciationService
 
         $posted = 0;
 
-        while ($periodEnd->lessThanOrEqualTo($today) && $purchase->remainingDepreciableAmount() > 0.004) {
+        while ($periodEnd->lessThanOrEqualTo($today) && $purchase->remainingDepreciableAmount() > FinancialRules::AMOUNT_TOLERANCE) {
             $amount = min($monthly, $purchase->remainingDepreciableAmount());
             $postingDate = $periodEnd->toDateString();
 

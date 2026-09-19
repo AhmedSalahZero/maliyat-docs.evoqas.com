@@ -4,14 +4,20 @@
 //  Location: resources/js/Components/App/MenuSheet.vue
 //
 //  The "Menu" sheet — opened by tapping the avatar in the header.
-//  Holds everything that isn't one of the three main destinations
-//  (Home / New record / Reports): Customers, Vendors, Items &
-//  categories, All entries, Team (company_admin only), Profile &
-//  settings, the Theme/Language toggles, and Log out.
+//  Now holds only: Team (company_admin only), Profile & settings,
+//  the Theme/Language toggles, and Log out.
 //
-//  Same bottom-sheet pattern as QuickRecordSheet.vue (shares its
-//  .sheet-item styles from app.css) so the two feel like one
-//  consistent interaction language.
+//  Customers, Vendors, Items & categories and Opening balances used
+//  to live here too — they moved to their own SettingsSheet.vue,
+//  reachable from a dedicated "Settings" tab (desktop, next to the
+//  Payment/"Receive-Pay" tab) or bottom-nav button (mobile). All
+//  entries (Ledger) was dropped entirely rather than moved — it
+//  already has its own Reports tab/tile everywhere, so a second
+//  entry point here was pure duplication.
+//
+//  Same bottom-sheet pattern as QuickRecordSheet.vue/SettingsSheet.vue
+//  (shares its .sheet-item styles from app.css) so all three feel
+//  like one consistent interaction language.
 // ══════════════════════════════════════════════════════════════════
 
 import { computed } from 'vue';
@@ -19,7 +25,6 @@ import { Link, usePage, router } from '@inertiajs/vue3';
 import AppIcon from '@/Components/App/AppIcon.vue';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useAppTranslations } from '@/composables/useAppTranslations';
-import { useBusinessType } from '@/composables/useBusinessType';
 
 const props = defineProps({
     open: { type: Boolean, default: false },
@@ -30,29 +35,16 @@ const emit = defineEmits(['update:open']);
 const page      = usePage();
 const authStore = useAuthStore();
 const { t, locale } = useAppTranslations();
-const { needsInventory } = useBusinessType();
 
 const user    = computed(() => page.props.auth?.user ?? null);
 const isAdmin = computed(() => user.value?.role === 'company_admin');
 const isDark  = computed(() => authStore.theme === 'dark');
 
 const links = computed(() => {
-    const items = [
-        { key: 'customers', icon: 'team',     route: 'app.customers.index', title: t('menu_customers'),        sub: t('menu_customers_sub') },
-        { key: 'vendors',   icon: 'building', route: 'app.vendors.index',   title: t('menu_vendors'),          sub: t('menu_vendors_sub') },
-    ];
-
-    // A service-only company has nothing to name items for — see
-    // useBusinessType's doc comment.
-    if (needsInventory.value) {
-        items.push({ key: 'items', icon: 'tag', route: 'app.items.index', title: t('menu_items_categories'), sub: t('menu_items_categories_sub') });
-    }
-
-    items.push({ key: 'ledger', icon: 'ledger', route: 'app.reports.ledger', title: t('menu_all_entries'), sub: t('menu_all_entries_sub') });
+    const items = [];
 
     if (isAdmin.value) {
         items.push({ key: 'team', icon: 'gear', route: 'app.team.index', title: t('menu_team'), sub: t('menu_team_sub') });
-        items.push({ key: 'opening-balance', icon: 'box', route: 'app.opening-balance.index', title: t('menu_opening_balance'), sub: t('menu_opening_balance_sub') });
     }
 
     items.push({ key: 'profile', icon: 'box', route: 'app.profile.index', title: t('menu_profile'), sub: t('menu_profile_sub') });

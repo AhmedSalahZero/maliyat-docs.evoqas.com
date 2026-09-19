@@ -19,6 +19,31 @@ class Customer extends Model
     }
 
     /**
+     * The one reusable customer a "Cash Sale" (Sales tab) is filed
+     * under, so the person recording it is never asked to pick a
+     * customer — created once per company, on first use, and reused
+     * from then on via Company::cash_customer_id (not looked up by
+     * name — see that column's migration for why).
+     */
+    public static function cashCustomer(int $companyId): self
+    {
+        $company = Company::find($companyId);
+
+        if ($company?->cash_customer_id) {
+            $existing = static::find($company->cash_customer_id);
+            if ($existing) {
+                return $existing;
+            }
+        }
+
+        $customer = static::create(['company_id' => $companyId, 'name' => 'Cash Customer']);
+
+        $company?->forceFill(['cash_customer_id' => $customer->id])->save();
+
+        return $customer;
+    }
+
+    /**
      * Receipts logged against this customer with no invoice behind
      * them — Receive Money's "or log a generic receipt", tagged with
      * a customer. They are cash this customer actually handed over,

@@ -4,6 +4,7 @@ namespace App\Http\Requests\Concerns;
 
 use App\Models\Item;
 use App\Models\ProductionOrder;
+use App\Support\FinancialRules;
 use Illuminate\Contracts\Validation\Validator;
 
 // ══════════════════════════════════════════════════════════════════
@@ -20,8 +21,6 @@ use Illuminate\Contracts\Validation\Validator;
 // ══════════════════════════════════════════════════════════════════
 trait GuardsRawMaterialStock
 {
-    private const RAW_MATERIAL_STOCK_TOLERANCE = 0.004;
-
     /**
      * @param  ProductionOrder|null  $excluding  When editing, the
      *         order being edited — its current material lines are
@@ -56,7 +55,7 @@ trait GuardsRawMaterialStock
 
             $available = round($item->currentStock() + (float) $released->get($itemId, 0), 2);
 
-            if ($qty <= $available + self::RAW_MATERIAL_STOCK_TOLERANCE) {
+            if ($qty <= $available + FinancialRules::AMOUNT_TOLERANCE) {
                 continue;
             }
 

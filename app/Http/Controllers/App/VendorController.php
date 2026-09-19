@@ -31,7 +31,11 @@ class VendorController extends Controller
      */
     public function index(): Response
     {
-        $vendors = Vendor::query()->orderBy('name')->get(['id', 'name', 'type']);
+        // Paginated (was ->get(), loading every vendor/employee at
+        // once — see QA audit M-4).
+        $vendors = Vendor::query()
+            ->orderBy('name')
+            ->paginate(20, ['id', 'name', 'type']);
 
         return Inertia::render('App/Lookups/Index', [
             'tab'  => 'vendors',

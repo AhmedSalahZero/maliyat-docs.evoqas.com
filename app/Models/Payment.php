@@ -19,9 +19,16 @@ class Payment extends Model
         'is_opening_balance',
     ];
 
+    // decimal(12,2) in the database (2026_09_14_000015 migration).
+    // Cast explicitly so every ->payments->sum('amount') call across
+    // the app (paidAmount() on Sale/Expense/InventoryPurchase/
+    // EquipmentPurchase, the dashboard, the reports) is summing a
+    // known, consistent value rather than whatever the DB driver
+    // happens to hand back.
     protected $casts = [
         'date' => 'date',
         'is_opening_balance' => 'boolean',
+        'amount' => 'decimal:2',
     ];
 
     public function payable(): MorphTo

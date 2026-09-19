@@ -91,7 +91,60 @@ class DashboardTest extends TestCase
         return $page;
     }
 
-    // ── The three measures must be able to disagree ──────────────
+    // ── Sales / SKU donut / Channel donut must all agree ──────────
+    //
+    // (Sep 2026 bug: the Channel donut summed sales.amount, which is
+    // VAT-INCLUSIVE — amount = subtotal + vat_amount — while Revenue
+    // and the SKU donut are both net-of-VAT. It also never excluded
+    // is_opening_balance sales, which are posted to Accounts
+    // Receivable, never to Sales Revenue. Both made the Channel
+    // donut's total disagree with Revenue and with the SKU donut.)
+
+    public function test_channel_donut_excludes_vat_and_ties_to_sku_donut(): void
+    {
+        $customer = $this->customer('Ahmed');
+        $item     = $this->item('Widget');
+
+        // A single VAT-bearing sale: 1,000 net + 14% VAT = 1,140 gross.
+        Sale::create([
+            'company_id' => $this->company->id, 'customer_id' => $customer->id,
+            'date' => now()->toDateString(), 'subtotal' => 1000, 'vat_rate' => 14,
+            'vat_amount' => 140, 'amount' => 1140, 'created_by' => $this->user->id,
+        ])->lines()->create([
+            'item_id' => $item->id, 'qty' => 1, 'unit_price' => 1000, 'line_total' => 1000,
+        ]);
+
+        $props = $this->dashboard()->toArray()['props'];
+
+        $channelTotal = collect($props['sales_by_channel'])->sum('value');
+        $skuTotal     = collect($props['sku_sales'])->sum('value');
+
+        // Net of VAT (1,000), never the gross invoice total (1,140) —
+        // and the two donuts must agree with each other.
+        $this->assertEquals(1000.0, $channelTotal);
+        $this->assertEquals(1000.0, $skuTotal);
+        $this->assertEquals($skuTotal, $channelTotal);
+    }
+
+    public function test_channel_donut_excludes_opening_balance_sales(): void
+    {
+        $customer = $this->customer('Legacy Customer');
+
+        // What the customer already owed on day one — posted to
+        // Accounts Receivable only, never to Sales Revenue.
+        Sale::create([
+            'company_id' => $this->company->id, 'customer_id' => $customer->id,
+            'date' => now()->toDateString(), 'subtotal' => 5000, 'vat_rate' => 0,
+            'vat_amount' => 0, 'amount' => 5000, 'is_opening_balance' => true,
+        ]);
+
+        $props = $this->dashboard()->toArray()['props'];
+
+        $this->assertSame(0.0, collect($props['sales_by_channel'])->sum('value'));
+        $this->assertEmpty($props['sku_sales']);
+    }
+
+
 
     public function test_value_quantity_and_frequency_each_find_their_own_leader(): void
     {
@@ -273,8 +326,8 @@ class DashboardTest extends TestCase
 
         // Every money figure must stay at MY scale, never leap to
         // their six/seven-figure amounts.
-        $this->assertLessThan(1000, $props['income_this_month']);
-        $this->assertLessThan(1000, $props['expenses_this_month']);
+        $this->assertLessThan(1000, $props['total_cash_in']);
+        $this->assertLessThan(1000, $props['total_cash_out']);
         $this->assertLessThan(1000, $props['cash_balance']);
 
         // Exactly my one open invoice / one open bill — not theirs too.

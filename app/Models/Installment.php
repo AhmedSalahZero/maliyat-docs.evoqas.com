@@ -16,8 +16,10 @@ class Installment extends Model
         'sequence', 'due_date', 'amount',
     ];
 
+    // decimal(12,2) in the database (2026_09_16_000001 migration).
     protected $casts = [
         'due_date' => 'date',
+        'amount' => 'decimal:2',
     ];
 
     public function payable(): MorphTo

@@ -111,17 +111,21 @@ class AccrualAccountingCycleTest extends TestCase
         $reports = app(ReportDataService::class);
 
         // ── The Trial Balance (§10 of the doc) ──────────────────────
-        $trialBalance = $reports->trialBalance('2026-04-30');
+        // from = well before any of this scenario's postings, so
+        // Opening Balance is zero for every account and Closing
+        // Balance equals what the old single-date trial balance used
+        // to call debit_balance/credit_balance.
+        $trialBalance = $reports->trialBalance('2026-01-01', '2026-04-30');
 
         $this->assertTrue($trialBalance['is_balanced'], 'The trial balance does not balance.');
-        $this->assertEqualsWithDelta(7632.00, $trialBalance['total_debit'], 0.01);
-        $this->assertEqualsWithDelta(7632.00, $trialBalance['total_credit'], 0.01);
+        $this->assertEqualsWithDelta(7632.00, $trialBalance['total_closing_debit'], 0.01);
+        $this->assertEqualsWithDelta(7632.00, $trialBalance['total_closing_credit'], 0.01);
 
         $byCode = collect($trialBalance['rows'])->keyBy('code');
-        $this->assertEqualsWithDelta(2993.33, $byCode['1200']['debit_balance'], 0.01, 'Inventory account balance is wrong.');
-        $this->assertEqualsWithDelta(1356.67, $byCode['5000']['debit_balance'], 0.01, 'Cost of Goods Sold account balance is wrong.');
-        $this->assertEqualsWithDelta(0.0, $byCode['2200']['debit_balance'], 0.01, 'Production Labor Accrued should net to zero once wages are settled.');
-        $this->assertEqualsWithDelta(0.0, $byCode['2200']['credit_balance'], 0.01);
+        $this->assertEqualsWithDelta(2993.33, $byCode['1200']['closing_debit'], 0.01, 'Inventory account balance is wrong.');
+        $this->assertEqualsWithDelta(1356.67, $byCode['5000']['closing_debit'], 0.01, 'Cost of Goods Sold account balance is wrong.');
+        $this->assertEqualsWithDelta(0.0, $byCode['2200']['closing_debit'], 0.01, 'Production Labor Accrued should net to zero once wages are settled.');
+        $this->assertEqualsWithDelta(0.0, $byCode['2200']['closing_credit'], 0.01);
 
         // ── The Profit & Loss report — must be ACCRUAL, and must tie
         //    to the Trial Balance above, not to what was collected ──

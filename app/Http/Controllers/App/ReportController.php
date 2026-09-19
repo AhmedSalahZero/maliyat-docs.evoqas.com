@@ -159,45 +159,59 @@ class ReportController extends Controller
     }
 
     /**
-     * External Audit — the Trial Balance and the Journal, behind one
-     * entry point.
+     * External Audit — the Trial Balance, the Balance Sheet, and the
+     * Journal, behind one entry point.
      *
-     * These are the only two screens in the app written for the
-     * company's auditor rather than its owner, and they are used
-     * together: you read a figure off the Trial Balance, then open
-     * the Journal to see what produced it. Two separate tiles on the
-     * reports hub made them look like two unrelated destinations,
-     * and an owner who will never open either had to scroll past
-     * both. One tile, with a toggle inside — the same shape as
+     * These are the only screens in the app written for the
+     * company's auditor rather than its owner, and they're read
+     * together: a figure on the Trial Balance or Balance Sheet gets
+     * traced back to the transaction(s) that produced it in the
+     * Journal. One tile, with a toggle inside — the same shape as
      * Receive/Pay on the payments screen.
      *
-     * ?view= chooses which half is showing. Only the visible half is
-     * queried: the Trial Balance sums every journal line ever
-     * posted, and the Journal loads whole entries with their lines,
-     * so building both to show one would double the work of every
-     * page load and every tab switch.
+     * ?view= chooses which one is showing. Only the visible one is
+     * queried; building all three to show one would triple the work
+     * of every page load and every tab switch.
+     *
+     * Each keeps its own filter — the Trial Balance is a range
+     * (?tb_from=&tb_to=, "this year to date" by default), the
+     * Balance Sheet is a single date (?bs_as_of=, today by default —
+     * it's a snapshot, not a period), and the Journal is its own
+     * range (?from=&to=, "this month" by default). Sharing filters
+     * between them would misrepresent whichever ones weren't showing.
      */
     public function externalAudit(Request $request): Response
     {
-        $view = $request->string('view')->value() === 'journal' ? 'journal' : 'trial-balance';
+        $view = match ($request->string('view')->value()) {
+            'balance-sheet' => 'balance-sheet',
+            'journal'       => 'journal',
+            default         => 'trial-balance',
+        };
 
-        // Each half keeps its own filter — the Trial Balance is a
-        // position on one date, the Journal is a range. Sharing one
-        // control between them would misrepresent both.
-        $asOf = $request->string('as_of')->value() ?: now()->toDateString();
+        [$tbFrom, $tbTo] = $this->reports->yearRange(
+            $request->string('tb_from')->value() ?: null,
+            $request->string('tb_to')->value() ?: null,
+        );
+        $bsAsOf = $request->string('bs_as_of')->value() ?: now()->toDateString();
         [$from, $to] = $this->reports->monthRange(
             $request->string('from')->value() ?: null,
             $request->string('to')->value() ?: null,
         );
 
         return Inertia::render('App/Reports/ExternalAudit', [
-            'view'  => $view,
-            'as_of' => $asOf,
-            'from'  => $from,
-            'to'    => $to,
+            'view'    => $view,
+            'tb_from' => $tbFrom,
+            'tb_to'   => $tbTo,
+            'bs_as_of' => $bsAsOf,
+            'from'    => $from,
+            'to'      => $to,
 
             'trialBalance' => $view === 'trial-balance'
-                ? $this->reports->trialBalance($asOf)
+                ? $this->reports->trialBalance($tbFrom, $tbTo)
+                : null,
+
+            'balanceSheet' => $view === 'balance-sheet'
+                ? $this->reports->balanceSheet($bsAsOf)
                 : null,
 
             'entries' => $view === 'journal'

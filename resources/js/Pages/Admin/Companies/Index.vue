@@ -24,6 +24,42 @@ const props = defineProps({
 
 const showAddSheet = ref(false);
 
+// ── Delete company ───────────────────────────────────────────────
+// A plain confirm() isn't enough for something this destructive
+// (wipes the company's entire financial history, with no undo), so
+// the admin must type the company's exact name before the button
+// unlocks — same pattern as GitHub's "delete repo", etc.
+const deleteTarget = ref(null); // the company object, or null when the sheet is closed
+const deleteConfirmText = ref('');
+const deleteForm = useForm({});
+
+// Laravel's pagination links come as e.g. "&laquo; Previous" / "Next
+// &raquo;" — decoding just these two known-safe arrow entities lets
+// us render the label as plain (auto-escaped) text instead of
+// v-html, which is unsafe by default (see QA audit L-1).
+function paginationLabel(label) {
+    return label.replace(/&laquo;/g, '«').replace(/&raquo;/g, '»');
+}
+
+function openDeleteSheet(company) {
+    deleteTarget.value = company;
+    deleteConfirmText.value = '';
+}
+
+function closeDeleteSheet() {
+    deleteTarget.value = null;
+    deleteConfirmText.value = '';
+}
+
+function confirmDelete() {
+    if (!deleteTarget.value || deleteConfirmText.value !== deleteTarget.value.name) return;
+
+    deleteForm.delete(route('admin.companies.destroy', deleteTarget.value.id), {
+        preserveScroll: true,
+        onSuccess: () => closeDeleteSheet(),
+    });
+}
+
 const form = useForm({
     name: '',
     name_ar: '',
@@ -93,9 +129,14 @@ function toggleActive(company) {
                                 </span>
                             </td>
                             <td>
-                                <button type="button" class="btn btn-ghost btn-sm" @click="toggleActive(company)">
-                                    {{ company.is_active ? 'Deactivate' : 'Reactivate' }}
-                                </button>
+                                <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                                    <button type="button" class="btn btn-ghost btn-sm" @click="toggleActive(company)">
+                                        {{ company.is_active ? 'Deactivate' : 'Reactivate' }}
+                                    </button>
+                                    <button type="button" class="btn btn-ghost btn-sm adm-companies__delete-btn" @click="openDeleteSheet(company)">
+                                        Delete
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         <tr v-if="props.companies.data.length === 0">
@@ -112,10 +153,9 @@ function toggleActive(company) {
                         :href="link.url"
                         class="adm-companies__page-link"
                         :class="{ 'adm-companies__page-link--active': link.active }"
-                        v-html="link.label"
                         preserve-scroll
-                    />
-                    <span v-else class="adm-companies__page-link adm-companies__page-link--disabled" v-html="link.label"></span>
+                    >{{ paginationLabel(link.label) }}</Link>
+                    <span v-else class="adm-companies__page-link adm-companies__page-link--disabled">{{ paginationLabel(link.label) }}</span>
                 </template>
             </div>
         </div>
@@ -178,6 +218,51 @@ function toggleActive(company) {
                             </button>
                         </div>
                     </form>
+                </div>
+            </div>
+        </transition>
+
+        <!-- ── Delete company sheet ─────────────────────────────── -->
+        <transition name="fade-in">
+            <div v-if="deleteTarget" class="modal-backdrop" @click.self="closeDeleteSheet">
+                <div class="modal-sheet slide-up adm-companies__sheet">
+                    <div class="modal-sheet__handle"></div>
+                    <h2 class="adm-companies__sheet-title" style="color: var(--color-danger);">
+                        Delete "{{ deleteTarget.name }}"
+                    </h2>
+
+                    <p style="font-size: 13.5px; color: var(--color-text-secondary); line-height: 1.6; margin-bottom: 14px;">
+                        This permanently deletes <strong>{{ deleteTarget.name }}</strong> and everything in
+                        it — every sale, expense, inventory purchase, equipment purchase, custody, payment,
+                        installment, the entire chart of accounts and general ledger, and its
+                        {{ deleteTarget.users_count }} user account{{ deleteTarget.users_count === 1 ? '' : 's' }}.
+                        This cannot be undone.
+                    </p>
+
+                    <div class="form-group">
+                        <label class="form-label">
+                            Type <strong>{{ deleteTarget.name }}</strong> to confirm
+                        </label>
+                        <input
+                            v-model="deleteConfirmText"
+                            type="text"
+                            class="form-input"
+                            autocomplete="off"
+                            @keyup.enter="confirmDelete"
+                        >
+                    </div>
+
+                    <div class="submit-row" style="display: flex; gap: 10px; margin-top: 6px;">
+                        <button type="button" class="btn btn-ghost" @click="closeDeleteSheet">Cancel</button>
+                        <button
+                            type="button"
+                            class="btn btn-danger btn-block"
+                            :disabled="deleteConfirmText !== deleteTarget.name || deleteForm.processing"
+                            @click="confirmDelete"
+                        >
+                            {{ deleteForm.processing ? 'Deleting…' : 'Permanently delete' }}
+                        </button>
+                    </div>
                 </div>
             </div>
         </transition>

@@ -25,6 +25,8 @@ import { router } from '@inertiajs/vue3';
 import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useMoneyFormat } from '@/composables/useMoneyFormat';
+import { todayIso } from '@/Utils/date';
 import { usePermissions } from '@/composables/usePermissions';
 
 const props = defineProps({
@@ -48,13 +50,8 @@ const { t, locale } = useAppTranslations();
 // same rule the server applies in PaymentController::destroy().
 const { canDelete } = usePermissions();
 
-function todayIso() { return new Date().toISOString().slice(0, 10); }
 
-function money(v) {
-    return new Intl.NumberFormat(locale.value === 'ar' ? 'ar-EG' : 'en-US', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2,
-    }).format(v || 0);
-}
+const { money } = useMoneyFormat();
 
 const paidTotal = computed(() =>
     props.payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0)

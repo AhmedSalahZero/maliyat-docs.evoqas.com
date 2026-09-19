@@ -38,6 +38,13 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 //      ],
 //      'rtl' => false,
 //  ]
+//
+//  A row is normally the plain array shown above. A report that
+//  needs section headings and inline running totals inside ONE
+//  table (currently only the P&L) can instead pass a row as
+//  ['cells' => [...], 'emphasis' => 'heading'|'total'|'result',
+//  'indent' => true] — every other report's plain rows are
+//  completely unaffected by this.
 // ══════════════════════════════════════════════════════════════════
 class ExcelReportExporter
 {
@@ -162,14 +169,49 @@ class ExcelReportExporter
 
             $dataStartRow = $row;
             foreach ($section['rows'] ?? [] as $rowIndex => $dataRow) {
+                // A row is normally a plain array of cell values (every
+                // existing report — Ledger, Trial Balance, statements,
+                // etc.). It can ALSO be ['cells' => [...], 'emphasis' =>
+                // 'heading'|'total'|'result', 'indent' => true] for a
+                // report — currently only the P&L — that needs section
+                // headings and inline totals inside ONE table rather
+                // than the separate-section layout every other report
+                // uses. Detecting the associative shape here keeps
+                // every other caller's plain rows completely unchanged.
+                $isStyledRow = is_array($dataRow) && array_key_exists('cells', $dataRow);
+                $cells       = $isStyledRow ? $dataRow['cells'] : $dataRow;
+                $emphasis    = $isStyledRow ? ($dataRow['emphasis'] ?? null) : null;
+                $indent      = $isStyledRow && ! empty($dataRow['indent']);
+
                 foreach ($columns as $i => $column) {
                     $colLetter = self::columnLetter($i + 1);
-                    $sheet->setCellValue("{$colLetter}{$row}", self::safeCell($dataRow[$i] ?? ''));
-                    $sheet->getStyle("{$colLetter}{$row}")->getAlignment()->setHorizontal(
+                    $sheet->setCellValue("{$colLetter}{$row}", self::safeCell($cells[$i] ?? ''));
+                    $align = $sheet->getStyle("{$colLetter}{$row}")->getAlignment();
+                    $align->setHorizontal(
                         ($column['align'] ?? 'start') === 'end' ? Alignment::HORIZONTAL_RIGHT : Alignment::HORIZONTAL_LEFT
                     );
+                    if ($indent && $i === 0) {
+                        $align->setIndent(1);
+                    }
                 }
-                if ($rowIndex % 2 === 1) {
+
+                if ($emphasis === 'heading') {
+                    $sheet->getStyle("A{$row}:".self::columnLetter(count($columns))."{$row}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => self::TEXT_DARK]],
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::ZEBRA]],
+                    ]);
+                } elseif ($emphasis === 'total') {
+                    $sheet->getStyle("A{$row}:".self::columnLetter(count($columns))."{$row}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => self::TEXT_DARK]],
+                        'borders' => ['top' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => self::BORDER_COLOR]]],
+                    ]);
+                } elseif ($emphasis === 'result') {
+                    $sheet->getStyle("A{$row}:".self::columnLetter(count($columns))."{$row}")->applyFromArray([
+                        'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => self::BRAND_DARK]],
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::SOFT_BLUE]],
+                        'borders' => ['top' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => self::BRAND_BLUE]]],
+                    ]);
+                } elseif ($rowIndex % 2 === 1) {
                     $sheet->getStyle("A{$row}:".self::columnLetter(count($columns))."{$row}")->applyFromArray([
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::ZEBRA]],
                     ]);

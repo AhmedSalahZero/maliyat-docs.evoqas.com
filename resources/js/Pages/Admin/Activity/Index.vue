@@ -34,6 +34,14 @@ const form = ref({
 // Server-side filtering keeps one source of truth for what the table
 // shows; the alternative (filtering the current page in the browser)
 // would silently only search the 50 rows already loaded.
+// Laravel's pagination links come as e.g. "&laquo; Previous" / "Next
+// &raquo;" — decoding just these two known-safe arrow entities lets
+// us render the label as plain (auto-escaped) text instead of
+// v-html, which is unsafe by default (see QA audit L-1).
+function paginationLabel(label) {
+    return label.replace(/&laquo;/g, '«').replace(/&raquo;/g, '»');
+}
+
 function applyFilters() {
     router.get(route('admin.activity.index'), {
         from:       form.value.from,
@@ -191,10 +199,9 @@ function roleLabel(role) {
                         :href="link.url"
                         class="adm-activity__page-link"
                         :class="{ 'adm-activity__page-link--active': link.active }"
-                        v-html="link.label"
                         preserve-scroll
-                    />
-                    <span v-else class="adm-activity__page-link adm-activity__page-link--disabled" v-html="link.label"></span>
+                    >{{ paginationLabel(link.label) }}</Link>
+                    <span v-else class="adm-activity__page-link adm-activity__page-link--disabled">{{ paginationLabel(link.label) }}</span>
                 </template>
             </div>
         </div>

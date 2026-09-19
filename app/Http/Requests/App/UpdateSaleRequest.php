@@ -37,6 +37,10 @@ class UpdateSaleRequest extends FormRequest
                 'required',
                 Rule::exists('customers', 'id')->where('company_id', $companyId),
             ],
+            'sales_channel_id' => [
+                'nullable',
+                Rule::exists('sales_channels', 'id')->where('company_id', $companyId),
+            ],
             'date' => ['required', ...FinancialRules::date()],
 
             'lines'              => ['required', 'array', 'min:1'],

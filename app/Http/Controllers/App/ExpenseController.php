@@ -14,6 +14,7 @@ use App\Models\Vendor;
 use App\Services\JournalService;
 use App\Services\PaymentRecorderService;
 use App\Services\RecurringExpenseService;
+use App\Support\FinancialRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -116,7 +117,11 @@ class ExpenseController extends Controller
         // commits. See the note in SaleController::store().
         DB::transaction(function () use ($data, $dueDate, $schedule) {
             $expense = Expense::create([
-                'vendor_id'   => $data['vendor_id'],
+                // Cash Expense submits no vendor_id at all — filed
+                // under the one reusable "Cash Vendor" instead of
+                // asking the person to pick one. See
+                // Vendor::cashVendor()'s doc comment.
+                'vendor_id'   => $data['vendor_id'] ?? Vendor::cashVendor(auth()->user()->company_id)->id,
                 'category_id' => $data['category_id'],
                 'date'        => $data['date'],
                 'amount'      => $data['amount'],
@@ -265,15 +270,16 @@ class ExpenseController extends Controller
 
         // "Paid" here must mean exactly what Expense::isPaid() means
         // everywhere else — payments cover the amount within the
-        // same 0.004 float-noise tolerance DashboardController and
-        // PaymentController's worklist already use — so this can't
-        // quietly disagree with what the rest of the app calls paid.
+        // same FinancialRules::AMOUNT_TOLERANCE float-noise tolerance
+        // DashboardController and PaymentController's worklist
+        // already use — so this can't quietly disagree with what the
+        // rest of the app calls paid.
         $unpaidCondition = 'COALESCE((
             SELECT SUM(p.amount) FROM payments p
             WHERE p.payable_type = '.DB::getPdo()->quote(Expense::class).'
               AND p.payable_id = expenses.id
               AND p.company_id = ?
-        ), 0) < expenses.amount - 0.004';
+        ), 0) < expenses.amount - '.FinancialRules::AMOUNT_TOLERANCE;
 
         // One row per series: how many occurrences it has, and how
         // many of those are still unpaid. addBinding() is needed

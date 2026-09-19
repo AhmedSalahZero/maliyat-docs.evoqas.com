@@ -72,6 +72,7 @@
     --color-success:       #16A34A;
     --color-success-dark:  #0E7C39;
     --color-success-soft:  #E3F7EA;
+    --color-success-cogs:  #b7e6f5fd;
     --color-danger:        #E23744;
     --color-danger-dark:   #B91C2C;
     --color-danger-soft:   #FDE8E9;
@@ -573,6 +574,14 @@ table.lines input, table.lines select,
 .bottom-nav__item span { font-size: 10.5px; font-weight: 500; color: var(--color-nav-label); }
 .bottom-nav__item.active { color: var(--color-nav-icon-active); }
 .bottom-nav__item.active span { color: var(--color-nav-label-active); font-weight: 600; }
+/* Back in the normal flex flow, as its own item — NOT absolutely
+   centered. With 4 nav destinations (Home, Reports, Settings) plus
+   the FAB, there's no way to force the FAB to sit dead-center AND
+   keep every item in its own slot; absolute-centering it landed it
+   exactly on top of the middle item (Reports), overlapping the two.
+   Keeping it in flow means it just takes the 2nd slot of 4 — not
+   mathematically centered, but each item gets its own space and
+   nothing overlaps. */
 .bottom-nav__item--fab { margin-top: -22px; }
 .bottom-nav__item--fab .fab-circle {
     width: 46px; height: 46px; border-radius: 50%;
@@ -1212,6 +1221,7 @@ table.lines td.linetotal { text-align: end; white-space: nowrap; padding-inline-
 .settle-item:last-child { border-bottom: none; }
 .settle-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
 .settle-item .who { font-weight: 600; color: var(--color-text-primary); }
+.settle-item .who-items { font-weight: 400; font-size: 13px; color: var(--color-text-muted); }
 .settle-item .meta { color: var(--color-text-muted); font-size: 12px; margin-top: 2px; }
 .settle-item .amt { font-family: var(--font-mono); font-size: 14.5px; font-weight: 600; color: var(--color-warning-dark); }
 /* On a phone the name/meta column and the amount+actions cluster

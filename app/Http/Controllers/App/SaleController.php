@@ -9,7 +9,9 @@ use App\Models\Customer;
 use App\Models\Item;
 use App\Models\PaymentChannel;
 use App\Models\Sale;
+use App\Models\SalesChannel;
 use App\Services\JournalService;
+use App\Services\MovingAverageCostingService;
 use App\Services\PaymentRecorderService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
@@ -47,12 +49,19 @@ class SaleController extends Controller
     public function __construct(
         private readonly PaymentRecorderService $paymentRecorder,
         private readonly JournalService $journal,
+        private readonly MovingAverageCostingService $costing,
     ) {}
 
     public function index(): Response
     {
+        // Self-heal for companies created before Sales Channels
+        // existed — idempotent (firstOrCreate), cheap, and means no
+        // manual backfill step is ever needed. Same pattern as
+        // Category::seedDefaults() elsewhere in this app.
+        SalesChannel::seedDefaults(auth()->user()->company_id);
+
         $sales = Sale::query()
-            ->with(['customer:id,name', 'lines.item:id,name', 'payments'])
+            ->with(['customer:id,name', 'salesChannel:id,name,name_ar', 'lines.item:id,name', 'payments'])
             ->latest('date')
             ->latest('id')
             ->paginate(20)
@@ -62,6 +71,9 @@ class SaleController extends Controller
                 'due_date'    => $sale->due_date?->toDateString(),
                 'customer_id' => $sale->customer_id,
                 'customer'    => $sale->customer?->name,
+                'sales_channel_id' => $sale->sales_channel_id,
+                'sales_channel'    => $sale->salesChannel?->name,
+                'sales_channel_ar' => $sale->salesChannel?->name_ar,
                 'lines'       => $sale->lines->map(fn ($line) => [
                     'item_id'    => $line->item_id,
                     'item'       => $line->item?->name,
@@ -93,6 +105,7 @@ class SaleController extends Controller
             // sold directly — see the Item type note in Item.php.
             'items'          => Item::query()->whereIn('type', ['trading', 'product'])->orderBy('name')->get(['id', 'name']),
             'paymentChannels'=> PaymentChannel::query()->orderBy('name')->get(['id', 'name']),
+            'salesChannels'  => SalesChannel::query()->orderBy('id')->get(['id', 'name', 'name_ar']),
             'sales'          => $sales,
         ]);
     }
@@ -128,7 +141,16 @@ class SaleController extends Controller
         // sale on the books with nothing in the general ledger.
         DB::transaction(function () use ($data, $subtotal, $vatRate, $vatAmount, $total, $dueDate, $schedule) {
             $sale = Sale::create([
-                'customer_id' => $data['customer_id'],
+                // Cash Sales submit no customer_id at all — filed
+                // under the one reusable "Cash Customer" instead of
+                // asking the person to pick one. See
+                // Customer::cashCustomer()'s doc comment.
+                'customer_id' => $data['customer_id'] ?? Customer::cashCustomer(auth()->user()->company_id)->id,
+                // Same idea for the sales channel — the form always
+                // sends one (it defaults to "Direct Sales" client
+                // side), but this is the safety net if it's ever
+                // missing. See SalesChannel::defaultChannel().
+                'sales_channel_id' => $data['sales_channel_id'] ?? SalesChannel::defaultChannel(auth()->user()->company_id)->id,
                 'date'        => $data['date'],
                 'subtotal'    => $subtotal,
                 'vat_rate'    => $vatRate,
@@ -148,7 +170,7 @@ class SaleController extends Controller
             }
 
             $this->journal->postSaleInvoice($sale);
-            $this->postCogsForLines($sale, $data['lines']);
+            $this->recalculateCostsFor($sale->company_id, $data['lines'], $sale->date->toDateString());
 
             $payment = $this->paymentRecorder->apply($sale, 'in', $data['mode'], [
                 'date'       => $data['date'],
@@ -183,6 +205,15 @@ class SaleController extends Controller
         $total     = round($subtotal + $vatAmount, 2);
 
         DB::transaction(function () use ($sale, $data, $subtotal, $vatRate, $vatAmount, $total) {
+            // Captured before anything changes, so the moving-average
+            // recalculation below knows every item and every date
+            // this edit could possibly affect — including an item
+            // that's being REMOVED from the sale entirely, which
+            // still needs its ledger recalculated to remove this
+            // sale's outbound movement from it.
+            $oldItemIds = $sale->lines()->pluck('item_id')->filter()->unique();
+            $oldDate    = $sale->date->toDateString();
+
             // The old invoice entry no longer reflects reality once
             // the total changes — reverse it before posting the
             // corrected one, rather than editing it in place.
@@ -196,6 +227,7 @@ class SaleController extends Controller
 
             $sale->update([
                 'customer_id' => $data['customer_id'],
+                'sales_channel_id' => $data['sales_channel_id'] ?? SalesChannel::defaultChannel(auth()->user()->company_id)->id,
                 'date'        => $data['date'],
                 'subtotal'    => $subtotal,
                 'vat_rate'    => $vatRate,
@@ -217,7 +249,21 @@ class SaleController extends Controller
 
             $freshSale = $sale->fresh();
             $this->journal->postSaleInvoice($freshSale);
-            $this->postCogsForLines($freshSale, $data['lines']);
+
+            // Recalculate from whichever is earlier — the sale's old
+            // date or its new one — across every item that was on
+            // the old lines OR the new lines, so a backdated edit,
+            // a forward-dated edit, and a changed item mix are all
+            // handled the same way: nothing downstream is left
+            // pricing against a version of this sale that no longer
+            // exists.
+            $newItemIds = collect($data['lines'])->pluck('item_id')->filter()->unique();
+            $itemIds    = $oldItemIds->merge($newItemIds)->unique();
+            $fromDate   = min($oldDate, $freshSale->date->toDateString());
+
+            foreach ($itemIds as $itemId) {
+                $this->costing->onItemMovementChanged((int) $freshSale->company_id, (int) $itemId, $fromDate);
+            }
         });
 
         return back()->with('success', 'Sale updated.');
@@ -244,48 +290,49 @@ class SaleController extends Controller
                 ['lines' => $sale->lines->toArray()]
             );
 
+            // Captured before the lines are gone, so the item(s) this
+            // sale drew stock from can have their moving-average
+            // ledger recalculated forward from this date — removing
+            // this sale's outbound movement is exactly as much a
+            // change to that ledger as adding one was.
+            $itemIds  = $sale->lines()->pluck('item_id')->filter()->unique();
+            $date     = $sale->date->toDateString();
+            $companyId = (int) $sale->company_id;
+
             $this->journal->reverseAllForPayable($sale);
             $sale->payments()->delete();
             $sale->installments()->delete();
             $sale->lines()->delete();
             $sale->delete();
+
+            foreach ($itemIds as $itemId) {
+                $this->costing->onItemMovementChanged($companyId, (int) $itemId, $date);
+            }
         });
 
         return back()->with('success', 'Sale deleted.');
     }
 
     /**
-     * Cost of Goods Sold for a sale = sum over every line that
-     * references a tracked item of (qty sold × that item's current
-     * weighted-average purchase cost — see Item::averagePurchaseCost()).
-     * Lines with no item_id (a free-text/service line) contribute
-     * nothing. An item never purchased yet has no average cost to
-     * draw from, so it's skipped too — the sale still records fine,
-     * it just has no COGS recognised, since there's no historical
-     * cost information for the "already got value out of nothing"
-     * question a stock-count audit would need to answer separately.
+     * Prices every line that references a tracked item at the
+     * moving average — see MovingAverageCostingService — and
+     * corrects Cost of Goods Sold for this sale, and for anything
+     * downstream, to match. Replaces the old direct call to
+     * Item::averagePurchaseCost() (removed Sep 2026): that method
+     * summed EVERY purchase ever made for the item, never removing
+     * what had already been sold; this recalculates the item's
+     * actual day-by-day stock pool instead. Lines with no item_id
+     * (a free-text/service line) are simply not part of any item's
+     * pool and contribute nothing.
+     *
+     * @param  array<int, array{item_id?:int|null, qty:float}>  $lines
      */
-    private function postCogsForLines(Sale $sale, array $lines): void
+    private function recalculateCostsFor(int $companyId, array $lines, string $fromDate): void
     {
-        $itemIds = array_filter(array_column($lines, 'item_id'));
-        $items   = Item::query()->whereIn('id', $itemIds)->get()->keyBy('id');
+        $itemIds = collect($lines)->pluck('item_id')->filter()->unique();
 
-        $totalCogs = 0.0;
-
-        foreach ($lines as $line) {
-            $item = $items->get($line['item_id'] ?? null);
-            if (! $item) {
-                continue;
-            }
-
-            $avgCost = $item->averagePurchaseCost();
-            if ($avgCost === null) {
-                continue;
-            }
-
-            $totalCogs += $line['qty'] * $avgCost;
+        foreach ($itemIds as $itemId) {
+            $this->costing->onItemMovementChanged($companyId, (int) $itemId, $fromDate);
         }
-
-        $this->journal->postCostOfGoodsSold($sale, round($totalCogs, 2));
     }
 }

@@ -3,12 +3,17 @@
 //  Maliyat Docs — Reports/InventoryStatement.vue
 //  Location: resources/js/Pages/App/Reports/InventoryStatement.vue
 //
-//  Quantity and value per SKU, using weighted-average cost — see
-//  Item::averagePurchaseCost() / ReportDataService::inventoryStatement().
+//  Quantity and value per SKU. Quantities come from the same Item
+//  model methods (currentStock(), etc.) Production and Sales already
+//  rely on for their own stock checks — see the class doc comment on
+//  Item.php. Cost and value come from InventoryStockLedger via
+//  ReportDataService::inventoryStatement() — the same day-by-day
+//  moving-average ledger MovingAverageCostingService maintains and
+//  actually prices every sale's Cost of Goods Sold against, so this
+//  page can never show a different "average cost" than the one the
+//  accounting itself used.
 //  Both purchases/sales AND Production Order output/consumption feed
-//  the numbers here now, straight from the same Item model methods
-//  Production and Sales already rely on for their own stock checks —
-//  see the class doc comment on Item.php.
+//  the numbers here.
 //
 //  Two views, both server-rendered by the same page (no client
 //  math): pick a product from the dropdown to see its own stat
@@ -26,6 +31,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import AppIcon from '@/Components/App/AppIcon.vue';
 import ReportToolbar from '@/Components/App/ReportToolbar.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useMoneyFormat } from '@/composables/useMoneyFormat';
 
 const props = defineProps({
     items: { type: Array, required: true },
@@ -49,13 +55,7 @@ const to   = ref(props.to ?? '');
 
 const page = usePage();
 const { t, locale } = useAppTranslations();
-const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
-
-function money(v) {
-    return new Intl.NumberFormat(locale.value === 'ar' ? 'ar-EG' : 'en-US', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2,
-    }).format(v || 0);
-}
+const { currency, money } = useMoneyFormat();
 
 function qty(v) {
     return new Intl.NumberFormat(locale.value === 'ar' ? 'ar-EG' : 'en-US', {
@@ -125,6 +125,18 @@ function historyTypeLabel(type) {
         produced: t('producedLbl'),
         consumed: t('consumedLbl'),
     }[type] ?? type;
+}
+
+// Row-specific label for the price column, so a purchase row reads
+// "Purchase price" and a sale row reads "Selling price", etc.,
+// instead of one generic "Unit price" for every row type.
+function priceLabelForRow(type) {
+    return {
+        purchase: t('purchasePriceLbl'),
+        sale: t('sellingPriceLbl'),
+        produced: t('productionCostLbl'),
+        consumed: t('consumptionCostLbl'),
+    }[type] ?? t('unitPriceLbl');
 }
 </script>
 
@@ -226,7 +238,10 @@ function historyTypeLabel(type) {
                                 <td class="num" :data-label="t('qtyLbl')" :style="{ color: row.qty >= 0 ? 'var(--color-money-in)' : 'var(--color-money-out)' }">
                                     {{ row.qty >= 0 ? '+' : '' }}{{ qty(row.qty) }} {{ props.selected.base_unit_name }}
                                 </td>
-                                <td class="num" :data-label="t('unitPriceLbl')">{{ currency }} {{ money(row.unit_price) }}</td>
+                                <td class="num" :data-label="priceLabelForRow(row.type)">
+                                    <div class="price-type-label">{{ priceLabelForRow(row.type) }}</div>
+                                    <div>{{ currency }} {{ money(row.unit_price) }}</div>
+                                </td>
                                 <td class="num" :data-label="t('stockAfterLbl')"><strong>{{ qty(row.stock_after) }} {{ props.selected.base_unit_name }}</strong></td>
                             </tr>
                         </tbody>
@@ -290,6 +305,8 @@ function historyTypeLabel(type) {
 
 <style scoped>
 .field--action { flex: 0 0 auto; justify-content: flex-end; }
+
+.price-type-label { font-size: 12px; color: var(--color-text-muted); margin-bottom: 2px; }
 
 .inv-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .inv-name-btn {

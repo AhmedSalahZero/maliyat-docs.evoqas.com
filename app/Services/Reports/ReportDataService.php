@@ -8,6 +8,7 @@ use App\Models\Expense;
 use App\Models\EquipmentPurchase;
 use App\Models\InventoryPurchase;
 use App\Models\InventoryPurchaseLine;
+use App\Models\InventoryStockLedger;
 use App\Models\Item;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
@@ -17,6 +18,7 @@ use App\Models\ProductionOrderMaterialLine;
 use App\Models\Sale;
 use App\Models\SaleLine;
 use App\Models\Vendor;
+use App\Support\FinancialRules;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -51,6 +53,25 @@ class ReportDataService
     {
         $fromDate = $from ? Carbon::parse($from) : now()->startOfMonth();
         $toDate   = $to ? Carbon::parse($to) : now()->endOfMonth();
+
+        return [$fromDate->toDateString(), $toDate->toDateString()];
+    }
+
+    /**
+     * Same shape as monthRange(), but defaulting to the current
+     * calendar YEAR-to-date instead of the current month. Used by
+     * the Trial Balance: an external auditor almost always wants
+     * "this year so far", not "everything since the company's very
+     * first transaction" nor "just this month" — see trialBalance()
+     * for why Opening Balance still carries the full pre-$from
+     * history forward regardless of this default.
+     *
+     * @return array{0:string,1:string} [from, to] as Y-m-d
+     */
+    public function yearRange(?string $from, ?string $to): array
+    {
+        $fromDate = $from ? Carbon::parse($from) : now()->startOfYear();
+        $toDate   = $to ? Carbon::parse($to) : now();
 
         return [$fromDate->toDateString(), $toDate->toDateString()];
     }
@@ -214,6 +235,59 @@ class ReportDataService
             ->orderByDesc('total')
             ->get();
 
+        // % of total revenue on both breakdowns — read as a standard
+        // common-size income statement, revenue = 100%. $revenue == 0
+        // (no sales in range at all) would divide by zero, so every
+        // row just reads 0% instead — there's nothing to be a
+        // percentage OF.
+        $percentOf = fn (float $amount) => $revenue > 0 ? round(($amount / $revenue) * 100, 1) : 0.0;
+
+        $incomeByItem = $incomeByItem->map(fn ($row) => (object) [
+            'item'  => $row->item,
+            'total' => round((float) $row->total, 2),
+            'percent_of_revenue' => $percentOf((float) $row->total),
+        ]);
+
+        $expensesByCategory = $expensesByCategory->map(fn ($row) => (object) [
+            'category' => $row->category,
+            'total'    => $row->total,
+            'percent_of_revenue' => $percentOf((float) $row->total),
+        ]);
+
+        // Cost of Goods Sold, broken down by product — Trading and
+        // Production companies only (a Service company carries no
+        // inventory, so this is always empty for them). Built from
+        // the per-line unit_cost MovingAverageCostingService stamps
+        // onto each sale line at pricing time, which is the exact
+        // number already summed into $cogs above via the ledger —
+        // so this table always ties out to the COGS headline, never
+        // a separately-reconstructed estimate. A line with no
+        // unit_cost yet (sold before this engine existed, or a
+        // free-text/service line) contributes nothing here, same as
+        // it always contributed nothing to COGS.
+        $businessTypes = auth()->user()?->company?->businessTypes() ?? [];
+        $showCogsByItem = in_array('trading', $businessTypes, true) || in_array('production', $businessTypes, true);
+
+        $costOfGoodsSoldByItem = collect();
+
+        if ($showCogsByItem) {
+            $costOfGoodsSoldByItem = Sale::query()
+                ->whereBetween('sales.date', [$from, $to])
+                ->where('sales.is_opening_balance', false)
+                ->join('sale_lines', 'sale_lines.sale_id', '=', 'sales.id')
+                ->leftJoin('items', 'items.id', '=', 'sale_lines.item_id')
+                ->whereNotNull('sale_lines.unit_cost')
+                ->selectRaw("COALESCE(items.name, 'Other') as item, SUM(sale_lines.qty * sale_lines.unit_cost) as total")
+                ->groupBy('item')
+                ->orderByDesc('total')
+                ->get()
+                ->map(fn ($row) => (object) [
+                    'item'  => $row->item,
+                    'total' => round((float) $row->total, 2),
+                    'percent_of_revenue' => $percentOf((float) $row->total),
+                ]);
+        }
+
         return [
             'from' => $from, 'to' => $to,
             'revenue'              => $revenue,
@@ -221,8 +295,22 @@ class ReportDataService
             'gross_profit'         => $grossProfit,
             'operating_expenses'   => $operatingExpenses,
             'net_profit'           => $netProfit,
+            // % of revenue for the summary/total rows themselves —
+            // the table's Vue page and its export both need these to
+            // render the Total Revenue / Total COGS / Gross Profit /
+            // Total Operating Expenses / Net Profit rows inline with
+            // everything else, all in the one table (see
+            // ProfitAndLoss.vue — this report is a single nested
+            // table now, not separate summary cards).
+            'revenue_percent'            => $revenue > 0 ? 100.0 : 0.0,
+            'cost_of_goods_sold_percent' => $percentOf($cogs),
+            'gross_profit_percent'       => $percentOf($grossProfit),
+            'operating_expenses_percent' => $percentOf($operatingExpenses),
+            'net_profit_percent'         => $percentOf($netProfit),
             'expenses_by_category' => $expensesByCategory,
             'income_by_item'       => $incomeByItem,
+            'cost_of_goods_sold_by_item' => $costOfGoodsSoldByItem,
+            'show_cost_of_goods_sold_by_item' => $showCogsByItem,
         ];
     }
 
@@ -383,39 +471,49 @@ class ReportDataService
      */
     public function inventoryStatement(?int $itemId = null, ?string $from = null, ?string $to = null): array
     {
-        // Same four relations Item::currentStock() / Item::averagePurchaseCost()
-        // read (purchaseLines/producedBatches/saleLines/consumedInProduction),
-        // just summed for every item in one query each instead of one
-        // query per item per relation — a summary table with N items
-        // otherwise costs roughly 5N queries (GuardsRawMaterialStock
-        // and postCogsForLines() only ever ask about ONE item at a
-        // time, so that per-item cost is fine there; a report listing
-        // every item is a different shape of question). Correctness
-        // is guaranteed to track Item's own methods, not just resemble
-        // them, because InventoryStatementMatchesItemModelTest asserts
-        // this report's numbers equal Item::currentStock()/
-        // averagePurchaseCost() for every item in a mixed
-        // purchase+production+sale scenario — if this query and that
-        // model method are ever edited out of step, that test fails.
+        // Quantities (purchased/produced/sold/consumed base units) are
+        // plain counts — correct no matter which costing method is
+        // used, so they're still read straight from the source
+        // tables exactly as before.
+        //
+        // The COST figures (avg_purchase_cost, stock_value) are NOT
+        // computed here anymore. They used to be calculated the same
+        // way the legacy Item::averagePurchaseCost() worked — total
+        // money ever spent ÷ total units ever bought, never
+        // subtracting what had already been sold. That's now removed
+        // (see Item.php). This report reads those two figures
+        // straight from InventoryStockLedger instead — the same
+        // day-by-day moving-average ledger MovingAverageCostingService
+        // maintains and actually prices every real sale's Cost of
+        // Goods Sold against (see that service's class doc comment).
+        // So the number shown here is now, by construction, the same
+        // number driving the accounting — not a second, separately
+        // -computed guess at it.
         $itemIds = Item::query()->pluck('id');
 
         $beforeFrom = $from ? $this->dayBefore($from) : null;
 
         $asOf   = $this->itemStockTotals($itemIds, $to);
         $before = $from ? $this->itemStockTotals($itemIds, $beforeFrom) : null;
+        $ledger = $this->latestLedgerRows($itemIds, $to);
 
         $items = Item::query()
             ->orderBy('name')
             ->get()
-            ->map(function (Item $item) use ($asOf, $before, $from) {
+            ->map(function (Item $item) use ($asOf, $before, $from, $ledger) {
                 $t = $asOf->get($item->id);
 
                 $stockIn  = round($t->purchased + $t->produced, 2);
                 $stockOut = round($t->sold + $t->consumed, 2);
                 $stock    = round($stockIn - $stockOut, 2);
 
-                $totalBase = $t->purchased + $t->produced;
-                $avgCost   = $totalBase > 0 ? ($t->purchase_cost + $t->produced_cost) / $totalBase : null;
+                // Null when the item has no ledger row yet (never
+                // bought, made, or sold as of this date), so the
+                // report shows a blank rather than a fabricated zero
+                // cost — same rule the old calculation followed.
+                $ledgerRow  = $ledger->get($item->id);
+                $avgCost    = $ledgerRow ? (float) $ledgerRow->average_cost : null;
+                $stockValue = $ledgerRow ? (float) $ledgerRow->ending_value : 0.0;
 
                 $openingStock = 0.0;
                 $periodIn     = $stockIn;
@@ -437,11 +535,8 @@ class ReportDataService
                     'opening_stock'     => $openingStock,
                     'period_in_base'    => $periodIn,
                     'period_out_base'   => $periodOut,
-                    // Null when the item has never been bought or made,
-                    // so the report shows a blank rather than a
-                    // fabricated zero cost.
                     'avg_purchase_cost' => $avgCost,
-                    'stock_value'       => $avgCost !== null ? round($stock * $avgCost, 2) : 0.0,
+                    'stock_value'       => $stockValue,
                     'base_unit_name'    => $item->base_unit_name,
                     // Flags the summary table can badge without the
                     // Vue layer re-deriving thresholds of its own.
@@ -526,6 +621,35 @@ class ReportDataService
             'sold'          => (float) ($sold->get($id)->base ?? 0),
             'consumed'      => (float) ($consumed->get($id)->base ?? 0),
         ]]);
+    }
+
+    /**
+     * The most recent InventoryStockLedger row on or before $asOf,
+     * per item — this item's real moving-average cost and stock
+     * value AS OF that date, straight from the same table
+     * MovingAverageCostingService maintains and actually prices
+     * every sale's Cost of Goods Sold against. An item with no row
+     * at all (never bought, made, or sold as of this date) simply
+     * has no entry in the returned collection, so callers can tell
+     * "genuinely no data yet" apart from "cost happens to be zero".
+     *
+     * Grouped and reduced in PHP rather than a database-specific
+     * "latest row per group" query, since ledger rows are one per
+     * item per day WITH movement (not per calendar day), so the
+     * result set stays small even for a long-running company.
+     *
+     * @param  \Illuminate\Support\Collection<int, int>  $itemIds
+     * @return \Illuminate\Support\Collection<int, InventoryStockLedger>
+     */
+    private function latestLedgerRows(Collection $itemIds, ?string $asOf): Collection
+    {
+        return InventoryStockLedger::query()
+            ->whereIn('item_id', $itemIds)
+            ->when($asOf, fn ($q) => $q->where('date', '<=', $asOf))
+            ->orderBy('date')
+            ->get()
+            ->groupBy('item_id')
+            ->map(fn ($rows) => $rows->last());
     }
 
     private function dayBefore(string $date): string
@@ -668,7 +792,25 @@ class ReportDataService
         $movements = Payment::query()
             ->whereBetween('date', [$from, $to])
             ->where('is_opening_balance', false)
-            ->with(['customer:id,name', 'vendor:id,name'])
+            ->with([
+                'customer:id,name',
+                'vendor:id,name',
+                // A payment recorded against an actual sale/bill
+                // never gets its own customer_id/vendor_id filled in
+                // (only a true standalone receipt/payment does — see
+                // PaymentRecorderService::apply() and
+                // PaymentController::storeReceipt()/storePayment()),
+                // even though the sale/bill it belongs to always
+                // knows its customer or vendor. Falling back to that
+                // is what actually fixes "Party" always showing "—"
+                // for the vast majority of real payments.
+                'payable' => fn ($morphTo) => $morphTo->morphWith([
+                    Sale::class              => ['customer:id,name'],
+                    Expense::class           => ['vendor:id,name'],
+                    InventoryPurchase::class => ['vendor:id,name'],
+                    EquipmentPurchase::class => ['vendor:id,name'],
+                ]),
+            ])
             ->orderByDesc('date')
             ->orderByDesc('id')
             ->get()
@@ -677,7 +819,11 @@ class ReportDataService
                 'amount'    => (float) $p->amount,
                 'method'    => $p->method,
                 'direction' => $p->direction,
-                'party'     => $p->customer?->name ?? $p->vendor?->name ?? '—',
+                'party'     => $p->customer?->name
+                    ?? $p->vendor?->name
+                    ?? $p->payable?->customer?->name
+                    ?? $p->payable?->vendor?->name
+                    ?? '—',
             ]);
 
         return [
@@ -691,20 +837,166 @@ class ReportDataService
     }
 
     /**
-     * Trial Balance — every account's total debits, total credits,
-     * and net balance as of a given date, straight from the general
-     * ledger (JournalLine). Meant for the company's auditor: this is
-     * the standard starting point for preparing financial
-     * statements, so it deliberately mirrors the layout an auditor
-     * already expects rather than anything simplified for the shop
-     * owner. Only accounts with any activity are included, ordered
-     * by account code (the conventional asset → liability → equity →
-     * income → expense order, since STANDARD_CODES was numbered
-     * that way).
+     * Trial Balance — every account's Opening Balance, this period's
+     * Total Debit / Total Credit movement, and the resulting End
+     * Balance, for the auditor.
      *
-     * @return array{as_of: string, rows: Collection, total_debit: float, total_credit: float, is_balanced: bool}
+     * Opening Balance is NOT "zero" or "skipped" — it's everything
+     * ever posted strictly before $from, netted per account. That
+     * matters for balance-sheet accounts (cash, bank, customers,
+     * suppliers, inventory, equipment, equity): their real balance
+     * is cumulative since day one, so a customer who owed 10,000
+     * before $from and paid 3,000 during the period must still show
+     * an End Balance of 7,000 owed — not 3,000. Filtering those
+     * accounts to the period alone (i.e. dropping Opening Balance)
+     * would show a number that doesn't match reality and would
+     * mislead an auditor rather than help them.
+     *
+     * Revenue/expense accounts get the same treatment for
+     * consistency, even though in a system with formal year-end
+     * closing entries their Opening Balance would normally be zero.
+     * This app never posts closing entries (see JournalService), so
+     * their Opening Balance is genuinely "everything before $from"
+     * too — which is what makes End Balance = Opening + this
+     * period's movement always hold, for every account, without
+     * exception.
+     *
+     * @return array{
+     *   from: string, to: string, rows: Collection,
+     *   total_opening_debit: float, total_opening_credit: float,
+     *   total_period_debit: float, total_period_credit: float,
+     *   total_closing_debit: float, total_closing_credit: float,
+     *   is_balanced: bool,
+     * }
      */
-    public function trialBalance(string $asOf): array
+    public function trialBalance(string $from, string $to): array
+    {
+        $sumsByAccount = function (?string $before, ?array $between) {
+            $query = JournalLine::query()
+                ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id');
+
+            if ($before !== null) {
+                $query->where('journal_entries.date', '<', $before);
+            }
+            if ($between !== null) {
+                $query->whereBetween('journal_entries.date', $between);
+            }
+
+            return $query
+                ->groupBy('journal_lines.account_id')
+                ->selectRaw('journal_lines.account_id, SUM(journal_lines.debit) as total_debit, SUM(journal_lines.credit) as total_credit')
+                ->get()
+                ->keyBy('account_id');
+        };
+
+        // Everything strictly before $from, netted — this account's
+        // real balance walking into the period.
+        $opening = $sumsByAccount($from, null);
+
+        // Just this period's movement — this is "Total Debit" /
+        // "Total Credit" on screen.
+        $period = $sumsByAccount(null, [$from, $to]);
+
+        $accountIds = $opening->keys()->merge($period->keys())->unique();
+
+        $rows = Account::query()
+            ->whereIn('id', $accountIds)
+            ->orderBy('code')
+            ->get()
+            ->map(function (Account $account) use ($opening, $period) {
+                $openingNet = round(
+                    (float) ($opening[$account->id]->total_debit ?? 0)
+                    - (float) ($opening[$account->id]->total_credit ?? 0),
+                    2
+                );
+
+                $periodDebit  = round((float) ($period[$account->id]->total_debit ?? 0), 2);
+                $periodCredit = round((float) ($period[$account->id]->total_credit ?? 0), 2);
+
+                $closingNet = round($openingNet + $periodDebit - $periodCredit, 2);
+
+                return [
+                    'code'    => $account->code,
+                    'name'    => $account->name,
+                    'name_ar' => $account->name_ar,
+                    'type'    => $account->type,
+
+                    // Net, shown on whichever side it actually falls —
+                    // same reasoning as the old single-date version:
+                    // don't force an abnormal balance onto its
+                    // "textbook" side, show it where it really is.
+                    'opening_debit'  => $openingNet > 0 ? $openingNet : 0.0,
+                    'opening_credit' => $openingNet < 0 ? -$openingNet : 0.0,
+
+                    'period_debit'  => $periodDebit,
+                    'period_credit' => $periodCredit,
+
+                    'closing_debit'  => $closingNet > 0 ? $closingNet : 0.0,
+                    'closing_credit' => $closingNet < 0 ? -$closingNet : 0.0,
+                ];
+            })
+            // Drop accounts with no activity at all in any column —
+            // an account that had a balance before $from, moved
+            // during the period, or still carries a balance after,
+            // stays; a truly untouched account doesn't clutter the
+            // report.
+            ->filter(fn (array $r) => $r['opening_debit'] || $r['opening_credit']
+                || $r['period_debit'] || $r['period_credit']
+                || $r['closing_debit'] || $r['closing_credit'])
+            ->values();
+
+        return [
+            'from' => $from,
+            'to'   => $to,
+            'rows' => $rows,
+
+            'total_opening_debit'  => round((float) $rows->sum('opening_debit'), 2),
+            'total_opening_credit' => round((float) $rows->sum('opening_credit'), 2),
+            'total_period_debit'   => round((float) $rows->sum('period_debit'), 2),
+            'total_period_credit'  => round((float) $rows->sum('period_credit'), 2),
+            'total_closing_debit'  => round((float) $rows->sum('closing_debit'), 2),
+            'total_closing_credit' => round((float) $rows->sum('closing_credit'), 2),
+
+            // Every real journal entry balances (debit = credit), so
+            // opening, period and closing each balance on their own —
+            // checking closing is enough to catch any real problem.
+            'is_balanced' => FinancialRules::amountsEqual((float) $rows->sum('closing_debit'), (float) $rows->sum('closing_credit')),
+        ];
+    }
+
+    /**
+     * Balance Sheet — Assets, Liabilities, and Equity as of a single
+     * date. Same audience/shape convention as the Trial Balance
+     * above: real account names/codes, not simplified language,
+     * because this is written for the auditor.
+     *
+     * The one tricky part: this app never posts formal year-end
+     * "closing entries" — Income and Expense accounts just
+     * accumulate forever (see JournalService's opening-balance doc
+     * comment, and trialBalance()'s doc comment for the same point).
+     * That means Retained Earnings (account 3900) sits at zero
+     * forever; it's never actually the thing that makes
+     * Assets = Liabilities + Equity hold.
+     *
+     * So this method computes Net Profit itself — every Income
+     * account minus every Expense account, from day one through
+     * $asOf — and shows it as its own line inside Equity. That's
+     * exactly what "closing the year into Retained Earnings" would
+     * have produced anyway, just computed live instead of posted and
+     * stored — see the earlier decision not to build a year-end
+     * closing feature, since the live query is fast enough that
+     * there's nothing closing would have bought except this number,
+     * and this number is just as correct computed on the fly.
+     *
+     * @return array{
+     *   as_of: string,
+     *   assets: Collection, liabilities: Collection, equity: Collection,
+     *   net_profit_to_date: float,
+     *   total_assets: float, total_liabilities: float, total_equity: float,
+     *   is_balanced: bool,
+     * }
+     */
+    public function balanceSheet(string $asOf): array
     {
         $sums = JournalLine::query()
             ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
@@ -714,7 +1006,7 @@ class ReportDataService
             ->get()
             ->keyBy('account_id');
 
-        $rows = Account::query()
+        $accounts = Account::query()
             ->whereIn('id', $sums->keys())
             ->orderBy('code')
             ->get()
@@ -722,33 +1014,59 @@ class ReportDataService
                 $debit  = (float) ($sums[$account->id]->total_debit ?? 0);
                 $credit = (float) ($sums[$account->id]->total_credit ?? 0);
 
-                // Raw net, debit minus credit — NOT flipped by account
-                // type. A real trial balance shows whichever side an
-                // account's balance actually falls on, even when that's
-                // the "abnormal" side (a liability that ended up net
-                // debit because it was overpaid, an asset that went net
-                // credit). Forcing every balance onto its textbook
-                // normal side — what this used to do — silently zeroed
-                // out abnormal balances instead of showing them on the
-                // other column, which is exactly what broke the totals.
-                $net = round($debit - $credit, 2);
+                // Each type's own "normal" direction — asset/expense
+                // shown positive when net debit, liability/equity/
+                // income shown positive when net credit. Unlike the
+                // Trial Balance (which deliberately shows whichever
+                // side a balance actually falls on, abnormal or not),
+                // a Balance Sheet has no second column to put an
+                // abnormal balance in — a liability that ended up net
+                // debit (overpaid) is still shown under Liabilities,
+                // just as a negative number, exactly as any real
+                // balance sheet would.
+                $balance = $account->isDebitNormal()
+                    ? round($debit - $credit, 2)
+                    : round($credit - $debit, 2);
 
                 return [
                     'code'    => $account->code,
                     'name'    => $account->name,
                     'name_ar' => $account->name_ar,
                     'type'    => $account->type,
-                    'debit_balance'  => $net > 0 ? $net : 0.0,
-                    'credit_balance' => $net < 0 ? -$net : 0.0,
+                    'balance' => $balance,
                 ];
             });
 
+        $noActivity = fn (array $a) => $a['balance'] == 0.0;
+
+        $assets      = $accounts->where('type', 'asset')->reject($noActivity)->values();
+        $liabilities = $accounts->where('type', 'liability')->reject($noActivity)->values();
+        $equity      = $accounts->where('type', 'equity')->reject($noActivity)->values();
+
+        $netProfit = round(
+            (float) $accounts->where('type', 'income')->sum('balance')
+            - (float) $accounts->where('type', 'expense')->sum('balance'),
+            2
+        );
+
+        $totalAssets      = round((float) $assets->sum('balance'), 2);
+        $totalLiabilities = round((float) $liabilities->sum('balance'), 2);
+        $totalEquity      = round((float) $equity->sum('balance') + $netProfit, 2);
+
         return [
             'as_of' => $asOf,
-            'rows' => $rows,
-            'total_debit'  => round((float) $rows->sum('debit_balance'), 2),
-            'total_credit' => round((float) $rows->sum('credit_balance'), 2),
-            'is_balanced'  => abs($rows->sum('debit_balance') - $rows->sum('credit_balance')) < 0.01,
+
+            'assets'      => $assets,
+            'liabilities' => $liabilities,
+            'equity'      => $equity,
+
+            'net_profit_to_date' => $netProfit,
+
+            'total_assets'      => $totalAssets,
+            'total_liabilities' => $totalLiabilities,
+            'total_equity'      => $totalEquity,
+
+            'is_balanced' => FinancialRules::amountsEqual($totalAssets, $totalLiabilities + $totalEquity),
         ];
     }
 

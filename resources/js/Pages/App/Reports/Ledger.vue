@@ -17,6 +17,7 @@ import { Head, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import ReportToolbar from '@/Components/App/ReportToolbar.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useMoneyFormat } from '@/composables/useMoneyFormat';
 
 const props = defineProps({
     entries: { type: Array, required: true },
@@ -26,7 +27,7 @@ const props = defineProps({
 
 const page = usePage();
 const { t, locale } = useAppTranslations();
-const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
+const { currency, money } = useMoneyFormat();
 
 const fromInput = ref(props.from);
 const toInput = ref(props.to);
@@ -35,12 +36,6 @@ function applyFilters() {
     router.get(route('app.reports.ledger'), { from: fromInput.value, to: toInput.value }, {
         preserveState: true, preserveScroll: true, replace: true,
     });
-}
-
-function money(v) {
-    return new Intl.NumberFormat(locale.value === 'ar' ? 'ar-EG' : 'en-US', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2,
-    }).format(v || 0);
 }
 
 const TYPE_KEYS = {

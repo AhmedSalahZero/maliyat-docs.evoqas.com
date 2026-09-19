@@ -16,6 +16,7 @@ import { Head, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import ReportToolbar from '@/Components/App/ReportToolbar.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useMoneyFormat } from '@/composables/useMoneyFormat';
 
 const props = defineProps({
     customers: { type: Array, required: true },
@@ -37,13 +38,7 @@ const to   = ref(props.to ?? '');
 
 const page = usePage();
 const { t, locale } = useAppTranslations();
-const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
-
-function money(v) {
-    return new Intl.NumberFormat(locale.value === 'ar' ? 'ar-EG' : 'en-US', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2,
-    }).format(v || 0);
-}
+const { currency, money } = useMoneyFormat();
 
 const rangeQuery = computed(() => ({
     ...(from.value ? { from: from.value } : {}),

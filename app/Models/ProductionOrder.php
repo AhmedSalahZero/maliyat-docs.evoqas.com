@@ -27,8 +27,20 @@ class ProductionOrder extends Model
         'created_by',
     ];
 
+    // qty_produced/material_cost/labor_cost/other_cost_total/total_cost
+    // are decimal(12,2); unit_cost is decimal(12,4) — it genuinely
+    // carries an extra two digits of precision in the database (see
+    // the 2026_09_19_000003 migration) so that dividing a total cost
+    // across a large production run doesn't lose accuracy per unit,
+    // so it's cast to 4 decimal places to match, not truncated to 2.
     protected $casts = [
         'date' => 'date',
+        'qty_produced' => 'decimal:2',
+        'material_cost' => 'decimal:2',
+        'labor_cost' => 'decimal:2',
+        'other_cost_total' => 'decimal:2',
+        'total_cost' => 'decimal:2',
+        'unit_cost' => 'decimal:4',
     ];
 
     public function item(): BelongsTo

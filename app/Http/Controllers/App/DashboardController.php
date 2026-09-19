@@ -8,6 +8,8 @@ use App\Models\Expense;
 use App\Models\InventoryPurchase;
 use App\Models\Payment;
 use App\Models\Sale;
+use App\Services\Reports\ReportDataService;
+use App\Support\FinancialRules;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -18,16 +20,18 @@ use Inertia\Response;
 //  Maliyat Docs — DashboardController (company side)
 //
 //  The landing page after login. It answers, in this order:
-//    1. Where do I stand this period (money in, out, net, cash)?
+//    1. Where do I stand this period (revenue, COGS, real net
+//       profit, and separately, actual cash movement)?
 //    2. What needs chasing (open invoices and bills)?
 //    3. What is actually selling, and who am I doing business with?
 //
-//  Deliberately NOT here: gross profit. The people using this are
-//  shop owners, not accountants — a margin figure that depends on
-//  weighted-average cost invites the wrong conclusion far more often
-//  than it informs. The underlying COGS is still posted to the
-//  ledger (JournalService::postCostOfGoodsSold) for anyone who needs
-//  it from a real report.
+//  Net Profit here is the real, accrual figure — Revenue − Cost of
+//  Goods Sold − Operating Expenses, read from ReportDataService::
+//  profitAndLoss(), the exact same calculation the P&L report uses.
+//  This used to be cash in minus cash out for the period, mislabeled
+//  "Net Profit" — that figure is still shown, honestly relabeled
+//  "Net Cash Flow", since it answers a real and different question
+//  (did money actually move) that accrual profit doesn't.
 //
 //  Every figure below is a grouped aggregate computed in SQL. The
 //  previous version called Sale::all()->filter(...) and then
@@ -47,11 +51,16 @@ use Inertia\Response;
 //  will warn you if a new or edited query in this file forgets that
 //  filter. If you add a query here, add its own `where('company_id',
 //  $companyId)` explicitly; do not assume it's scoped for you.
+//  accrualFigures() is the one exception — it delegates to
+//  ReportDataService::profitAndLoss(), which reads through Eloquent
+//  and so IS scoped by the global company scope as normal.
 // ══════════════════════════════════════════════════════════════════
 class DashboardController extends Controller
 {
     /** How many rows each "top" list and the donut chart carry. */
     private const TOP_LIMIT = 6;
+
+    public function __construct(private readonly ReportDataService $reports) {}
 
     public function index(Request $request): Response
     {
@@ -67,6 +76,7 @@ class DashboardController extends Controller
 
             // ── Headline figures ─────────────────────────────────
             ...$this->cashFigures($companyId, $from, $to),
+            ...$this->accrualFigures($from, $to),
 
             // ── What needs attention ─────────────────────────────
             'open_invoices_count' => $this->openInvoicesCount($companyId),
@@ -74,6 +84,7 @@ class DashboardController extends Controller
 
             // ── What is selling, and to whom ─────────────────────
             'sku_sales'     => $this->skuSales($companyId, $from, $to),
+            'sales_by_channel' => $this->salesByChannel($companyId, $from, $to),
             'top_customers' => $this->topCustomers($companyId, $from, $to),
             'top_suppliers' => $this->topSuppliers($companyId, $from, $to),
         ]);
@@ -85,7 +96,7 @@ class DashboardController extends Controller
     private function resolvePeriod(Request $request): array
     {
         $period = $request->query('period');
-        $period = in_array($period, ['month', 'quarter', 'year'], true) ? $period : 'month';
+        $period = in_array($period, ['month', 'quarter', 'year'], true) ? $period : 'year';
 
         $now = Carbon::today();
 
@@ -129,10 +140,48 @@ class DashboardController extends Controller
         $out = (float) ($rows->period_out ?? 0);
 
         return [
-            'income_this_month'   => round($in, 2),
-            'expenses_this_month' => round($out, 2),
-            'net_this_month'      => round($in - $out, 2),
-            'cash_balance'        => round((float) ($rows->cash_balance ?? 0), 2),
+            // Renamed from income_this_month / expenses_this_month:
+            // those old names read like accrual revenue/expense
+            // figures (and one of them — "income" — sat right next
+            // to COGS on the dashboard as if they came from the same
+            // report). They never did; this is cash that physically
+            // moved in/out of the payments table. Naming it "cash
+            // in/out" everywhere — prop, blade, translation key —
+            // keeps that honest at a glance.
+            'total_cash_in'  => round($in, 2),
+            'total_cash_out' => round($out, 2),
+            'net_cash_flow'  => round($in - $out, 2),
+            'cash_balance'   => round((float) ($rows->cash_balance ?? 0), 2),
+        ];
+    }
+
+    /**
+     * The real, accrual figures for the period — Revenue, Cost of
+     * Goods Sold, and Net Profit (Revenue − COGS − Operating
+     * Expenses) — read straight from ReportDataService::profitAndLoss(),
+     * the exact same calculation the P&L report uses, rather than a
+     * second calculation kept in step by hand. See the class doc
+     * comment for why this replaces what used to be called "Net
+     * Profit" here (it was cash in minus cash out).
+     */
+    private function accrualFigures(string $from, string $to): array
+    {
+        $pl = $this->reports->profitAndLoss($from, $to);
+
+        // All four numbers below come from this ONE profitAndLoss()
+        // call — the exact same calculation the P&L report shows —
+        // so the dashboard's top row can never disagree with itself
+        // (previously "revenue" and "operating_expenses" weren't
+        // pulled out here at all, and the card that stood in for
+        // "revenue" actually read from the cash-basis Payments table
+        // instead, via cashFigures() below — a different source
+        // entirely, which is why it never tied to COGS/Net Profit
+        // sitting right next to it).
+        return [
+            'revenue'             => $pl['revenue'],
+            'cost_of_goods_sold'  => $pl['cost_of_goods_sold'],
+            'operating_expenses'  => $pl['operating_expenses'],
+            'net_profit'          => $pl['net_profit'],
         ];
     }
 
@@ -172,8 +221,9 @@ class DashboardController extends Controller
     /**
      * "Still owes something", as SQL. Shared by both counts above so
      * the definition of open can't drift between them — and it
-     * matches PaymentController's worklist, including the 0.004
-     * tolerance that keeps float noise from reading as a debt.
+     * matches PaymentController's worklist, using the same
+     * FinancialRules::AMOUNT_TOLERANCE tolerance that keeps float
+     * noise from reading as a debt.
      */
     private function unsettledCondition(string $table, string $model): string
     {
@@ -182,7 +232,7 @@ class DashboardController extends Controller
             WHERE p.payable_type = ".DB::getPdo()->quote($model)."
               AND p.payable_id = {$table}.id
               AND p.company_id = ?
-        ), 0) < {$table}.amount - 0.004";
+        ), 0) < {$table}.amount - ".FinancialRules::AMOUNT_TOLERANCE;
     }
 
     /**
@@ -192,7 +242,18 @@ class DashboardController extends Controller
      *
      * Lines with no item_id are free-text/service lines with nothing
      * to attribute, so they're excluded rather than lumped together
-     * under a misleading label.
+     * under a misleading label. This is a REAL, INTENTIONAL reason
+     * this donut's total can sit a little below the Sales figure on
+     * the top row: any free-text line still counts as revenue, but
+     * has no item to show it under here. That's a genuinely
+     * different (and smaller) gap than what was wrong with the
+     * Sales-by-Channel donut above — see that method's doc comment.
+     *
+     * `is_opening_balance` sales are excluded explicitly, though in
+     * practice they never reach this query anyway — they're created
+     * with no sale_lines at all (see OpeningBalanceService), so the
+     * join to sale_lines already drops them. Stated here so that
+     * stays true if opening-balance sales ever gain lines later.
      */
     private function skuSales(int $companyId, string $from, string $to): array
     {
@@ -200,6 +261,7 @@ class DashboardController extends Controller
             ->join('sales', 'sales.id', '=', 'sale_lines.sale_id')
             ->join('items', 'items.id', '=', 'sale_lines.item_id')
             ->where('sales.company_id', $companyId)
+            ->where('sales.is_opening_balance', false)
             ->whereBetween('sales.date', [$from, $to])
             ->groupBy('items.id', 'items.name')
             ->select([
@@ -216,6 +278,65 @@ class DashboardController extends Controller
                 'id'           => (int) $row->id,
                 'name'         => $row->name,
                 'volume'       => round((float) $row->volume, 2),
+                'value'        => round((float) $row->value, 2),
+                'transactions' => (int) $row->transactions,
+            ])
+            ->all();
+    }
+
+    /**
+     * Sales grouped by channel (Direct, Delivery, Online, WhatsApp,
+     * or anything the company added itself — see SalesChannel)
+     * for the "Sales by Channel" donut on the dashboard.
+     *
+     * Two fixes here (previously this donut's total matched neither
+     * the SKU donut nor the Sales/Revenue card above it):
+     *
+     *  1. Summed `sales.subtotal`, NOT `sales.amount`. `amount` is
+     *     VAT-INCLUSIVE (amount = subtotal + vat_amount — see the
+     *     sales table migration), while Revenue on the P&L / top
+     *     row is the Sales Revenue ledger account, which is posted
+     *     at `subtotal` only (VAT is posted separately to VAT
+     *     Payable — see JournalService::postSaleInvoice()). Summing
+     *     `amount` was quietly adding collected VAT into "sales".
+     *
+     *  2. Excludes `is_opening_balance` sales. Those rows exist only
+     *     to record what a customer already owed you on day one —
+     *     they're posted straight to Accounts Receivable, never to
+     *     Sales Revenue (see postOpeningBalanceReceivable()), so
+     *     they were never part of Revenue in the first place and
+     *     shouldn't be counted here either.
+     *
+     * A LEFT JOIN, not an inner one: sales recorded before this
+     * feature existed have no sales_channel_id at all (the column
+     * is nullable — see the 2026_09_26_000002 migration), and those
+     * should still show up rather than silently vanishing from the
+     * chart. They're grouped under "Direct Sales" — SalesChannel's
+     * own default — since that's what they would have been filed
+     * under had the feature existed when they were made.
+     */
+    private function salesByChannel(int $companyId, string $from, string $to): array
+    {
+        return DB::table('sales')
+            ->leftJoin('sales_channels', 'sales_channels.id', '=', 'sales.sales_channel_id')
+            ->where('sales.company_id', $companyId)
+            ->where('sales.is_opening_balance', false)
+            ->whereBetween('sales.date', [$from, $to])
+            ->groupBy('sales_channels.id', 'sales_channels.name', 'sales_channels.name_ar')
+            ->select([
+                'sales_channels.id',
+                DB::raw("COALESCE(sales_channels.name, 'Direct Sales') AS name"),
+                DB::raw("COALESCE(sales_channels.name_ar, 'بيع مباشر') AS name_ar"),
+                DB::raw('COALESCE(SUM(sales.subtotal), 0) AS value'),
+                DB::raw('COUNT(*) AS transactions'),
+            ])
+            ->orderByDesc('value')
+            ->limit(self::TOP_LIMIT)
+            ->get()
+            ->map(fn ($row) => [
+                'id'           => $row->id !== null ? (int) $row->id : null,
+                'name'         => $row->name,
+                'name_ar'      => $row->name_ar,
                 'value'        => round((float) $row->value, 2),
                 'transactions' => (int) $row->transactions,
             ])

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\Concerns\BelongsToCompany;
+use App\Support\FinancialRules;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -19,10 +20,16 @@ class InventoryPurchase extends Model
         'is_opening_balance',
     ];
 
+    // decimal(12,2) in the database (2026_09_14_000010 migration) —
+    // cast explicitly for the same reason as Sale::$casts.
     protected $casts = [
         'date' => 'date',
         'due_date' => 'date',
         'is_opening_balance' => 'boolean',
+        'subtotal' => 'decimal:2',
+        'vat_rate' => 'decimal:2',
+        'vat_amount' => 'decimal:2',
+        'amount' => 'decimal:2',
     ];
 
     public function vendor(): BelongsTo
@@ -67,6 +74,6 @@ class InventoryPurchase extends Model
 
     public function isPaid(): bool
     {
-        return $this->balance() <= 0.004;
+        return $this->balance() <= FinancialRules::AMOUNT_TOLERANCE;
     }
 }

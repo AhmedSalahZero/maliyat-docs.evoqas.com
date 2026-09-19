@@ -13,6 +13,7 @@ use App\Models\JournalEntry;
 use App\Models\Payment;
 use App\Models\ProductionOrder;
 use App\Models\Sale;
+use App\Support\FinancialRules;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -136,7 +137,9 @@ class JournalService
     /**
      * Recognise the cost of inventory actually sold — moves value
      * out of the Inventory asset and into Cost of Goods Sold, at
-     * the item's current weighted-average purchase cost (see
+     * the item's current moving-average cost (see
+     * MovingAverageCostingService — the caller has already priced
+     * this using that engine, not the old, removed
      * Item::averagePurchaseCost()). Called once per sale with the
      * combined cost across every line that references a tracked
      * item; lines with no item (a free-text/service line) don't
@@ -468,6 +471,34 @@ class JournalService
             });
     }
 
+    /**
+     * Reverse ONLY the Cost of Goods Sold entry posted against a
+     * source (a Sale, so far) — leaving any other entry for that
+     * same source (the sale's revenue/invoice entry) untouched.
+     *
+     * Needed because postCostOfGoodsSold() posts its own separate
+     * JournalEntry against the same source as postSaleInvoice(), so
+     * a plain reverseEntriesFor($sale) would reverse both — correct
+     * when the whole sale is being re-entered, wrong when only the
+     * item's moving-average cost changed underneath an otherwise
+     * unchanged sale (see MovingAverageCostingService::repriceSaleCogs()).
+     * Identifies the entry by which account it touches, not by memo
+     * text, since memo strings aren't a stable contract to match on.
+     */
+    public function reverseCostOfGoodsSoldFor(Model $source): void
+    {
+        JournalEntry::query()
+            ->where('source_type', $source::class)
+            ->where('source_id', $source->id)
+            ->whereHas('lines.account', fn ($q) => $q->where('code', Account::COST_OF_GOODS_SOLD))
+            ->get()
+            ->each(function (JournalEntry $entry) {
+                if (! $entry->reverses_id && ! $entry->isReversed()) {
+                    $this->reverse($entry, 'Reversed — cost recalculated (moving average correction)');
+                }
+            });
+    }
+
     // ── Core primitive — the only place that writes journal rows ──
 
     /**
@@ -478,7 +509,14 @@ class JournalService
         $totalDebits  = round(array_sum(array_column($lines, 'debit')), 2);
         $totalCredits = round(array_sum(array_column($lines, 'credit')), 2);
 
-        if (abs($totalDebits - $totalCredits) > 0.01) {
+        // Same tolerance JournalEntry::isBalanced() checks after the
+        // fact (FinancialRules::AMOUNT_TOLERANCE) — an entry that
+        // gets past this guard can no longer fail that check later.
+        // (QA audit, Sep 2026: this used to allow a full cent of
+        // slack here while the model only allowed half a cent, so an
+        // entry could be created successfully and still read back as
+        // "unbalanced". See FinancialRules::AMOUNT_TOLERANCE.)
+        if (! FinancialRules::amountsEqual($totalDebits, $totalCredits)) {
             throw new RuntimeException(
                 "Unbalanced journal entry ({$memo}): debits {$totalDebits} != credits {$totalCredits}"
             );

@@ -4,12 +4,15 @@
 //  Location: resources/js/Pages/App/Reports/ProfitAndLoss.vue
 //
 //  Revenue earned vs. expenses incurred, ACCRUAL basis — see
-//  ReportDataService::profitAndLoss()'s doc comment for why. Kept
-//  deliberately simple for a non-accountant: five headline numbers
-//  (Revenue → COGS → Gross profit → Operating expenses → Net profit,
-//  read top to bottom like a simple income statement) plus two short
-//  breakdowns, each drawn with a plain CSS bar rather than a charting
-//  library — easy to scan on a phone, nothing to configure.
+//  ReportDataService::profitAndLoss()'s doc comment for why. ONE
+//  table, read top to bottom like a real income statement: a
+//  Revenue section (each product, then Total Revenue), a Cost of
+//  Goods Sold section (Trading/Production companies only, then
+//  Total COGS, then Gross Profit), an Operating Expenses section
+//  (each category, then Total Operating Expenses), then Net Profit.
+//  Every row carries its % of total revenue, so this reads as a
+//  standard common-size income statement. No separate summary cards
+//  — the totals live inline, in the one table, where they belong.
 //
 //  Cash movement (what actually came into/left the till or bank) is
 //  a different question, answered on the Cash Flow report instead —
@@ -21,22 +24,30 @@ import { Head, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import ReportToolbar from '@/Components/App/ReportToolbar.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useMoneyFormat } from '@/composables/useMoneyFormat';
 
 const props = defineProps({
     from: { type: String, required: true },
     to: { type: String, required: true },
     revenue: { type: Number, default: 0 },
+    revenue_percent: { type: Number, default: 0 },
     cost_of_goods_sold: { type: Number, default: 0 },
+    cost_of_goods_sold_percent: { type: Number, default: 0 },
     gross_profit: { type: Number, default: 0 },
+    gross_profit_percent: { type: Number, default: 0 },
     operating_expenses: { type: Number, default: 0 },
+    operating_expenses_percent: { type: Number, default: 0 },
     net_profit: { type: Number, default: 0 },
+    net_profit_percent: { type: Number, default: 0 },
     expenses_by_category: { type: Array, default: () => [] },
     income_by_item: { type: Array, default: () => [] },
+    cost_of_goods_sold_by_item: { type: Array, default: () => [] },
+    show_cost_of_goods_sold_by_item: { type: Boolean, default: false },
 });
 
 const page = usePage();
 const { t, locale } = useAppTranslations();
-const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
+const { currency, money } = useMoneyFormat();
 
 const fromInput = ref(props.from);
 const toInput = ref(props.to);
@@ -47,16 +58,49 @@ function applyFilters() {
     });
 }
 
-function money(v) {
-    return new Intl.NumberFormat(locale.value === 'ar' ? 'ar-EG' : 'en-US', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2,
-    }).format(v || 0);
+function pct(value) {
+    return `${Number(value ?? 0).toFixed(1)}%`;
 }
 
-function barWidth(value, rows) {
-    const max = Math.max(...rows.map((r) => Number(r.total) || 0), 1);
-    return `${Math.max((Number(value) / max) * 100, 3)}%`;
-}
+// One flat list of rows drives the whole table — each row is either
+// a section heading (no amount), a plain child line (a product or a
+// category), or a bold total/result line. The template just walks
+// this list, so the table's actual shape lives in one place instead
+// of being duplicated between markup and export.
+const rows = computed(() => {
+    const list = [];
+
+    list.push({ kind: 'heading', label: t('revenueLbl') });
+    for (const row of props.income_by_item) {
+        list.push({ kind: 'child', label: row.item, amount: row.total, percent: row.percent_of_revenue });
+    }
+    list.push({ kind: 'total', label: t('totalRevenueLbl'), amount: props.revenue, percent: props.revenue_percent });
+
+    if (props.show_cost_of_goods_sold_by_item) {
+        list.push({ kind: 'heading', label: t('costOfGoodsSoldLbl') });
+        for (const row of props.cost_of_goods_sold_by_item) {
+            list.push({ kind: 'child', label: row.item, amount: row.total, percent: row.percent_of_revenue });
+        }
+        list.push({ kind: 'total', label: t('totalCostOfGoodsSoldLbl'), amount: props.cost_of_goods_sold, percent: props.cost_of_goods_sold_percent });
+        list.push({ kind: 'result', label: t('grossProfitLbl'), amount: props.gross_profit, percent: props.gross_profit_percent });
+    }
+
+    list.push({ kind: 'heading', label: t('operatingExpensesLbl') });
+    for (const row of props.expenses_by_category) {
+        list.push({ kind: 'child', label: row.category, amount: row.total, percent: row.percent_of_revenue });
+    }
+    list.push({ kind: 'total', label: t('totalOperatingExpensesLbl'), amount: props.operating_expenses, percent: props.operating_expenses_percent });
+
+    list.push({ kind: 'result', label: t('netProfitLbl'), amount: props.net_profit, percent: props.net_profit_percent });
+
+    return list;
+});
+
+const hasAnyRows = computed(() =>
+    props.income_by_item.length > 0
+    || props.expenses_by_category.length > 0
+    || props.cost_of_goods_sold_by_item.length > 0
+);
 
 const excelHref = computed(() => route('app.reports.profit-loss.export', { format: 'excel', from: props.from, to: props.to }));
 const pdfHref = computed(() => route('app.reports.profit-loss.export', { format: 'pdf', from: props.from, to: props.to }));
@@ -84,75 +128,59 @@ const pdfHref = computed(() => route('app.reports.profit-loss.export', { format:
             <button type="button" class="btn btn-primary report-filters__apply" @click="applyFilters">{{ t('applyLbl') }}</button>
         </div>
 
-        <div class="pl-summary">
-            <div class="pl-box">
-                <div class="pl-label">{{ t('revenueLbl') }}</div>
-                <div class="pl-value income">{{ currency }} {{ money(props.revenue) }}</div>
-            </div>
-            <div class="pl-box">
-                <div class="pl-label">{{ t('costOfGoodsSoldLbl') }}</div>
-                <div class="pl-value expense">{{ currency }} {{ money(props.cost_of_goods_sold) }}</div>
-            </div>
-            <div class="pl-box">
-                <div class="pl-label">{{ t('grossProfitLbl') }}</div>
-                <div class="pl-value net" :style="{ color: props.gross_profit >= 0 ? 'var(--color-success-dark)' : 'var(--color-danger-dark)' }">
-                    {{ currency }} {{ money(props.gross_profit) }}
-                </div>
-            </div>
-            <div class="pl-box">
-                <div class="pl-label">{{ t('operatingExpensesLbl') }}</div>
-                <div class="pl-value expense">{{ currency }} {{ money(props.operating_expenses) }}</div>
-            </div>
-            <div class="pl-box">
-                <div class="pl-label">{{ t('netProfitLbl') }}</div>
-                <div class="pl-value net" :style="{ color: props.net_profit >= 0 ? 'var(--color-success-dark)' : 'var(--color-danger-dark)' }">
-                    {{ currency }} {{ money(props.net_profit) }}
-                </div>
-            </div>
-        </div>
-
-        <div class="card card--in">
-            <h2>{{ t('incomeByItemLbl') }}</h2>
-            <div v-if="props.income_by_item.length === 0" class="empty">{{ t('report_no_entries') }}</div>
-            <div v-else class="pl-bars">
-                <div v-for="row in props.income_by_item" :key="row.item" class="pl-bar-row">
-                    <div class="pl-bar-row__label">{{ row.item }}</div>
-                    <div class="pl-bar-row__track">
-                        <div class="pl-bar-row__fill pl-bar-row__fill--income" :style="{ width: barWidth(row.total, props.income_by_item) }"></div>
-                    </div>
-                    <div class="pl-bar-row__value">{{ currency }} {{ money(row.total) }}</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="card card--out">
-            <h2>{{ t('expensesByCategoryLbl') }}</h2>
-            <div v-if="props.expenses_by_category.length === 0" class="empty">{{ t('report_no_entries') }}</div>
-            <div v-else class="pl-bars">
-                <div v-for="row in props.expenses_by_category" :key="row.category" class="pl-bar-row">
-                    <div class="pl-bar-row__label">{{ row.category }}</div>
-                    <div class="pl-bar-row__track">
-                        <div class="pl-bar-row__fill pl-bar-row__fill--expense" :style="{ width: barWidth(row.total, props.expenses_by_category) }"></div>
-                    </div>
-                    <div class="pl-bar-row__value">{{ currency }} {{ money(row.total) }}</div>
-                </div>
-            </div>
+        <div class="card">
+            <div v-if="!hasAnyRows" class="empty">{{ t('report_no_entries') }}</div>
+            <table v-else class="pl-table">
+                <thead>
+                    <tr>
+                        <th>{{ t('descriptionLbl') }}</th>
+                        <th class="pl-table__num">{{ t('amountLbl') }}</th>
+                        <th class="pl-table__num">{{ t('percentOfRevenueLbl') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template v-for="(row, i) in rows" :key="i">
+                        <tr v-if="row.kind === 'heading'" class="pl-row--heading">
+                            <td colspan="3">{{ row.label }}</td>
+                        </tr>
+                        <tr v-else-if="row.kind === 'child'" class="pl-row--child">
+                            <td>{{ row.label }}</td>
+                            <td class="pl-table__num">{{ currency }} {{ money(row.amount) }}</td>
+                            <td class="pl-table__num">{{ pct(row.percent) }}</td>
+                        </tr>
+                        <tr v-else-if="row.kind === 'total'" class="pl-row--total">
+                            <td>{{ row.label }}</td>
+                            <td class="pl-table__num">{{ currency }} {{ money(row.amount) }}</td>
+                            <td class="pl-table__num">{{ pct(row.percent) }}</td>
+                        </tr>
+                        <tr v-else class="pl-row--result" :class="row.amount >= 0 ? 'pl-row--positive' : 'pl-row--negative'">
+                            <td>{{ row.label }}</td>
+                            <td class="pl-table__num">{{ currency }} {{ money(row.amount) }}</td>
+                            <td class="pl-table__num">{{ pct(row.percent) }}</td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
         </div>
     </AppLayout>
 </template>
 
 <style scoped>
-.pl-bars { display: flex; flex-direction: column; gap: 12px; margin-top: 6px; }
-.pl-bar-row { display: grid; grid-template-columns: minmax(90px, 140px) 1fr auto; align-items: center; gap: 10px; }
-.pl-bar-row__label { font-size: 13px; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pl-bar-row__track { background: var(--color-surface-alt); border-radius: var(--radius-pill); height: 10px; overflow: hidden; }
-.pl-bar-row__fill { height: 100%; border-radius: var(--radius-pill); }
-.pl-bar-row__fill--income { background: var(--color-accent-green); }
-.pl-bar-row__fill--expense { background: var(--color-accent-red); }
-.pl-bar-row__value { font-family: var(--font-mono); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.pl-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13px; }
+.pl-table th { text-align: start; font-weight: 600; color: var(--color-text-secondary); padding: 8px; border-bottom: 1px solid var(--color-border, #e5e7eb); }
+.pl-table td { padding: 7px 8px; border-bottom: 1px solid var(--color-border, #eef1f5); }
+.pl-table__num { text-align: end; font-family: var(--font-mono); white-space: nowrap; }
+
+.pl-row--heading td { font-weight: 700; color: var(--color-text-secondary); background: var(--color-surface-alt); padding-top: 12px; }
+.pl-row--child td:first-child { padding-inline-start: 22px; }
+.pl-row--total td { font-weight: 600; border-top: 1px solid var(--color-border, #d7dce5); }
+.pl-row--result td { font-weight: 700; font-size: 14px; border-top: 2px solid var(--color-accent-blue, #2D6CDF); background: var(--color-surface-alt); }
+.pl-row--positive .pl-table__num:nth-child(2) { color: var(--color-success-dark); }
+.pl-row--negative .pl-table__num:nth-child(2) { color: var(--color-danger-dark); }
 
 @media (max-width: 480px) {
-    .pl-bar-row { grid-template-columns: 1fr; gap: 4px; }
-    .pl-bar-row__value { text-align: end; }
+    .pl-table { font-size: 12px; }
+    .pl-table th, .pl-table td { padding: 6px 4px; }
+    .pl-row--child td:first-child { padding-inline-start: 14px; }
 }
 </style>

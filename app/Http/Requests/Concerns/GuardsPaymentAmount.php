@@ -6,6 +6,7 @@ use App\Models\EquipmentPurchase;
 use App\Models\Expense;
 use App\Models\InventoryPurchase;
 use App\Models\Sale;
+use App\Support\FinancialRules;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Database\Eloquent\Model;
 
@@ -28,16 +29,13 @@ use Illuminate\Database\Eloquent\Model;
 //  that really arrived, recorded as revenue, without pretending an
 //  invoice was worth more than it was.
 //
-//  The tolerance below is the same 0.004 the rest of the app uses
-//  to decide "close enough to zero" (see Sale::isPaid()), so a
-//  payment that settles a balance exactly is never rejected because
-//  of a rounding cent.
+//  The tolerance used below is FinancialRules::AMOUNT_TOLERANCE, the
+//  same one the rest of the app uses to decide "close enough to
+//  zero" (see Sale::isPaid()), so a payment that settles a balance
+//  exactly is never rejected because of a rounding cent.
 // ══════════════════════════════════════════════════════════════════
 trait GuardsPaymentAmount
 {
-    /** Half a cent — below this, two figures are the same figure. */
-    private const TOLERANCE = 0.004;
-
     /**
      * The three tables "Pay Money" can settle against, keyed by the
      * payable_type string the form sends.
@@ -72,7 +70,7 @@ trait GuardsPaymentAmount
 
         $remaining = round((float) $payable->amount - $payable->paidAmount() + $creditBack, 2);
 
-        if ($amount <= $remaining + self::TOLERANCE) {
+        if ($amount <= $remaining + FinancialRules::AMOUNT_TOLERANCE) {
             return;
         }
 

@@ -28,7 +28,10 @@ class StoreExpenseRequest extends FormRequest
         $companyId = $this->user()->company_id;
 
         return [
-            'vendor_id'   => ['required', Rule::exists('vendors', 'id')->where('company_id', $companyId)],
+            // Nullable so a Cash Expense can be submitted with no
+            // vendor/employee chosen — ExpenseController::store()
+            // fills in Vendor::cashVendor() when this is left blank.
+            'vendor_id'   => ['nullable', Rule::exists('vendors', 'id')->where('company_id', $companyId)],
             'category_id' => ['required', Rule::exists('categories', 'id')->where('company_id', $companyId)->where('kind', 'expense')],
             'date'        => ['required', ...FinancialRules::date()],
             'amount'      => ['required', ...FinancialRules::amount()],

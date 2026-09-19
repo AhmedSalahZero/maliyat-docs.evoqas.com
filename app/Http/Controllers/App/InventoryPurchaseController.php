@@ -10,6 +10,7 @@ use App\Models\Item;
 use App\Models\PaymentChannel;
 use App\Models\Vendor;
 use App\Services\JournalService;
+use App\Services\MovingAverageCostingService;
 use App\Services\PaymentRecorderService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
@@ -29,12 +30,15 @@ use Inertia\Response;
 //   pre-fills it automatically (matches ledger-prototype-v8.html's
 //   submitInventory(): "remember this UOM definition on the item").
 //
-//  Inventory value uses weighted-average cost per Item (see
-//  Item::averagePurchaseCost() — total cost of everything ever
-//  purchased ÷ total base units ever purchased). Buying more of an
-//  item changes its average cost going forward; it does NOT change
-//  automatically when the item is sold — see SaleController's
-//  Cost of Goods Sold handling for the other half of this.
+//  Inventory value uses a TRUE MOVING AVERAGE cost per item (see
+//  MovingAverageCostingService), recalculated day by day as stock is
+//  bought, sold, and consumed by production — the old
+//  Item::averagePurchaseCost() this used to defer to has been
+//  removed (Sep 2026). Every purchase saved here triggers that
+//  engine (see recalculateCostsFor() below) to price it and, if the
+//  edit or delete touches an earlier date, cascade the correction
+//  forward through anything downstream — see SaleController's Cost
+//  of Goods Sold handling for the other half of this.
 //
 //  Edit/Delete follow the same pattern as Sales/Expenses — see
 //  SaleController's class doc comment for the full reasoning.
@@ -44,6 +48,7 @@ class InventoryPurchaseController extends Controller
     public function __construct(
         private readonly PaymentRecorderService $paymentRecorder,
         private readonly JournalService $journal,
+        private readonly MovingAverageCostingService $costing,
     ) {}
 
     public function index(): Response
@@ -139,6 +144,8 @@ class InventoryPurchaseController extends Controller
 
             $this->journal->postInventoryPurchaseInvoice($purchase);
 
+            $this->recalculateCostsFor($purchase->company_id, $data['lines'], $purchase->date);
+
             $payment = $this->paymentRecorder->apply($purchase, 'out', $data['mode'], [
                 'date'       => $data['date'],
                 'method'     => $data['method'] ?? 'cash',
@@ -170,6 +177,11 @@ class InventoryPurchaseController extends Controller
         $total     = round($subtotal + $vatAmount, 2);
 
         DB::transaction(function () use ($inventoryPurchase, $data, $subtotal, $vatRate, $vatAmount, $total) {
+            // Captured before anything changes — see the identical
+            // note in SaleController::update().
+            $oldItemIds = $inventoryPurchase->lines()->pluck('item_id')->filter()->unique();
+            $oldDate    = $inventoryPurchase->date->toDateString();
+
             $this->journal->reverseEntriesFor($inventoryPurchase);
 
             $inventoryPurchase->update([
@@ -186,7 +198,19 @@ class InventoryPurchaseController extends Controller
             $inventoryPurchase->lines()->delete();
             $this->createLines($inventoryPurchase, $data['lines']);
 
-            $this->journal->postInventoryPurchaseInvoice($inventoryPurchase->fresh());
+            $fresh = $inventoryPurchase->fresh();
+            $this->journal->postInventoryPurchaseInvoice($fresh);
+
+            // Recalculate from whichever is earlier, across every
+            // item on the old lines OR the new lines — see the
+            // identical note in SaleController::update().
+            $newItemIds = collect($data['lines'])->pluck('item_id')->filter()->unique();
+            $itemIds    = $oldItemIds->merge($newItemIds)->unique();
+            $fromDate   = min($oldDate, $fresh->date->toDateString());
+
+            foreach ($itemIds as $itemId) {
+                $this->costing->onItemMovementChanged((int) $fresh->company_id, (int) $itemId, $fromDate);
+            }
         });
 
         return back()->with('success', 'Inventory purchase updated.');
@@ -194,11 +218,11 @@ class InventoryPurchaseController extends Controller
 
     /**
      * Delete a purchase entirely, including its payments and lines.
-     * Note: this changes the item's average cost retroactively (it's
-     * always computed fresh from whatever purchase lines currently
-     * exist) — deleting a purchase is a real correction, not a soft
-     * hide, so that's the correct behavior, not a side effect to
-     * guard against.
+     * The item(s) it supplied stock to have their moving-average
+     * ledger recalculated forward from this date once the lines are
+     * gone — deleting a purchase is a real correction to that
+     * item's cost history, not a soft hide, so that's the correct
+     * behavior, not a side effect to guard against.
      */
     public function destroy(InventoryPurchase $inventoryPurchase): RedirectResponse
     {
@@ -211,14 +235,35 @@ class InventoryPurchaseController extends Controller
                 ['lines' => $inventoryPurchase->lines->toArray()]
             );
 
+            $itemIds   = $inventoryPurchase->lines()->pluck('item_id')->filter()->unique();
+            $date      = $inventoryPurchase->date->toDateString();
+            $companyId = (int) $inventoryPurchase->company_id;
+
             $this->journal->reverseAllForPayable($inventoryPurchase);
             $inventoryPurchase->payments()->delete();
             $inventoryPurchase->installments()->delete();
             $inventoryPurchase->lines()->delete();
             $inventoryPurchase->delete();
+
+            foreach ($itemIds as $itemId) {
+                $this->costing->onItemMovementChanged($companyId, (int) $itemId, $date);
+            }
         });
 
         return back()->with('success', 'Inventory purchase deleted.');
+    }
+
+    /**
+     * @param  array<int, array{item_id:int, qty:float}>  $lines
+     */
+    private function recalculateCostsFor(int $companyId, array $lines, \Illuminate\Support\Carbon|string $fromDate): void
+    {
+        $date = is_string($fromDate) ? $fromDate : $fromDate->toDateString();
+        $itemIds = collect($lines)->pluck('item_id')->filter()->unique();
+
+        foreach ($itemIds as $itemId) {
+            $this->costing->onItemMovementChanged($companyId, (int) $itemId, $date);
+        }
     }
 
     /**

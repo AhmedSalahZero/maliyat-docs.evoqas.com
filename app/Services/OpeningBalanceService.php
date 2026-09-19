@@ -12,6 +12,7 @@ use App\Models\OpeningBalance;
 use App\Models\Payment;
 use App\Models\Sale;
 use App\Models\Vendor;
+use App\Services\MovingAverageCostingService;
 use Illuminate\Support\Facades\DB;
 
 // ══════════════════════════════════════════════════════════════════
@@ -52,6 +53,7 @@ class OpeningBalanceService
 
     public function __construct(
         private readonly JournalService $journal,
+        private readonly MovingAverageCostingService $costing,
     ) {}
 
     /**
@@ -233,6 +235,16 @@ class OpeningBalanceService
                 }
 
                 $this->journal->postOpeningBalanceInventory($purchase);
+
+                // Starting inventory is stock the same as any other
+                // purchase — without this, the item's moving-average
+                // pool (InventoryStockLedger, see
+                // MovingAverageCostingService) would never learn this
+                // stock exists at all, and a later sale of it would
+                // be priced as if it had never been bought.
+                foreach ($inventoryRows as $row) {
+                    $this->costing->onItemMovementChanged($companyId, (int) $row['item_id'], $date);
+                }
             }
 
             // ── Already-owned equipment & tools ───────────────────

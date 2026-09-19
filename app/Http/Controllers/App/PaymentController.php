@@ -6,16 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\App\StorePaymentOutRequest;
 use App\Http\Requests\App\StoreReceiptRequest;
 use App\Http\Requests\App\UpdatePaymentRequest;
-use App\Models\Category;
-use App\Models\Customer;
 use App\Models\EquipmentPurchase;
 use App\Models\Expense;
 use App\Models\InventoryPurchase;
 use App\Models\Payment;
 use App\Models\PaymentChannel;
 use App\Models\Sale;
-use App\Models\Vendor;
 use App\Services\JournalService;
+use App\Support\FinancialRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
@@ -28,21 +26,21 @@ use Inertia\Response;
 //  Location: app/Http/Controllers/App/PaymentController.php
 //
 //  "Receive Money" / "Pay Money" — the two tabs that let a company
-//  settle an already-open invoice/bill, or log cash with no
-//  invoice at all (a cash sale of a service with no formal
-//  invoice, a tip, a one-off reimbursement, etc.).
+//  settle an already-open invoice/bill. A cash sale/expense with no
+//  invoice/bill behind it is no longer created here — see Sales/
+//  Expenses' "Cash Sales"/"Cash Expense" toggle, which creates a
+//  real, fully-accounted Sale/Expense record instead.
 //
 //  Bills can be open on three different tables (Expense,
 //  InventoryPurchase, EquipmentPurchase) — openBills() merges all
 //  three into one list rather than forcing the frontend to call
 //  three endpoints.
 //
-//  Standalone receipts/payments (no sale/bill attached) can still
-//  optionally be tagged with a customer/vendor/category — purely
-//  for reporting (statements), not accounting treatment: a
-//  standalone receipt is still Sales Revenue and a standalone
-//  payment is still an expense either way, tagging it just makes
-//  it traceable to a party/category later.
+//  storeReceipt()/storePayment() still accept a standalone (no
+//  sale_id/payable) shape at the request level — kept, not removed,
+//  because update()/repost() still need to correctly re-post
+//  existing standalone payments recorded before this change; there
+//  is just no UI entry point left that creates a new one that way.
 // ══════════════════════════════════════════════════════════════════
 class PaymentController extends Controller
 {
@@ -56,13 +54,16 @@ class PaymentController extends Controller
      * open-invoices/open-bills lists themselves are fetched
      * separately (see openInvoices()/openBills() below) since
      * they change independently of these lookups.
+     *
+     * Only paymentChannels is needed here now — the standalone
+     * "log one with no invoice/bill" flow (which used to need
+     * customers/vendors/categories) moved to the Sales and Expense
+     * tabs as their "Cash Sales"/"Cash Expense" toggle. This page
+     * is purely for settling an already-open invoice or bill.
      */
     public function page(): Response
     {
         return Inertia::render('App/Payments/Index', [
-            'customers'       => Customer::query()->orderBy('name')->get(['id', 'name']),
-            'vendors'         => Vendor::query()->orderBy('name')->get(['id', 'name']),
-            'categories'      => Category::query()->expenseKind()->orderBy('name')->get(['id', 'name', 'name_ar']),
             'paymentChannels' => PaymentChannel::query()->orderBy('name')->get(['id', 'name']),
         ]);
     }
@@ -94,7 +95,7 @@ class PaymentController extends Controller
             ->withSum('payments as payments_total', 'amount')
             ->whereRaw('COALESCE((select sum(p.amount) from payments p'
                 .' where p.payable_type = ? and p.payable_id = sales.id'
-                .' and p.company_id = sales.company_id), 0) < sales.amount - 0.004', [Sale::class]);
+                .' and p.company_id = sales.company_id), 0) < sales.amount - '.FinancialRules::AMOUNT_TOLERANCE, [Sale::class]);
 
         if ($search !== '') {
             $query->whereHas('customer', fn ($q) => $q->where('name', 'like', '%'.$search.'%'));
@@ -147,7 +148,7 @@ class PaymentController extends Controller
                 ->withSum('payments as payments_total', 'amount')
                 ->whereRaw('COALESCE((select sum(p.amount) from payments p'
                     ." where p.payable_type = ? and p.payable_id = {$table}.id"
-                    ." and p.company_id = {$table}.company_id), 0) < {$table}.amount - 0.004", [$model]);
+                    ." and p.company_id = {$table}.company_id), 0) < {$table}.amount - ".FinancialRules::AMOUNT_TOLERANCE, [$model]);
 
             if ($search !== '') {
                 $query->whereHas('vendor', fn ($q) => $q->where('name', 'like', '%'.$search.'%'));

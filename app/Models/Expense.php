@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\Concerns\BelongsToCompany;
+use App\Support\FinancialRules;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -19,11 +20,16 @@ class Expense extends Model
         'is_production_labor', 'production_labor_applied_snapshot',
     ];
 
+    // 'amount' is decimal(12,2) in the database (see the
+    // 2026_09_14_000009 migration) — cast explicitly for the same
+    // reason as Sale::$casts above. See FinancialRules::AMOUNT_TOLERANCE
+    // for the shared rounding tolerance used by isPaid() below.
     protected $casts = [
         'date' => 'date',
         'due_date' => 'date',
         'is_opening_balance' => 'boolean',
         'is_production_labor' => 'boolean',
+        'amount' => 'decimal:2',
     ];
 
     public function vendor(): BelongsTo
@@ -68,7 +74,7 @@ class Expense extends Model
 
     public function isPaid(): bool
     {
-        return $this->balance() <= 0.004;
+        return $this->balance() <= FinancialRules::AMOUNT_TOLERANCE;
     }
 
     public function isRecurring(): bool

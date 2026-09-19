@@ -25,10 +25,12 @@ import FormInstructions from '@/Components/App/FormInstructions.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
 import { useBusinessType } from '@/composables/useBusinessType';
 
+// rows/categories now arrive as Laravel paginators ({ data, links,
+// ... }) instead of plain arrays — see QA audit M-4.
 const props = defineProps({
     tab:        { type: String, default: 'customers' },
-    rows:       { type: Array, default: () => [] },
-    categories: { type: Array, default: () => [] },
+    rows:       { type: Object, default: () => ({ data: [], links: [] }) },
+    categories: { type: Object, default: () => ({ data: [], links: [] }) },
 });
 
 const { t } = useAppTranslations();
@@ -243,6 +245,14 @@ function unitSummary(row) {
 
     return `1 ${row.uom} = ${per} ${row.base_unit_name || ''}`.trim();
 }
+
+// Laravel's pagination links come as e.g. "&laquo; Previous" / "Next
+// &raquo;" — decoding just these two known-safe arrow entities lets
+// us render the label as plain (auto-escaped) text instead of
+// v-html, which is unsafe by default (see QA audit L-1).
+function paginationLabel(label) {
+    return label.replace(/&laquo;/g, '«').replace(/&raquo;/g, '»');
+}
 </script>
 
 <template>
@@ -354,7 +364,7 @@ function unitSummary(row) {
                         </td>
                     </tr>
 
-                    <template v-for="row in props.rows" :key="row.id">
+                    <template v-for="row in props.rows.data" :key="row.id">
                         <tr v-if="editingId !== row.id">
                             <td class="lookup-name">{{ row.name }}</td>
                             <td v-if="isItems && isProduction">
@@ -433,11 +443,23 @@ function unitSummary(row) {
                         </tr>
                     </template>
 
-                    <tr v-if="props.rows.length === 0 && !addingNew">
+                    <tr v-if="props.rows.data.length === 0 && !addingNew">
                         <td :colspan="4" class="lookup-empty">{{ t('lookup_empty') }}</td>
                     </tr>
                 </tbody>
             </table>
+
+            <div v-if="props.rows.links?.length > 3" class="lookup-pager">
+                <template v-for="(link, i) in props.rows.links" :key="i">
+                    <Link
+                        v-if="link.url"
+                        :href="link.url"
+                        class="btn btn-ghost btn-sm"
+                        :class="{ 'btn-primary': link.active }"
+                        preserve-scroll
+                    >{{ paginationLabel(link.label) }}</Link>
+                </template>
+            </div>
         </div>
 
         <!-- ── Expense categories, on the items tab ───────────── -->
@@ -482,7 +504,7 @@ function unitSummary(row) {
                         </td>
                     </tr>
 
-                    <tr v-for="category in props.categories" :key="category.id">
+                    <tr v-for="category in props.categories.data" :key="category.id">
                         <td>
                             <span v-if="editingCategoryId !== category.id">{{ category.name }}</span>
                             <input v-else v-model="categoryForm.name" type="text" required>
@@ -507,11 +529,23 @@ function unitSummary(row) {
                         </td>
                     </tr>
 
-                    <tr v-if="props.categories.length === 0 && !addingCategory">
+                    <tr v-if="props.categories.data.length === 0 && !addingCategory">
                         <td colspan="3" class="lookup-empty">{{ t('lookup_empty') }}</td>
                     </tr>
                 </tbody>
             </table>
+
+            <div v-if="props.categories.links?.length > 3" class="lookup-pager">
+                <template v-for="(link, i) in props.categories.links" :key="i">
+                    <Link
+                        v-if="link.url"
+                        :href="link.url"
+                        class="btn btn-ghost btn-sm"
+                        :class="{ 'btn-primary': link.active }"
+                        preserve-scroll
+                    >{{ paginationLabel(link.label) }}</Link>
+                </template>
+            </div>
         </div>
     </AppLayout>
 </template>
@@ -561,5 +595,12 @@ function unitSummary(row) {
     text-align: center;
     padding: 26px 12px;
     color: var(--color-text-muted);
+}
+
+.lookup-pager {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 16px;
 }
 </style>

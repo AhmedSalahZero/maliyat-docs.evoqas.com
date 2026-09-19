@@ -4,6 +4,7 @@ namespace App\Http\Requests\Concerns;
 
 use App\Models\Item;
 use App\Models\Sale;
+use App\Support\FinancialRules;
 use Illuminate\Contracts\Validation\Validator;
 
 // ══════════════════════════════════════════════════════════════════
@@ -33,9 +34,6 @@ use Illuminate\Contracts\Validation\Validator;
 // ══════════════════════════════════════════════════════════════════
 trait GuardsStockLevels
 {
-    /** Half a hundredth of a unit — below this, two quantities match. */
-    private const STOCK_TOLERANCE = 0.004;
-
     /**
      * Add an error to any sale line that would take an item below
      * zero.
@@ -80,7 +78,7 @@ trait GuardsStockLevels
 
             $available = round($item->currentStock() + (float) $released->get($itemId, 0), 2);
 
-            if ($qty <= $available + self::STOCK_TOLERANCE) {
+            if ($qty <= $available + FinancialRules::AMOUNT_TOLERANCE) {
                 continue;
             }
 

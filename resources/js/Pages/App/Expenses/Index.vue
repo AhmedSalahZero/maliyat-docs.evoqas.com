@@ -17,7 +17,7 @@
 //  payment plan, stacking a second one on top isn't attempted).
 // ══════════════════════════════════════════════════════════════════
 
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -29,6 +29,8 @@ import EditPaymentsPanel from '@/Components/App/EditPaymentsPanel.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useMoneyFormat } from '@/composables/useMoneyFormat';
+import { todayIso } from '@/Utils/date';
 import { useBusinessType } from '@/composables/useBusinessType';
 import { scrollToForm } from '@/composables/useScrollToForm';
 import { usePermissions } from '@/composables/usePermissions';
@@ -51,14 +53,16 @@ const formCard = ref(null);
 
 // Delete is company-admin only — mirrors Controller::authorizeDelete().
 const { canDelete } = usePermissions();
-const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
+const { currency, money } = useMoneyFormat();
 
-function todayIso() { return new Date().toISOString().slice(0, 10); }
-function money(v) {
-    return new Intl.NumberFormat(locale.value === 'ar' ? 'ar-EG' : 'en-US', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2,
-    }).format(v || 0);
+// Laravel's pagination links come as e.g. "&laquo; Previous" / "Next
+// &raquo;" — decoding just these two known-safe arrow entities lets
+// us render the label as plain (auto-escaped) text instead of
+// v-html, which is unsafe by default (see QA audit L-1).
+function paginationLabel(label) {
+    return label.replace(/&laquo;/g, '«').replace(/&raquo;/g, '»');
 }
+
 function fmt(template, repl) {
     return Object.entries(repl).reduce((s, [k, v]) => s.replace(`:${k}`, v), template);
 }
@@ -108,7 +112,16 @@ async function saveRename(newName) {
 }
 
 // ── Form ─────────────────────────────────────────────────────────
-const isRecurring = ref(false);
+// Three kinds: One-time (full mode picker: now/later/partial/
+// installment), Recurring (existing series setup, unchanged), and
+// Cash Expense — a real, fully-accounted Expense record like
+// One-time, just always paid in full immediately, so it skips
+// straight past the mode picker (see the watcher below, and
+// isRecurring/isCashExpense kept as computed so the rest of this
+// file's existing `isRecurring.value` checks don't need to change).
+const expenseKind = ref('oneTime'); // 'oneTime' | 'recurring' | 'cash'
+const isRecurring = computed(() => expenseKind.value === 'recurring');
+const isCashExpense = computed(() => expenseKind.value === 'cash');
 const editingExpense = ref(null);
 
 const defaultFormState = () => ({
@@ -129,6 +142,10 @@ const defaultFormState = () => ({
 });
 
 const form = useForm(defaultFormState());
+
+watch(expenseKind, (kind) => {
+    if (kind === 'cash') form.mode = 'now';
+});
 
 const installmentSchedule = computed(() => {
     if (isRecurring.value || form.mode !== 'installment' || !form.amount) return [];
@@ -172,7 +189,7 @@ async function createCategory(name) {
 
 function startEdit(expense) {
     editingExpense.value = expense;
-    isRecurring.value = false;
+    expenseKind.value = 'oneTime';
     form.vendor_id = expense.vendor_id;
     form.category_id = expense.category_id;
     form.date = expense.date;
@@ -306,8 +323,9 @@ function freqLabel(freq) {
             <div v-if="editingExpense" class="alert info">{{ t('editingBanner') }}</div>
 
             <div v-if="!editingExpense" class="toggle-btns" style="margin-bottom: 16px;">
-                <button type="button" :class="{ active: !isRecurring }" @click="isRecurring = false">{{ t('oneTimeLbl') }}</button>
-                <button type="button" :class="{ active: isRecurring }" @click="isRecurring = true">{{ t('recurringLbl') }}</button>
+                <button type="button" :class="{ active: expenseKind === 'oneTime' }" @click="expenseKind = 'oneTime'">{{ t('oneTimeLbl') }}</button>
+                <button type="button" :class="{ active: expenseKind === 'recurring' }" @click="expenseKind = 'recurring'">{{ t('recurringLbl') }}</button>
+                <button type="button" :class="{ active: expenseKind === 'cash' }" @click="expenseKind = 'cash'">{{ t('cashExpenseLbl') }}</button>
             </div>
 
             <div class="field-row" style="margin-bottom: 4px;">
@@ -319,12 +337,14 @@ function freqLabel(freq) {
             <div v-if="form.errors.date" class="form-error">{{ form.errors.date }}</div>
 
             <div class="sentence">
-                {{ t('vendorLbl') }}
-                <ComboSelect v-model="form.vendor_id" :options="vendorList" :creating="creatingVendor"
-                             :placeholder="t('selectPlaceholder')" :add-new-label="t('addNewVendor')" @create="createVendor" />
-                <button v-if="selectedVendor" type="button" class="inline-icon-btn" title="Rename" @click="renameTarget = 'vendor'">
-                    <AppIcon name="pencil" />
-                </button>
+                <template v-if="!isCashExpense">
+                    {{ t('vendorLbl') }}
+                    <ComboSelect v-model="form.vendor_id" :options="vendorList" :creating="creatingVendor"
+                                 :placeholder="t('selectPlaceholder')" :add-new-label="t('addNewVendor')" @create="createVendor" />
+                    <button v-if="selectedVendor" type="button" class="inline-icon-btn" title="Rename" @click="renameTarget = 'vendor'">
+                        <AppIcon name="pencil" />
+                    </button>
+                </template>
                 <span class="muted-inline">{{ currency }}</span>
                 <input v-model.number="form.amount" type="number" class="blank-input narrow" step="0.01" placeholder="0.00">
                 {{ t('forLbl') }}
@@ -340,7 +360,7 @@ function freqLabel(freq) {
                 <span>{{ t('isProductionLaborLbl') }}</span>
             </label>
             <p v-if="isProduction && form.is_production_labor" class="form-hint">{{ t('isProductionLaborHint') }}</p>
-            <div v-if="form.errors.vendor_id" class="form-error">{{ form.errors.vendor_id }}</div>
+            <div v-if="!isCashExpense && form.errors.vendor_id" class="form-error">{{ form.errors.vendor_id }}</div>
             <div v-if="form.errors.category_id" class="form-error">{{ form.errors.category_id }}</div>
             <div v-if="form.errors.amount" class="form-error">{{ form.errors.amount }}</div>
 
@@ -363,7 +383,7 @@ function freqLabel(freq) {
             <!-- Payment mode — creation only -->
             <div v-if="!editingExpense" class="paymode-block">
                 <div class="muted-inline" style="margin-bottom: 8px;">{{ t('paymentLbl') }}</div>
-                <div class="toggle-btns">
+                <div v-if="!isCashExpense" class="toggle-btns">
                     <button type="button" :class="{ active: form.mode === 'now' }" @click="form.mode = 'now'">{{ t('payNowLbl') }}</button>
                     <button type="button" :class="{ active: form.mode === 'later' }" @click="form.mode = 'later'">{{ t('payLaterLbl') }}</button>
                     <button type="button" :class="{ active: form.mode === 'partial' }" @click="form.mode = 'partial'">{{ t('payPartialLbl') }}</button>
@@ -440,11 +460,11 @@ function freqLabel(freq) {
             <div class="submit-row" style="display: flex; gap: 10px;">
                 <button type="button" class="btn btn-ghost" v-if="editingExpense" @click="cancelEdit">{{ t('cancelEditBtn') }}</button>
                 <button type="button" :disabled="form.processing" @click="submit">
-                    {{ editingExpense ? t('saveChangesBtn') : (isRecurring ? t('setupRecurringBtn') : t('recordExpenseBtn')) }}
+                    {{ editingExpense ? t('saveChangesBtn') : (isRecurring ? t('setupRecurringBtn') : (isCashExpense ? t('recordCashExpenseBtn') : t('recordExpenseBtn'))) }}
                 </button>
             </div>
             <div v-if="form.recentlySuccessful" class="status-line">
-                {{ selectedVendor?.name }} — {{ currency }} {{ money(form.amount) }} {{ t('recordedNote') }}
+                {{ selectedVendor?.name ?? t('cashExpenseLbl') }} — {{ currency }} {{ money(form.amount) }} {{ t('recordedNote') }}
             </div>
         </div>
 
@@ -502,7 +522,7 @@ function freqLabel(freq) {
 
         <div v-if="props.expenses.links?.length > 3" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px;">
             <template v-for="(link, i) in props.expenses.links" :key="i">
-                <Link v-if="link.url" :href="link.url" class="btn btn-ghost btn-sm" :class="{ 'btn-primary': link.active }" v-html="link.label" preserve-scroll />
+                <Link v-if="link.url" :href="link.url" class="btn btn-ghost btn-sm" :class="{ 'btn-primary': link.active }" preserve-scroll>{{ paginationLabel(link.label) }}</Link>
             </template>
         </div>
 

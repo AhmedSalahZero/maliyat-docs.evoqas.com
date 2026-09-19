@@ -25,6 +25,7 @@ import AppIcon from '@/Components/App/AppIcon.vue';
 import ComboSelect from '@/Components/App/ComboSelect.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useMoneyFormat } from '@/composables/useMoneyFormat';
 import { useBusinessType } from '@/composables/useBusinessType';
 
 const props = defineProps({
@@ -39,13 +40,7 @@ const props = defineProps({
 
 const page = usePage();
 const { t, locale } = useAppTranslations();
-const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
-
-function money(v) {
-    return new Intl.NumberFormat(locale.value === 'ar' ? 'ar-EG' : 'en-US', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2,
-    }).format(v || 0);
-}
+const { currency, money } = useMoneyFormat();
 
 const isPosted = computed(() => props.header.status === 'posted');
 const { isProduction } = useBusinessType();
@@ -200,19 +195,21 @@ function doReset() {
                     <h3 class="sub">{{ t('ob_customers_title') }}</h3>
                     <p class="ob-help">{{ t('ob_customers_help') }}</p>
 
-                    <div v-for="(row, idx) in form.customers" :key="idx" class="ob-row">
-                        <ComboSelect
-                            v-model="row.customer_id"
-                            :options="customerList"
-                            :placeholder="t('selectCustomerLbl')"
-                            :creating="creatingCustomer === idx"
-                            :inline="false"
-                            @create="(name) => { creatingCustomer = idx; quickAdd('customer', name, customerList, 'app.customers.store', (id) => { row.customer_id = id; creatingCustomer = null; }); }"
-                        />
-                        <input type="number" step="0.01" min="0" class="form-input inp-money" v-model="row.amount" placeholder="0.00" />
-                        <button type="button" class="ob-row-remove" @click="removeRow(form.customers, idx)" :aria-label="t('ob_remove_row')">
-                            <AppIcon name="close" />
-                        </button>
+                    <div v-for="(row, idx) in form.customers" :key="idx" class="ob-row ob-row--party">
+                        <div class="ob-row-top">
+                            <ComboSelect
+                                v-model="row.customer_id"
+                                :options="customerList"
+                                :placeholder="t('selectCustomerLbl')"
+                                :creating="creatingCustomer === idx"
+                                :inline="false"
+                                @create="(name) => { creatingCustomer = idx; quickAdd('customer', name, customerList, 'app.customers.store', (id) => { row.customer_id = id; creatingCustomer = null; }); }"
+                            />
+                            <button type="button" class="ob-row-remove" @click="removeRow(form.customers, idx)" :aria-label="t('ob_remove_row')">
+                                <AppIcon name="close" />
+                            </button>
+                        </div>
+                        <input type="number" step="0.01" min="0" class="form-input inp-money ob-row-amount" v-model="row.amount" placeholder="0.00" />
                     </div>
                     <button type="button" class="btn btn-ghost btn-sm" @click="addRow(form.customers, { customer_id: null, amount: null })">
                         + {{ t('ob_add_customer') }}
@@ -224,19 +221,21 @@ function doReset() {
                     <h3 class="sub">{{ t('ob_suppliers_title') }}</h3>
                     <p class="ob-help">{{ t('ob_suppliers_help') }}</p>
 
-                    <div v-for="(row, idx) in form.suppliers" :key="idx" class="ob-row">
-                        <ComboSelect
-                            v-model="row.vendor_id"
-                            :options="vendorList"
-                            :placeholder="t('selectVendorLbl')"
-                            :creating="creatingVendor === idx"
-                            :inline="false"
-                            @create="(name) => { creatingVendor = idx; quickAdd('vendor', name, vendorList, 'app.vendors.store', (id) => { row.vendor_id = id; creatingVendor = null; }); }"
-                        />
-                        <input type="number" step="0.01" min="0" class="form-input inp-money" v-model="row.amount" placeholder="0.00" />
-                        <button type="button" class="ob-row-remove" @click="removeRow(form.suppliers, idx)" :aria-label="t('ob_remove_row')">
-                            <AppIcon name="close" />
-                        </button>
+                    <div v-for="(row, idx) in form.suppliers" :key="idx" class="ob-row ob-row--party">
+                        <div class="ob-row-top">
+                            <ComboSelect
+                                v-model="row.vendor_id"
+                                :options="vendorList"
+                                :placeholder="t('selectVendorLbl')"
+                                :creating="creatingVendor === idx"
+                                :inline="false"
+                                @create="(name) => { creatingVendor = idx; quickAdd('vendor', name, vendorList, 'app.vendors.store', (id) => { row.vendor_id = id; creatingVendor = null; }); }"
+                            />
+                            <button type="button" class="ob-row-remove" @click="removeRow(form.suppliers, idx)" :aria-label="t('ob_remove_row')">
+                                <AppIcon name="close" />
+                            </button>
+                        </div>
+                        <input type="number" step="0.01" min="0" class="form-input inp-money ob-row-amount" v-model="row.amount" placeholder="0.00" />
                     </div>
                     <button type="button" class="btn btn-ghost btn-sm" @click="addRow(form.suppliers, { vendor_id: null, amount: null })">
                         + {{ t('ob_add_supplier') }}
@@ -249,26 +248,32 @@ function doReset() {
                     <p class="ob-help">{{ t('ob_inventory_help') }}</p>
 
                     <div v-for="(row, idx) in form.inventory" :key="idx" class="ob-row ob-row--inventory">
-                        <div class="ob-item-cell">
-                            <ComboSelect
-                                v-model="row.item_id"
-                                :options="itemList"
-                                :placeholder="t('selectProductLbl')"
-                                :creating="creatingItem === idx"
-                                :inline="false"
-                                @create="(name) => { creatingItem = idx; quickAdd('item', name, itemList, 'app.items.store', (id) => { row.item_id = id; creatingItem = null; delete newItemIsRawMaterial[idx]; }, { type: newItemIsRawMaterial[idx] ? 'raw_material' : 'trading' }); }"
-                            />
-                            <label v-if="isProduction" class="raw-material-check" @mousedown.prevent>
-                                <input type="checkbox" v-model="newItemIsRawMaterial[idx]">
-                                {{ t('newItemIsRawMaterialLbl') }}
-                            </label>
+                        <div class="ob-row-top">
+                            <div class="ob-item-cell">
+                                <ComboSelect
+                                    v-model="row.item_id"
+                                    :options="itemList"
+                                    :placeholder="t('selectProductLbl')"
+                                    :creating="creatingItem === idx"
+                                    :inline="false"
+                                    @create="(name) => { creatingItem = idx; quickAdd('item', name, itemList, 'app.items.store', (id) => { row.item_id = id; creatingItem = null; delete newItemIsRawMaterial[idx]; }, { type: newItemIsRawMaterial[idx] ? 'raw_material' : 'trading' }); }"
+                                />
+                                <label v-if="isProduction" class="raw-material-check" @mousedown.prevent>
+                                    <input type="checkbox" v-model="newItemIsRawMaterial[idx]">
+                                    {{ t('newItemIsRawMaterialLbl') }}
+                                </label>
+                            </div>
+                            <button type="button" class="ob-row-remove" @click="removeRow(form.inventory, idx)" :aria-label="t('ob_remove_row')">
+                                <AppIcon name="close" />
+                            </button>
                         </div>
-                        <input type="number" step="0.01" min="0" class="form-input inp-count" v-model="row.qty" :placeholder="t('ob_qty_placeholder')" />
-                        <input type="number" step="0.01" min="0" class="form-input inp-money" v-model="row.unit_price" :placeholder="t('ob_unit_cost_placeholder')" />
-                        <span class="ob-line-total">{{ currency }} {{ money(inventoryLineTotal(row)) }}</span>
-                        <button type="button" class="ob-row-remove" @click="removeRow(form.inventory, idx)" :aria-label="t('ob_remove_row')">
-                            <AppIcon name="close" />
-                        </button>
+                        <div class="ob-row-split">
+                            <input type="number" step="0.01" min="0" class="form-input inp-count" v-model="row.qty" :placeholder="t('ob_qty_placeholder')" />
+                            <input type="number" step="0.01" min="0" class="form-input inp-money" v-model="row.unit_price" :placeholder="t('ob_unit_cost_placeholder')" />
+                        </div>
+                        <div class="ob-row-linetotal">
+                            <span class="ob-line-total">{{ currency }} {{ money(inventoryLineTotal(row)) }}</span>
+                        </div>
                     </div>
                     <button type="button" class="btn btn-ghost btn-sm" @click="addRow(form.inventory, { item_id: null, qty: null, unit_price: null })">
                         + {{ t('ob_add_item') }}
@@ -328,13 +333,28 @@ function doReset() {
 .ob-section { margin-bottom: 16px; }
 .ob-help { font-size: 12.5px; color: var(--color-text-muted); margin: -4px 0 12px; }
 
+/* Default: stacked layout (name/product on its own full-width row,
+   amount — or qty + cost — on the row below). This is what fixes the
+   cramped mobile look for Customers, Suppliers and Inventory. */
 .ob-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--color-border);
+}
+.ob-row:last-of-type { border-bottom: none; margin-bottom: 10px; }
+
+/* Top line: the select (customer / vendor / product) + remove button.
+   The select is the only flexible item, so it takes the full row width. */
+.ob-row-top {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 10px;
 }
-.ob-row > :first-child { flex: 1 1 auto; min-width: 0; }
+.ob-row-top > :first-child { flex: 1 1 auto; min-width: 0; }
+
 .ob-item-cell { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
 .raw-material-check {
     display: flex; align-items: center; gap: 4px;
@@ -344,13 +364,60 @@ function doReset() {
 .raw-material-check input[type="checkbox"] {
     margin: 0 !important; padding: 0; width: 14px; height: 14px; flex-shrink: 0;
 }
-.ob-row .inp-money { width: 130px; flex-shrink: 0; }
-.ob-row--inventory .inp-count { width: 90px; flex-shrink: 0; }
-.ob-row--inventory .ob-line-total { width: 110px; flex-shrink: 0; text-align: end; font-weight: 600; color: var(--color-primary-dark); font-size: 13px; }
-.ob-row--equipment { flex-wrap: wrap; }
+
+/* Customers / suppliers: amount field gets its own full-width row */
+.ob-row-amount { width: 100%; }
+
+/* Inventory: quantity + cost per unit share the second row equally */
+.ob-row-split {
+    display: flex;
+    gap: 10px;
+}
+.ob-row-split > * { flex: 1 1 50%; min-width: 0; width: auto; }
+
+.ob-row-linetotal {
+    display: flex;
+    justify-content: flex-end;
+}
+.ob-line-total { font-weight: 600; color: var(--color-primary-dark); font-size: 13px; }
+
+/* Equipment keeps its original single-line, wrapping layout —
+   not part of this request, left as-is. */
+.ob-row--equipment {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    border-bottom: none;
+    padding-bottom: 0;
+}
 .ob-row--equipment .form-input { flex: 1 1 160px; }
 .ob-row--equipment .form-select { flex: 1 1 140px; }
 .ob-row--equipment .inp-date { width: 150px; flex-shrink: 0; }
+
+/* On wider screens there's room to go back to a single tidy line,
+   so the desktop admin view stays compact instead of stretching tall. */
+@media (min-width: 640px) {
+    .ob-row--party {
+        flex-direction: row;
+        align-items: center;
+        border-bottom: none;
+        padding-bottom: 0;
+    }
+    .ob-row--party .ob-row-top { flex: 1 1 auto; min-width: 0; }
+    .ob-row--party .ob-row-amount { width: 130px; flex-shrink: 0; }
+
+    .ob-row--inventory {
+        flex-direction: row;
+        align-items: center;
+        border-bottom: none;
+        padding-bottom: 0;
+    }
+    .ob-row--inventory .ob-row-top { flex: 1 1 auto; min-width: 0; }
+    .ob-row--inventory .ob-row-split { flex-shrink: 0; }
+    .ob-row--inventory .ob-row-split .inp-count { width: 90px; }
+    .ob-row--inventory .ob-row-split .inp-money { width: 130px; }
+    .ob-row--inventory .ob-row-linetotal { width: 110px; flex-shrink: 0; justify-content: flex-end; }
+}
 
 .ob-row-remove {
     flex-shrink: 0;

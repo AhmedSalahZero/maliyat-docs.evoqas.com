@@ -32,6 +32,8 @@ import FormInstructions from '@/Components/App/FormInstructions.vue';
 import ComboSelect from '@/Components/App/ComboSelect.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useMoneyFormat } from '@/composables/useMoneyFormat';
+import { todayIso } from '@/Utils/date';
 import { scrollToForm } from '@/composables/useScrollToForm';
 import { usePermissions } from '@/composables/usePermissions';
 
@@ -47,13 +49,14 @@ const page = usePage();
 const { t, locale } = useAppTranslations();
 const { canDelete } = usePermissions();
 const formCard = ref(null);
-const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
+const { currency, money } = useMoneyFormat();
 
-function todayIso() { return new Date().toISOString().slice(0, 10); }
-function money(v) {
-    return new Intl.NumberFormat(locale.value === 'ar' ? 'ar-EG' : 'en-US', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2,
-    }).format(v || 0);
+// Laravel's pagination links come as e.g. "&laquo; Previous" / "Next
+// &raquo;" — decoding just these two known-safe arrow entities lets
+// us render the label as plain (auto-escaped) text instead of
+// v-html, which is unsafe by default (see QA audit L-1).
+function paginationLabel(label) {
+    return label.replace(/&laquo;/g, '«').replace(/&raquo;/g, '»');
 }
 
 const productList = ref([...props.products]);
@@ -352,7 +355,7 @@ function onConfirmDialogConfirm() {
 
         <div v-if="props.orders.links?.length > 3" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px;">
             <template v-for="(link, i) in props.orders.links" :key="i">
-                <Link v-if="link.url" :href="link.url" class="btn btn-ghost btn-sm" :class="{ 'btn-primary': link.active }" v-html="link.label" preserve-scroll />
+                <Link v-if="link.url" :href="link.url" class="btn btn-ghost btn-sm" :class="{ 'btn-primary': link.active }" preserve-scroll>{{ paginationLabel(link.label) }}</Link>
             </template>
         </div>
 

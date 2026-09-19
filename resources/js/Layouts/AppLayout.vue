@@ -7,8 +7,8 @@
 //  i.e. everything under the app.* route group.
 //
 //  Mobile (<768px): sticky header + page content + fixed bottom
-//  nav, 3 stops — Home, New Record (center FAB), Reports. "Menu"
-//  opens from the header avatar.
+//  nav, 4 stops in normal flex order — Home, New Record (FAB),
+//  Reports, Settings. "Menu" opens from the header avatar.
 //
 //  Desktop (≥768px, "web view"): bottom nav hidden, replaced by a
 //  two-row step-nav tab strip right under the header — Home + the
@@ -20,10 +20,15 @@
 //  card-hub Home; it's a tab strip. The container also goes full
 //  width at this breakpoint (app.css overrides --app-max-width).
 //
-//  "Menu" (Customers, Vendors, Items & categories, Team, Profile,
-//  theme/language, logout) opens from the header avatar on BOTH
-//  breakpoints — those aren't tabs in the prototype either (they're
-//  dropdowns inside the forms), so they don't belong in the step-nav.
+//  "Menu" (Team, Profile, theme/language, logout) opens from the
+//  header avatar on BOTH breakpoints — same as before.
+//
+//  "Settings" (Customers, Vendors, Items & categories, Opening
+//  balances) is its own sheet now, SettingsSheet.vue, with its own
+//  entry point per breakpoint: a step-nav tab right after Payment
+//  ("Receive / Pay") on desktop, and a fourth bottom-nav button on
+//  mobile. All entries (Ledger) isn't part of either sheet — it
+//  already has a Reports tab/tile everywhere.
 //
 //  "New record" (the FAB sheet) only exists on mobile — on desktop
 //  the six actions are already sitting in the tab strip, so there's
@@ -37,6 +42,7 @@ import { useAppTranslations } from '@/composables/useAppTranslations';
 import AppIcon from '@/Components/App/AppIcon.vue';
 import QuickRecordSheet from '@/Components/App/QuickRecordSheet.vue';
 import MenuSheet from '@/Components/App/MenuSheet.vue';
+import SettingsSheet from '@/Components/App/SettingsSheet.vue';
 import { QUICK_RECORD_ACTIONS } from '@/constants/quickRecordActions';
 import { REPORTS } from '@/constants/reports';
 import { useBusinessType } from '@/composables/useBusinessType';
@@ -122,6 +128,16 @@ const companyName = computed(() => {
 // ── Sheets ────────────────────────────────────────────────────────
 const quickRecordOpen = ref(false);
 const menuOpen        = ref(false);
+const settingsOpen    = ref(false);
+
+// Drives the active state on both the desktop "Settings" tab and the
+// mobile "Settings" bottom-nav button — true while on any of the
+// four pages SettingsSheet links to, even after the sheet itself has
+// been closed (mirrors how the other tabs/buttons stay highlighted).
+const isSettingsRoute = computed(() => route().current('app.customers.*')
+    || route().current('app.vendors.*')
+    || route().current('app.items.*')
+    || route().current('app.opening-balance.*'));
 
 // ── Flash toast ───────────────────────────────────────────────────
 const showFlash    = ref(false);
@@ -225,6 +241,16 @@ watch(() => page.props.flash, (flash) => {
                         <span class="step-dot"><AppIcon :name="action.icon" /></span>
                         <span class="step-label">{{ t(action.tabKey) }}</span>
                     </Link>
+
+                    <!-- Settings — opens SettingsSheet rather than navigating
+                         directly, since it fans out to four destinations
+                         (Customers / Vendors / Items & categories / Opening
+                         balances) instead of one. Sits right after Payment
+                         ("Receive / Pay"), as requested. -->
+                    <button type="button" class="step" :class="{ active: isSettingsRoute }" @click="settingsOpen = true">
+                        <span class="step-dot"><AppIcon name="gear" /></span>
+                        <span class="step-label">{{ t('tab_settings') }}</span>
+                    </button>
                 </nav>
 
                 <nav class="step-nav">
@@ -286,6 +312,9 @@ watch(() => page.props.flash, (flash) => {
                 <span>{{ t('nav_home') }}</span>
             </Link>
 
+            <!-- Back in the normal flex flow — see app.css for why
+                 it's no longer absolutely centered (that caused the
+                 overlap with Reports). -->
             <button type="button" class="bottom-nav__item bottom-nav__item--fab" @click="quickRecordOpen = true">
                 <span class="fab-circle"><AppIcon name="plus" /></span>
                 <span>{{ t('nav_new_record') }}</span>
@@ -295,6 +324,14 @@ watch(() => page.props.flash, (flash) => {
                 <AppIcon name="pl" />
                 <span>{{ t('nav_reports') }}</span>
             </Link>
+
+            <!-- Opens SettingsSheet (Customers / Vendors / Items &
+                 categories / Opening balances) rather than navigating
+                 directly — same reasoning as the desktop tab above. -->
+            <button type="button" class="bottom-nav__item" :class="{ active: isSettingsRoute }" @click="settingsOpen = true">
+                <AppIcon name="gear" />
+                <span>{{ t('nav_settings') }}</span>
+            </button>
         </nav>
 
         <!-- ══════════════════════════════════════════════════════
@@ -302,6 +339,7 @@ watch(() => page.props.flash, (flash) => {
         ═══════════════════════════════════════════════════════════ -->
         <QuickRecordSheet v-model:open="quickRecordOpen" />
         <MenuSheet v-model:open="menuOpen" />
+        <SettingsSheet v-model:open="settingsOpen" />
 
         <!-- ── Flash toast ─────────────────────────────────────── -->
         <div class="toast-stack">

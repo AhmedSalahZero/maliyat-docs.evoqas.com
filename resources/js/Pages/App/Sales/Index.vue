@@ -21,7 +21,7 @@
 //  customer record, not just local state.
 // ══════════════════════════════════════════════════════════════════
 
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -33,6 +33,8 @@ import EditPaymentsPanel from '@/Components/App/EditPaymentsPanel.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useMoneyFormat } from '@/composables/useMoneyFormat';
+import { todayIso } from '@/Utils/date';
 import { scrollToForm } from '@/composables/useScrollToForm';
 import { usePermissions } from '@/composables/usePermissions';
 
@@ -40,6 +42,7 @@ const props = defineProps({
     customers: { type: Array, required: true },
     items:     { type: Array, required: true },
     paymentChannels: { type: Array, required: true },
+    salesChannels: { type: Array, required: true },
     sales:     { type: Object, required: true }, // paginator: { data, links, ... }
 });
 
@@ -53,16 +56,14 @@ const formCard = ref(null);
 // Delete is company-admin only — mirrors Controller::authorizeDelete().
 const { canDelete } = usePermissions();
 
-const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
+const { currency, money } = useMoneyFormat();
 
-function todayIso() {
-    return new Date().toISOString().slice(0, 10);
-}
-
-function money(value) {
-    return new Intl.NumberFormat(locale.value === 'ar' ? 'ar-EG' : 'en-US', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2,
-    }).format(value || 0);
+// Laravel's pagination links come as e.g. "&laquo; Previous" / "Next
+// &raquo;" — decoding just these two known-safe arrow entities lets
+// us render the label as plain (auto-escaped) text instead of
+// v-html, which is unsafe by default (see QA audit L-1).
+function paginationLabel(label) {
+    return label.replace(/&laquo;/g, '«').replace(/&raquo;/g, '»');
 }
 
 function fmt(template, replacements) {
@@ -76,9 +77,20 @@ function fmt(template, replacements) {
 const customerList = ref([...props.customers]);
 const itemList = ref([...props.items]);
 const channelList = ref([...props.paymentChannels]);
+const salesChannelList = ref([...props.salesChannels]);
 const creatingCustomer = ref(false);
 const creatingItemForRow = ref(null);
 const creatingChannel = ref(false);
+const creatingSalesChannel = ref(false);
+
+// "Direct Sales" is what every new sale defaults to — see
+// SalesChannel::defaultChannel() on the backend. Falls back to
+// whichever channel happens to be first if that name isn't found
+// (shouldn't normally happen — seedDefaults() always creates it).
+function defaultSalesChannelId() {
+    const direct = salesChannelList.value.find((c) => c.name === 'Direct Sales');
+    return direct?.id ?? salesChannelList.value[0]?.id ?? null;
+}
 
 const selectedCustomer = computed(() =>
     customerList.value.find((c) => c.id === form.customer_id) ?? null
@@ -105,11 +117,39 @@ async function saveRename(newName) {
     }
 }
 
+// ── Sale kind — Sales Invoice vs Cash Sales ───────────────────────
+// Both create a real, fully-accounted Sale record (line items,
+// customer, journal entries, appears in P&L) — the only difference
+// is Cash Sales skips straight to "paid in full now" and hides the
+// later/partial/installment payment options, since a cash sale by
+// definition isn't sold on credit. See the watcher below.
+const saleKind = ref('invoice'); // 'invoice' | 'cash'
+const isCashSale = computed(() => saleKind.value === 'cash');
+
+watch(saleKind, (kind) => {
+    if (kind === 'cash') form.mode = 'now';
+});
+
+// Debugging aid: every field with its own v-if below (date,
+// customer_id, the top-level "lines" array rule, amount_now,
+// installment_count, due_date) is listed here so it isn't shown
+// twice — everything else Laravel might reject the request for
+// (a specific line's qty/unit_price/item_id, mode, method,
+// payment_channel_id, vat_rate, or anything else) previously had
+// no v-if anywhere in this form at all, so a rejection on one of
+// those fields showed the person literally nothing — the page just
+// sat there looking like "did not save". This surfaces all of it.
+const shownErrorKeys = ['date', 'customer_id', 'sales_channel_id', 'lines', 'amount_now', 'installment_count', 'due_date'];
+const otherErrors = computed(() =>
+    Object.entries(form.errors).filter(([key]) => !shownErrorKeys.includes(key))
+);
+
 // ── Edit state ───────────────────────────────────────────────────
 const editingSale = ref(null); // the full sale row being edited, or null when creating
 
 const defaultFormState = () => ({
     customer_id: null,
+    sales_channel_id: defaultSalesChannelId(),
     date: todayIso(),
     lines: [{ item_id: null, qty: null, unit_price: null }],
     vat_rate: 0,
@@ -189,9 +229,22 @@ async function createChannel(name) {
     }
 }
 
+async function createSalesChannel(name) {
+    creatingSalesChannel.value = true;
+    try {
+        const { data } = await axios.post(route('app.sales-channels.store'), { name }, { headers: { Accept: 'application/json' } });
+        salesChannelList.value.push(data);
+        form.sales_channel_id = data.id;
+    } finally {
+        creatingSalesChannel.value = false;
+    }
+}
+
 function startEdit(sale) {
     editingSale.value = sale;
+    saleKind.value = 'invoice';
     form.customer_id = sale.customer_id;
+    form.sales_channel_id = sale.sales_channel_id ?? defaultSalesChannelId();
     form.date = sale.date;
     form.lines = sale.lines.length
         ? sale.lines.map((l) => ({ item_id: l.item_id, qty: l.qty, unit_price: l.unit_price }))
@@ -220,12 +273,25 @@ function submit() {
 function submitCreate() {
     form.transform((data) => ({
         ...data,
-        lines: data.lines.filter((line) => line.item_id && Number(line.qty) > 0),
+        // A line only needs qty + unit price to be real — the item
+        // is optional (a lump-sum/no-catalog-item line is valid;
+        // see postCogsForLines()'s doc comment). Previously this
+        // also required item_id, which silently deleted any line
+        // where no specific product was picked — exactly the case
+        // for a Cash Sale with no item selected, so the sale ended
+        // up with zero lines and was rejected.
+        lines: data.lines.filter((line) => Number(line.qty) > 0 && line.unit_price !== null && line.unit_price !== ''),
     })).post(route('app.sales.store'), {
         preserveScroll: true,
         onSuccess: () => {
             form.reset();
             Object.assign(form, defaultFormState());
+        },
+        onError: (errors) => {
+            // Temporary debugging aid — open the browser console
+            // (F12) after a failed save to see exactly what the
+            // server rejected and why.
+            console.error('Sale did not save — server validation errors:', errors);
         },
     });
 }
@@ -233,9 +299,10 @@ function submitCreate() {
 function doSubmitEdit(saleId) {
     form.transform((data) => ({
         customer_id: data.customer_id,
+        sales_channel_id: data.sales_channel_id,
         date: data.date,
         vat_rate: data.vat_rate,
-        lines: data.lines.filter((line) => line.item_id && Number(line.qty) > 0),
+        lines: data.lines.filter((line) => Number(line.qty) > 0 && line.unit_price !== null && line.unit_price !== ''),
             due_date: data.due_date || null,
     })).put(route('app.sales.update', saleId), {
         preserveScroll: true,
@@ -287,6 +354,27 @@ function confirmDelete(sale) {
 function onConfirmDialogConfirm() {
     confirmDialog.value.action?.();
 }
+
+// Same language fallback ComboSelect uses internally for any option
+// that ships a name_ar — Arabic when the UI is in Arabic and a
+// translation exists, otherwise the plain (English) name.
+function saleChannelLabel(sale) {
+    if (locale.value === 'ar' && sale.sales_channel_ar) {
+        return sale.sales_channel_ar;
+    }
+
+    return sale.sales_channel;
+}
+
+// What was sold, for the Recent sales list — e.g. "Chair x2, Delivery".
+// A line entered with no specific product/service picked (item_id
+// left blank) contributes nothing rather than a blank placeholder.
+function saleItemsLabel(sale) {
+    return (sale.lines || [])
+        .map((line) => line.item)
+        .filter(Boolean)
+        .join(', ');
+}
 </script>
 
 <template>
@@ -307,15 +395,34 @@ function onConfirmDialogConfirm() {
         <div ref="formCard" class="card card--in">
             <div v-if="editingSale" class="alert info">{{ t('editingBanner') }}</div>
 
+            <div v-if="!editingSale" class="toggle-btns" style="margin-bottom: 16px;">
+                <button type="button" :class="{ active: saleKind === 'invoice' }" @click="saleKind = 'invoice'">{{ t('saleKindInvoiceLbl') }}</button>
+                <button type="button" :class="{ active: saleKind === 'cash' }" @click="saleKind = 'cash'">{{ t('saleKindCashLbl') }}</button>
+            </div>
+
             <div class="field-row" style="margin-bottom: 4px;">
                 <div class="field">
                     <label>{{ t('dateLbl') }}</label>
                     <input v-model="form.date" type="date" :max="todayIso()" class="inp-date" style="width: 15rem;">
                 </div>
+                <div class="field">
+                    <label>{{ t('salesChannelLbl') }}</label>
+                    <ComboSelect
+                        v-model="form.sales_channel_id"
+                        :options="salesChannelList"
+                        option-label="name"
+                        :creating="creatingSalesChannel"
+                        :placeholder="t('selectPlaceholder')"
+                        :add-new-label="t('addNewSalesChannel')"
+                        :inline="false"
+                        @create="createSalesChannel"
+                    />
+                </div>
             </div>
             <div v-if="form.errors.date" class="form-error">{{ form.errors.date }}</div>
+            <div v-if="form.errors.sales_channel_id" class="form-error">{{ form.errors.sales_channel_id }}</div>
 
-            <div class="sentence">
+            <div v-if="!isCashSale" class="sentence">
                 {{ t('sellTo') }}
                 <ComboSelect
                     v-model="form.customer_id"
@@ -329,7 +436,7 @@ function onConfirmDialogConfirm() {
                     <AppIcon name="pencil" />
                 </button>
             </div>
-            <div v-if="form.errors.customer_id" class="form-error">{{ form.errors.customer_id }}</div>
+            <div v-if="!isCashSale && form.errors.customer_id" class="form-error">{{ form.errors.customer_id }}</div>
 
             <table class="lines">
                 <colgroup>
@@ -389,7 +496,7 @@ function onConfirmDialogConfirm() {
             <!-- Payment mode — creation only, not editable (see UpdateSaleRequest) -->
             <div v-if="!editingSale" class="paymode-block">
                 <div class="muted-inline" style="margin-bottom: 8px;">{{ t('paymentLbl') }}</div>
-                <div class="toggle-btns">
+                <div v-if="!isCashSale" class="toggle-btns">
                     <button type="button" :class="{ active: form.mode === 'now' }" @click="form.mode = 'now'">{{ t('payNowLbl') }}</button>
                     <button type="button" :class="{ active: form.mode === 'later' }" @click="form.mode = 'later'">{{ t('payLaterLbl') }}</button>
                     <button type="button" :class="{ active: form.mode === 'partial' }" @click="form.mode = 'partial'">{{ t('payPartialLbl') }}</button>
@@ -466,14 +573,24 @@ function onConfirmDialogConfirm() {
                 @create-channel="createChannel"
             />
 
+            <!-- Temporary debugging aid — shows any server rejection
+                 not already displayed next to its own field above,
+                 so a failed save is never silent. Safe to remove
+                 once Cash Sales is confirmed working. -->
+            <div v-if="otherErrors.length" class="alert warning" style="margin-top: 12px;">
+                <div v-for="[key, message] in otherErrors" :key="key">
+                    <strong>{{ key }}:</strong> {{ message }}
+                </div>
+            </div>
+
             <div class="submit-row" style="display: flex; gap: 10px;">
                 <button type="button" class="btn btn-ghost" v-if="editingSale" @click="cancelEdit">{{ t('cancelEditBtn') }}</button>
                 <button type="button" :disabled="form.processing" @click="submit">
-                    {{ editingSale ? t('saveChangesBtn') : t('recordSaleBtn') }}
+                    {{ editingSale ? t('saveChangesBtn') : (isCashSale ? t('recordCashSaleBtn') : t('recordSaleBtn')) }}
                 </button>
             </div>
             <div v-if="form.recentlySuccessful" class="status-line">
-                {{ selectedCustomer?.name }} — {{ currency }} {{ money(total) }} {{ t('recordedNote') }}
+                {{ selectedCustomer?.name ?? t('saleKindCashLbl') }} — {{ currency }} {{ money(total) }} {{ t('recordedNote') }}
             </div>
         </div>
 
@@ -484,9 +601,13 @@ function onConfirmDialogConfirm() {
             <div v-for="sale in props.sales.data" :key="sale.id" class="settle-item">
                 <div class="settle-top">
                     <div>
-                        <div class="who">{{ sale.customer }}</div>
+                        <div class="who">
+                            {{ sale.customer }}
+                            <span v-if="saleItemsLabel(sale)" class="who-items">— {{ saleItemsLabel(sale) }}</span>
+                        </div>
                         <div class="meta">
-                            {{ sale.date }} ·
+                            {{ sale.date }}
+                            <span v-if="saleChannelLabel(sale)"> · {{ saleChannelLabel(sale) }}</span> ·
                             <span :class="sale.is_paid ? 'text-success' : 'text-warning'">
                                 {{ t('paidLbl') }} {{ currency }} {{ money(sale.paid_amount) }} / {{ currency }} {{ money(sale.amount) }}
                             </span>
@@ -503,7 +624,7 @@ function onConfirmDialogConfirm() {
 
         <div v-if="props.sales.links?.length > 3" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px;">
             <template v-for="(link, i) in props.sales.links" :key="i">
-                <Link v-if="link.url" :href="link.url" class="btn btn-ghost btn-sm" :class="{ 'btn-primary': link.active }" v-html="link.label" preserve-scroll />
+                <Link v-if="link.url" :href="link.url" class="btn btn-ghost btn-sm" :class="{ 'btn-primary': link.active }" preserve-scroll>{{ paginationLabel(link.label) }}</Link>
             </template>
         </div>
 

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\UserRole;
 use App\Models\Category;
 use App\Models\Company;
+use App\Models\SalesChannel;
 use App\Models\User;
 use App\Services\Auth\EmailVerificationService;
 use App\Services\JournalService;
@@ -62,6 +63,7 @@ class RegisterService
 
             $this->journal->seedChartOfAccounts($company);
             Category::seedDefaults($company->id);
+            SalesChannel::seedDefaults($company->id);
 
             return $user;
         });

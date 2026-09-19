@@ -84,6 +84,10 @@
         }
         table.report-table tbody td.align-end { text-align: {{ ($doc['rtl'] ?? false) ? 'left' : 'right' }}; }
         table.report-table tbody tr.zebra td { background: #F4F7FC; }
+        table.report-table tbody tr.row-heading td { font-weight: bold; background: #F4F7FC; color: #1B2233; padding-top: 10px; }
+        table.report-table tbody tr.row-total td { font-weight: bold; border-top: 1px solid #E4E9F2; }
+        table.report-table tbody tr.row-result td { font-weight: bold; font-size: 11px; background: #E8F0FE; color: #1E4FB0; border-top: 2px solid #2D6CDF; }
+        table.report-table tbody td.indent { padding-left: {{ ($doc['rtl'] ?? false) ? '8px' : '22px' }}; padding-right: {{ ($doc['rtl'] ?? false) ? '22px' : '8px' }}; }
         table.report-table tfoot td {
             font-size: 10.5px;
             font-weight: bold;
@@ -144,9 +148,25 @@
             </thead>
             <tbody>
                 @forelse ($section['rows'] ?? [] as $i => $row)
-                    <tr @if ($i % 2 === 1) class="zebra" @endif>
+                    @php
+                        // See ExcelReportExporter's doc comment for
+                        // this same optional row shape — a plain
+                        // report keeps passing a plain array of cell
+                        // values, unaffected by any of this.
+                        $isStyledRow = is_array($row) && array_key_exists('cells', $row);
+                        $cells       = $isStyledRow ? $row['cells'] : $row;
+                        $emphasis    = $isStyledRow ? ($row['emphasis'] ?? null) : null;
+                        $indent      = $isStyledRow && !empty($row['indent']);
+                        $rowClass    = match ($emphasis) {
+                            'heading' => 'row-heading',
+                            'total'   => 'row-total',
+                            'result'  => 'row-result',
+                            default   => ($i % 2 === 1) ? 'zebra' : '',
+                        };
+                    @endphp
+                    <tr class="{{ $rowClass }}">
                         @foreach ($section['columns'] as $c => $column)
-                            <td class="{{ ($column['align'] ?? 'start') === 'end' ? 'align-end' : '' }}">{{ $row[$c] ?? '' }}</td>
+                            <td class="{{ ($column['align'] ?? 'start') === 'end' ? 'align-end' : '' }} {{ ($indent && $c === 0) ? 'indent' : '' }}">{{ $cells[$c] ?? '' }}</td>
                         @endforeach
                     </tr>
                 @empty

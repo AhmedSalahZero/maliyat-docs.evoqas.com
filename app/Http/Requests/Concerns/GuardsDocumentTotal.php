@@ -27,9 +27,6 @@ use Illuminate\Contracts\Validation\Validator;
 // ══════════════════════════════════════════════════════════════════
 trait GuardsDocumentTotal
 {
-    /** Half a cent — matches GuardsPaymentAmount and Sale::isPaid(). */
-    private const TOTAL_TOLERANCE = 0.004;
-
     /**
      * Sum qty x unit_price across a `lines` array the way the
      * controller will, so validation and the controller cannot
@@ -72,7 +69,7 @@ trait GuardsDocumentTotal
 
         $amountNow = (float) $this->input('amount_now', 0);
 
-        if ($amountNow > $total + self::TOTAL_TOLERANCE) {
+        if ($amountNow > $total + FinancialRules::AMOUNT_TOLERANCE) {
             $validator->errors()->add('amount_now', __('errors.paid_now_exceeds_total', [
                 'total' => number_format($total, 2),
             ]));

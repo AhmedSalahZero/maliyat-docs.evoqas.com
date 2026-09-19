@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\Concerns\BelongsToCompany;
+use App\Support\FinancialRules;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -56,8 +57,13 @@ class JournalEntry extends Model
         return (float) $this->lines()->sum('credit');
     }
 
+    // Uses the same tolerance JournalService::post() enforces when
+    // an entry is created, via FinancialRules::AMOUNT_TOLERANCE —
+    // see that constant's doc comment. An entry that was accepted
+    // as balanced on the way in can no longer read as "unbalanced"
+    // here, because both checks now share one definition of "equal".
     public function isBalanced(): bool
     {
-        return abs($this->totalDebits() - $this->totalCredits()) <= 0.004;
+        return FinancialRules::amountsEqual($this->totalDebits(), $this->totalCredits());
     }
 }

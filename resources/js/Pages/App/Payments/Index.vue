@@ -21,69 +21,24 @@ import { Head, usePage, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import FormInstructions from '@/Components/App/FormInstructions.vue';
-import ComboSelect from '@/Components/App/ComboSelect.vue';
 import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useMoneyFormat } from '@/composables/useMoneyFormat';
+import { todayIso } from '@/Utils/date';
 
 const props = defineProps({
-    customers:       { type: Array, required: true },
-    vendors:         { type: Array, required: true },
-    categories:      { type: Array, required: true },
     paymentChannels: { type: Array, required: true },
 });
 
 const page = usePage();
 const { t, locale } = useAppTranslations();
-const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
-
-function todayIso() { return new Date().toISOString().slice(0, 10); }
-function money(v) {
-    return new Intl.NumberFormat(locale.value === 'ar' ? 'ar-EG' : 'en-US', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2,
-    }).format(v || 0);
-}
+const { currency, money } = useMoneyFormat();
 
 const activeTab = ref('receive'); // 'receive' | 'pay'
 
-const customerList = ref([...props.customers]);
-const vendorList = ref([...props.vendors]);
-const categoryList = ref([...props.categories]);
 const channelList = ref([...props.paymentChannels]);
-const creatingCustomer = ref(false);
-const creatingVendor = ref(false);
-const creatingCategory = ref(false);
 const creatingChannel = ref(false);
 
-async function createCustomer(name) {
-    creatingCustomer.value = true;
-    try {
-        const { data } = await axios.post(route('app.customers.store'), { name }, { headers: { Accept: 'application/json' } });
-        customerList.value.push(data);
-        genReceive.value.customer_id = data.id;
-    } finally {
-        creatingCustomer.value = false;
-    }
-}
-async function createVendor(name) {
-    creatingVendor.value = true;
-    try {
-        const { data } = await axios.post(route('app.vendors.store'), { name, type: 'vendor' }, { headers: { Accept: 'application/json' } });
-        vendorList.value.push(data);
-        genPay.value.vendor_id = data.id;
-    } finally {
-        creatingVendor.value = false;
-    }
-}
-async function createCategory(name) {
-    creatingCategory.value = true;
-    try {
-        const { data } = await axios.post(route('app.categories.store'), { name, kind: 'expense' }, { headers: { Accept: 'application/json' } });
-        categoryList.value.push(data);
-        genPay.value.category_id = data.id;
-    } finally {
-        creatingCategory.value = false;
-    }
-}
 async function createChannel(name, target) {
     creatingChannel.value = true;
     try {
@@ -208,37 +163,13 @@ function confirmSettleBill(bill) {
     });
 }
 
-// ── Generic receive / pay (no invoice/bill) ──────────────────────
-const genReceive = ref({ date: todayIso(), amount: null, customer_id: null, method: 'cash', payment_channel_id: null, note: '' });
-const genPay = ref({ date: todayIso(), amount: null, vendor_id: null, category_id: null, method: 'cash', payment_channel_id: null, note: '' });
-const genReceiveErrors = ref({});
-const genPayErrors = ref({});
-const genReceiveStatus = ref('');
-const genPayStatus = ref('');
-
-function submitGenericReceive() {
-    genReceiveErrors.value = {};
-    router.post(route('app.payments.receive'), { ...genReceive.value }, {
-        preserveScroll: true,
-        onSuccess: () => {
-            genReceiveStatus.value = `${currency.value} ${money(genReceive.value.amount)} ${t('recordedNote')}`;
-            genReceive.value = { date: todayIso(), amount: null, customer_id: null, method: 'cash', payment_channel_id: null, note: '' };
-        },
-        onError: (errors) => { genReceiveErrors.value = errors; },
-    });
-}
-
-function submitGenericPay() {
-    genPayErrors.value = {};
-    router.post(route('app.payments.pay'), { ...genPay.value }, {
-        preserveScroll: true,
-        onSuccess: () => {
-            genPayStatus.value = `${currency.value} ${money(genPay.value.amount)} ${t('recordedNote')}`;
-            genPay.value = { date: todayIso(), amount: null, vendor_id: null, category_id: null, method: 'cash', payment_channel_id: null, note: '' };
-        },
-        onError: (errors) => { genPayErrors.value = errors; },
-    });
-}
+// Standalone "log one with no invoice/bill" (cash sale / cash
+// expense) used to live here. It's been moved to the Sales tab
+// ("Cash Sales" toggle) and the Expense tab ("Cash Expense" toggle)
+// — see Sales/Index.vue and Expenses/Index.vue — where it creates a
+// real, fully-accounted record instead of a standalone payment with
+// no invoice/bill behind it. This page is now purely for settling
+// an already-open invoice or bill.
 </script>
 
 <template>
@@ -304,44 +235,6 @@ function submitGenericPay() {
 
                 <p v-if="invoicesHasMore" class="settle-more">{{ t('moreOpenItemsHint') }}</p>
             </div>
-
-            <h3 class="sub">{{ t('orLogGenericLbl') }}</h3>
-            <div class="alert warning" style="margin-bottom: 12px;">{{ t('genericReceiveWarning') }}</div>
-            <div class="card">
-                <div class="field-row" style="margin-bottom: 4px;">
-                    <div class="field">
-                        <label>{{ t('dateLbl') }}</label>
-                        <input v-model="genReceive.date" type="date" :max="todayIso()" class="inp-date" style="width: 15rem;">
-                    </div>
-                </div>
-                <div v-if="genReceiveErrors.date" class="form-error">{{ genReceiveErrors.date }}</div>
-
-                <div class="sentence">
-                    <span class="muted-inline">{{ currency }}</span>
-                    <input v-model.number="genReceive.amount" type="number" class="blank-input narrow" step="0.01">
-                    {{ t('forLbl') }}
-                    <ComboSelect v-model="genReceive.customer_id" :options="customerList" :creating="creatingCustomer"
-                                 :placeholder="t('selectPlaceholder')" :add-new-label="t('addNewCustomer')" @create="createCustomer" />
-                </div>
-                <div v-if="genReceiveErrors.amount" class="form-error">{{ genReceiveErrors.amount }}</div>
-
-                <div class="paymode-sub" style="margin-top: 10px;">
-                    <PaymentMethodField v-model="genReceive.method" v-model:channel-id="genReceive.payment_channel_id"
-                        :channels="channelList" :creating-channel="creatingChannel" @create-channel="(name) => createChannel(name, genReceive)" />
-                </div>
-
-                <div class="field-row" style="margin-top: 12px;">
-                    <div class="field" style="flex: 1;">
-                        <label>{{ t('noteLbl') }}</label>
-                        <input v-model="genReceive.note" type="text" class="form-input" style="min-width: 0;">
-                    </div>
-                </div>
-
-                <div class="submit-row">
-                    <button type="button" @click="submitGenericReceive">{{ t('recordReceiptBtn') }}</button>
-                </div>
-                <div v-if="genReceiveStatus" class="status-line">{{ genReceiveStatus }}</div>
-            </div>
         </template>
 
         <!-- ══════════════════════════ PAY ══════════════════════════ -->
@@ -387,47 +280,6 @@ function submitGenericPay() {
                 </div>
 
                 <p v-if="billsHasMore" class="settle-more">{{ t('moreOpenItemsHint') }}</p>
-            </div>
-
-            <h3 class="sub">{{ t('orLogGenericLbl') }}</h3>
-            <div class="alert warning" style="margin-bottom: 12px;">{{ t('genericPayWarning') }}</div>
-            <div class="card">
-                <div class="field-row" style="margin-bottom: 4px;">
-                    <div class="field">
-                        <label>{{ t('dateLbl') }}</label>
-                        <input v-model="genPay.date" type="date" :max="todayIso()" class="inp-date" style="width: 15rem;">
-                    </div>
-                </div>
-                <div v-if="genPayErrors.date" class="form-error">{{ genPayErrors.date }}</div>
-
-                <div class="sentence">
-                    <span class="muted-inline">{{ currency }}</span>
-                    <input v-model.number="genPay.amount" type="number" class="blank-input narrow" step="0.01">
-                    {{ t('forLbl') }}
-                    <ComboSelect v-model="genPay.vendor_id" :options="vendorList" :creating="creatingVendor"
-                                 :placeholder="t('selectPlaceholder')" :add-new-label="t('addNewVendor')" @create="createVendor" />
-                    {{ t('forLbl') }}
-                    <ComboSelect v-model="genPay.category_id" :options="categoryList" :creating="creatingCategory"
-                                 :placeholder="t('selectPlaceholder')" :add-new-label="t('addNewCategory')" @create="createCategory" />
-                </div>
-                <div v-if="genPayErrors.amount" class="form-error">{{ genPayErrors.amount }}</div>
-
-                <div class="paymode-sub" style="margin-top: 10px;">
-                    <PaymentMethodField v-model="genPay.method" v-model:channel-id="genPay.payment_channel_id"
-                        :channels="channelList" :creating-channel="creatingChannel" @create-channel="(name) => createChannel(name, genPay)" />
-                </div>
-
-                <div class="field-row" style="margin-top: 12px;">
-                    <div class="field" style="flex: 1;">
-                        <label>{{ t('noteLbl') }}</label>
-                        <input v-model="genPay.note" type="text" class="form-input" style="min-width: 0;">
-                    </div>
-                </div>
-
-                <div class="submit-row">
-                    <button type="button" @click="submitGenericPay">{{ t('recordPaymentBtn') }}</button>
-                </div>
-                <div v-if="genPayStatus" class="status-line">{{ genPayStatus }}</div>
             </div>
         </template>
     </AppLayout>

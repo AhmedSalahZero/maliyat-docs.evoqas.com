@@ -27,7 +27,13 @@ class ItemController extends Controller
      */
     public function index(): Response
     {
-        $items = Item::query()->orderBy('name')->get([
+        // Paginated (was ->get(), loading every item at once — see QA
+        // audit M-4). This page shows two independent tables at
+        // once (items + categories), so each gets its own
+        // query-string page name ('page' / 'categoryPage') — sharing
+        // one 'page' param would make paging one table jump the
+        // other to the same page number.
+        $items = Item::query()->orderBy('name')->paginate(20, [
             'id', 'name', 'type', 'uom', 'qty_per_uom', 'base_unit_name',
         ]);
 
@@ -37,7 +43,8 @@ class ItemController extends Controller
             // The menu entry is "Items & categories", so the page
             // carries both rather than sending the user hunting.
             'categories' => \App\Models\Category::query()
-                ->orderBy('name')->get(['id', 'name', 'kind']),
+                ->orderBy('name')
+                ->paginate(20, ['id', 'name', 'kind'], 'categoryPage'),
         ]);
     }
 

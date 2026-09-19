@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\Concerns\BelongsToCompany;
+use App\Support\FinancialRules;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,20 +15,37 @@ class Sale extends Model
     use HasFactory, BelongsToCompany;
 
     protected $fillable = [
-        'company_id', 'customer_id', 'date', 'subtotal',
+        'company_id', 'customer_id', 'sales_channel_id', 'date', 'subtotal',
         'vat_rate', 'vat_amount', 'amount', 'due_date', 'created_by',
         'is_opening_balance',
     ];
 
+    // Every money column here is decimal(12,2) in the database (see
+    // the 2026_09_14_000007 migration). Casting them explicitly —
+    // rather than letting Eloquent hand back whatever raw string or
+    // float the PDO driver happens to return — is what lets every
+    // other file in the app treat ->amount, ->subtotal, etc. as a
+    // known, consistent PHP float instead of quietly depending on
+    // driver behavior. See FinancialRules::AMOUNT_TOLERANCE for the
+    // one rounding tolerance every "is this equal/paid" check uses.
     protected $casts = [
         'date' => 'date',
         'due_date' => 'date',
         'is_opening_balance' => 'boolean',
+        'subtotal' => 'decimal:2',
+        'vat_rate' => 'decimal:2',
+        'vat_amount' => 'decimal:2',
+        'amount' => 'decimal:2',
     ];
 
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function salesChannel(): BelongsTo
+    {
+        return $this->belongsTo(SalesChannel::class);
     }
 
     public function lines(): HasMany
@@ -67,6 +85,6 @@ class Sale extends Model
 
     public function isPaid(): bool
     {
-        return $this->balance() <= 0.004;
+        return $this->balance() <= FinancialRules::AMOUNT_TOLERANCE;
     }
 }

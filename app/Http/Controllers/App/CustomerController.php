@@ -37,7 +37,13 @@ class CustomerController extends Controller
      */
     public function index(): Response
     {
-        $customers = Customer::query()->orderBy('name')->get(['id', 'name', 'phone']);
+        // Paginated (was ->get(), loading every customer at once —
+        // fine for a handful of rows, but a company with a few
+        // thousand customers would load them all on every visit to
+        // this page. See QA audit M-4.)
+        $customers = Customer::query()
+            ->orderBy('name')
+            ->paginate(20, ['id', 'name', 'phone']);
 
         return Inertia::render('App/Lookups/Index', [
             'tab'  => 'customers',

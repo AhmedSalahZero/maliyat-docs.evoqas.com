@@ -3,14 +3,16 @@
 //  Maliyat Docs — Dashboard.vue (Home)
 //
 //  Reads top-to-bottom as three questions:
-//    1. Where do I stand?      — money in / out / net / cash
+//    1. Where do I stand?      — revenue / COGS / real net profit,
+//       and separately, actual cash movement
 //    2. What needs chasing?    — open invoices and bills
 //    3. What is actually       — the SKU donut, then who leads on
 //       happening in my shop?    each of volume, value and frequency
 //
-//  No gross-profit tile. See the note on DashboardController for
-//  why — the people using this are shop owners, and a margin derived
-//  from weighted-average cost misleads more often than it helps.
+//  Net Profit is the real, accrual figure (Revenue − COGS −
+//  Operating Expenses, same as the P&L report) — it used to be cash
+//  in minus cash out mislabeled "Net Profit"; that cash figure is
+//  still here, honestly relabeled "Net Cash Flow".
 //
 //  The three "top" panels each show the leader by THREE different
 //  measures rather than one ranked list, because they routinely
@@ -30,21 +32,33 @@ import DonutChart3D from '@/Components/App/DonutChart3D.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
 import { QUICK_RECORD_ACTIONS } from '@/constants/quickRecordActions';
 import { useBusinessType } from '@/composables/useBusinessType';
+import { useMoneyFormat } from '@/composables/useMoneyFormat';
 
 const { visibleFor } = useBusinessType();
 const visibleQuickActions = computed(() => visibleFor(QUICK_RECORD_ACTIONS));
 
 const props = defineProps({
-    period:              { type: String, default: 'month' },
+    period:              { type: String, default: 'year' },
     period_from:         { type: String, default: '' },
     period_to:           { type: String, default: '' },
-    income_this_month:   { type: Number, default: 0 },
-    expenses_this_month: { type: Number, default: 0 },
-    net_this_month:      { type: Number, default: 0 },
+    // Row 1 — Profit & Loss. All four come from the same
+    // ReportDataService::profitAndLoss() call on the backend, so
+    // Sales − COGS − Operating Expense always equals Net Income here,
+    // exactly as it does on the P&L report.
+    revenue:             { type: Number, default: 0 },
+    cost_of_goods_sold:  { type: Number, default: 0 },
+    operating_expenses:  { type: Number, default: 0 },
+    net_profit:          { type: Number, default: 0 },
+    // Row 2 — Cash position. All five come from the payments ledger
+    // / open-balance counts — a different, cash-basis source, kept
+    // in its own row so it's never mistaken for the P&L row above.
+    total_cash_in:       { type: Number, default: 0 },
+    total_cash_out:      { type: Number, default: 0 },
     cash_balance:        { type: Number, default: 0 },
     open_invoices_count: { type: Number, default: 0 },
     open_bills_count:    { type: Number, default: 0 },
     sku_sales:           { type: Array, default: () => [] },
+    sales_by_channel:    { type: Array, default: () => [] },
     top_customers:       { type: Array, default: () => [] },
     top_suppliers:       { type: Array, default: () => [] },
 });
@@ -52,16 +66,13 @@ const props = defineProps({
 const page = usePage();
 const { t, locale } = useAppTranslations();
 
-const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
-const intlLocale = computed(() => (locale.value === 'ar' ? 'ar-EG' : 'en-US'));
-
-function money(value, decimals = 0) {
-    const formatted = new Intl.NumberFormat(intlLocale.value, {
-        maximumFractionDigits: decimals,
-    }).format(value ?? 0);
-
-    return `${currency.value} ${formatted}`;
-}
+// Aliased to the local name "money" so every call site in this file
+// (money(props.revenue), etc.) stays short — this is the
+// whole-number, currency-embedded variant ("EGP 3,453,321"), kept
+// distinct from the plain money(v) other pages use, since
+// Dashboard's headline tiles were never showing cents. See
+// useMoneyFormat.js for why there are two.
+const { currency, intlLocale, moneyWithCurrency: money } = useMoneyFormat();
 
 function number(value) {
     return new Intl.NumberFormat(intlLocale.value, { maximumFractionDigits: 2 }).format(value ?? 0);
@@ -97,6 +108,31 @@ const skuTotalCompact = computed(() => {
         notation: 'compact',
         maximumFractionDigits: 1,
     }).format(skuTotal.value);
+
+    return `${currency.value} ${formatted}`;
+});
+
+// ── Sales-by-channel donut ────────────────────────────────────────
+// Same language fallback used throughout the app for anything that
+// ships a name_ar — Arabic when the UI is in Arabic and a
+// translation exists, otherwise the plain (English) name.
+function channelLabel(row) {
+    return locale.value === 'ar' && row.name_ar ? row.name_ar : row.name;
+}
+
+const channelDonutSlices = computed(() =>
+    props.sales_by_channel.map((row) => ({ name: channelLabel(row), value: row.value }))
+);
+
+const channelTotal = computed(() =>
+    props.sales_by_channel.reduce((sum, row) => sum + (row.value || 0), 0)
+);
+
+const channelTotalCompact = computed(() => {
+    const formatted = new Intl.NumberFormat(intlLocale.value, {
+        notation: 'compact',
+        maximumFractionDigits: 1,
+    }).format(channelTotal.value);
 
     return `${currency.value} ${formatted}`;
 });
@@ -166,24 +202,37 @@ const panels = computed(() => [
             </div>
         </div>
 
-        <!-- ── 1. Where do I stand ─────────────────────────────── -->
+        <!-- ── 1. Profit & Loss — one row, one source (the P&L report) ── -->
         <div class="home-stats">
             <div class="home-stat home-stat--in">
-                <div class="home-stat__label">{{ t('home_income_month') }}</div>
-                <div class="home-stat__value">{{ money(props.income_this_month) }}</div>
+                <div class="home-stat__label">{{ t('home_sales') }}</div>
+                <div class="home-stat__value">{{ money(props.revenue) }}</div>
+            </div>
+            <div class="home-stat home-stat--cogs">
+                <div class="home-stat__label">{{ t('home_cogs') }}</div>
+                <div class="home-stat__value">{{ money(props.cost_of_goods_sold) }}</div>
             </div>
             <div class="home-stat home-stat--out">
-                <div class="home-stat__label">{{ t('home_expenses_month') }}</div>
-                <div class="home-stat__value">{{ money(props.expenses_this_month) }}</div>
+                <div class="home-stat__label">{{ t('home_operating_expenses') }}</div>
+                <div class="home-stat__value">{{ money(props.operating_expenses) }}</div>
+            </div>
+            <div class="home-stat home-stat--net">
+                <div class="home-stat__label">{{ t('home_net_income') }}</div>
+                <div class="home-stat__value" :class="props.net_profit >= 0 ? 'text-success' : 'text-danger'">
+                    {{ money(props.net_profit) }}
+                </div>
             </div>
         </div>
 
+        <!-- ── 2. Cash position — one row, one source (the payments ledger) ── -->
         <div class="stats-row">
             <div class="stat-box">
-                <div class="stat-box__label">{{ t('home_net_month') }}</div>
-                <div class="stat-box__value" :class="props.net_this_month >= 0 ? 'text-success' : 'text-danger'">
-                    {{ money(props.net_this_month) }}
-                </div>
+                <div class="stat-box__label">{{ t('home_cash_in') }}</div>
+                <div class="stat-box__value text-success">{{ money(props.total_cash_in) }}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-box__label">{{ t('home_cash_out') }}</div>
+                <div class="stat-box__value text-danger">{{ money(props.total_cash_out) }}</div>
             </div>
             <div class="stat-box">
                 <div class="stat-box__label">{{ t('home_cash_balance') }}</div>
@@ -209,6 +258,18 @@ const panels = computed(() => [
                 :center-value="skuTotalCompact"
             >
                 <template #empty>{{ t('sku_mix_empty') }}</template>
+            </DonutChart3D>
+        </div>
+
+        <div class="card card--in dash-chart">
+            <h3 class="sub">{{ t('channel_mix_title') }}</h3>
+
+            <DonutChart3D
+                :slices="channelDonutSlices"
+                :center-label="t('channel_mix_center')"
+                :center-value="channelTotalCompact"
+            >
+                <template #empty>{{ t('channel_mix_empty') }}</template>
             </DonutChart3D>
         </div>
 
@@ -293,14 +354,16 @@ const panels = computed(() => [
 
 .home-stats {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 12px;
     margin-bottom: 16px;
 }
 
 .home-stat { border-radius: var(--radius-lg); padding: 16px 18px; }
-.home-stat--in  { background: var(--color-success-soft); }
-.home-stat--out { background: var(--color-danger-soft); }
+.home-stat--in   { background: var(--color-success-soft); }
+.home-stat--cogs { background: var(--color-success-cogs); }
+.home-stat--out  { background: var(--color-danger-soft); }
+.home-stat--net  { background: var(--color-surface-alt); }
 
 .home-stat__label { font-size: 12px; font-weight: 500; margin-bottom: 6px; }
 .home-stat--in  .home-stat__label { color: var(--color-success-dark); }

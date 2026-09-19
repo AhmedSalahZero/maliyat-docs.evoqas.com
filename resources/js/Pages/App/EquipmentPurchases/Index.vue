@@ -28,6 +28,8 @@ import EditPaymentsPanel from '@/Components/App/EditPaymentsPanel.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
+import { useMoneyFormat } from '@/composables/useMoneyFormat';
+import { todayIso } from '@/Utils/date';
 import { scrollToForm } from '@/composables/useScrollToForm';
 import { usePermissions } from '@/composables/usePermissions';
 
@@ -47,14 +49,16 @@ const formCard = ref(null);
 
 // Delete is company-admin only — mirrors Controller::authorizeDelete().
 const { canDelete } = usePermissions();
-const currency = computed(() => page.props.auth?.user?.company?.currency ?? 'EGP');
+const { currency, money } = useMoneyFormat();
 
-function todayIso() { return new Date().toISOString().slice(0, 10); }
-function money(v) {
-    return new Intl.NumberFormat(locale.value === 'ar' ? 'ar-EG' : 'en-US', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2,
-    }).format(v || 0);
+// Laravel's pagination links come as e.g. "&laquo; Previous" / "Next
+// &raquo;" — decoding just these two known-safe arrow entities lets
+// us render the label as plain (auto-escaped) text instead of
+// v-html, which is unsafe by default (see QA audit L-1).
+function paginationLabel(label) {
+    return label.replace(/&laquo;/g, '«').replace(/&raquo;/g, '»');
 }
+
 function fmt(template, repl) {
     return Object.entries(repl).reduce((s, [k, v]) => s.replace(`:${k}`, v), template);
 }
@@ -284,8 +288,8 @@ function onConfirmDialogConfirm() {
             </div>
             <div v-if="form.errors.vendor_id" class="form-error">{{ form.errors.vendor_id }}</div>
 
-            <div class="field-row" style="margin-top: 16px;">
-                <div class="field">
+            <div class="field-row" style="margin-top: 16px; gap: 16px;">
+                <div class="field" style="flex: 0 0 auto;">
                     <label>{{ t('typeLbl') }}</label>
                     <span style="display: inline-flex; align-items: center; gap: 4px;">
                         <ComboSelect v-model="form.category_id" :options="categoryList" :creating="creatingCategory"
@@ -428,7 +432,7 @@ function onConfirmDialogConfirm() {
 
         <div v-if="props.purchases.links?.length > 3" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px;">
             <template v-for="(link, i) in props.purchases.links" :key="i">
-                <Link v-if="link.url" :href="link.url" class="btn btn-ghost btn-sm" :class="{ 'btn-primary': link.active }" v-html="link.label" preserve-scroll />
+                <Link v-if="link.url" :href="link.url" class="btn btn-ghost btn-sm" :class="{ 'btn-primary': link.active }" preserve-scroll>{{ paginationLabel(link.label) }}</Link>
             </template>
         </div>
 
