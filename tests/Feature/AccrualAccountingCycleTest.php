@@ -121,9 +121,26 @@ class AccrualAccountingCycleTest extends TestCase
         $this->assertEqualsWithDelta(7632.00, $trialBalance['total_closing_debit'], 0.01);
         $this->assertEqualsWithDelta(7632.00, $trialBalance['total_closing_credit'], 0.01);
 
+        // The two figures below carry a one-cent rounding tail, and
+        // it is a real consequence of how this app costs stock — not
+        // noise to be papered over with a loose delta.
+        //
+        // Costing is a MOVING AVERAGE: each sale line stores the
+        // unit cost that applied when it was made, to four decimal
+        // places, and Cost of Goods Sold is SUM(qty x that stored
+        // cost) rounded once. A loaf costs 1,960 / 300 = 6.5333...,
+        // which stores as 6.5333, so 200 loaves post at
+        // 200 x 6.5333 = 1,306.66 rather than at the 1,306.67 you get
+        // from carrying full precision to the end.
+        //
+        // That is the correct number for this method: the ledger
+        // agrees with the per-line costs a user can actually inspect,
+        // instead of with a figure derived from precision the app
+        // never stored. COGS 1,306.66 + the 50 labor variance =
+        // 1,356.66, and inventory keeps the matching cent.
         $byCode = collect($trialBalance['rows'])->keyBy('code');
-        $this->assertEqualsWithDelta(2993.33, $byCode['1200']['closing_debit'], 0.01, 'Inventory account balance is wrong.');
-        $this->assertEqualsWithDelta(1356.67, $byCode['5000']['closing_debit'], 0.01, 'Cost of Goods Sold account balance is wrong.');
+        $this->assertEqualsWithDelta(2993.34, $byCode['1200']['closing_debit'], 0.005, 'Inventory account balance is wrong.');
+        $this->assertEqualsWithDelta(1356.66, $byCode['5000']['closing_debit'], 0.005, 'Cost of Goods Sold account balance is wrong.');
         $this->assertEqualsWithDelta(0.0, $byCode['2200']['closing_debit'], 0.01, 'Production Labor Accrued should net to zero once wages are settled.');
         $this->assertEqualsWithDelta(0.0, $byCode['2200']['closing_credit'], 0.01);
 
@@ -131,11 +148,20 @@ class AccrualAccountingCycleTest extends TestCase
         //    to the Trial Balance above, not to what was collected ──
         $pl = $reports->profitAndLoss('2026-04-01', '2026-04-30');
 
-        $this->assertEqualsWithDelta(2400.00, $pl['revenue'], 0.01);
-        $this->assertEqualsWithDelta(1356.67, $pl['cost_of_goods_sold'], 0.01);
-        $this->assertEqualsWithDelta(1043.33, $pl['gross_profit'], 0.01);
-        $this->assertEqualsWithDelta(0.0, $pl['operating_expenses'], 0.01);
-        $this->assertEqualsWithDelta(1043.33, $pl['net_profit'], 0.01);
+        $this->assertEqualsWithDelta(2400.00, $pl['revenue'], 0.005);
+        $this->assertEqualsWithDelta(1356.66, $pl['cost_of_goods_sold'], 0.005);
+        $this->assertEqualsWithDelta(1043.34, $pl['gross_profit'], 0.005);
+        $this->assertEqualsWithDelta(0.0, $pl['operating_expenses'], 0.005);
+        $this->assertEqualsWithDelta(1043.34, $pl['net_profit'], 0.005);
+
+        // The P&L and the Trial Balance must be reading the same
+        // ledger, to the cent.
+        $this->assertEqualsWithDelta(
+            $byCode['5000']['closing_debit'],
+            $pl['cost_of_goods_sold'],
+            0.005,
+            'The P&L and the Trial Balance disagree about cost of goods sold'
+        );
 
         // Revenue must NOT equal the 1,500 actually collected — that
         // would mean the report regressed back to cash basis.
@@ -148,7 +174,17 @@ class AccrualAccountingCycleTest extends TestCase
         // ── The Inventory Statement — must tie to Inventory (1200) ──
         $inventory = $reports->inventoryStatement(null, null, '2026-04-30');
 
-        $this->assertEqualsWithDelta(2993.33, $inventory['total_stock_value'], 0.01);
+        // Same one-cent rounding tail as the ledger above, and that
+        // is the point: the stock report and the Inventory account
+        // have to carry it identically or they are not describing the
+        // same stock.
+        $this->assertEqualsWithDelta(2993.34, $inventory['total_stock_value'], 0.005);
+        $this->assertEqualsWithDelta(
+            $byCode['1200']['closing_debit'],
+            $inventory['total_stock_value'],
+            0.005,
+            'The stock report and the Inventory account disagree'
+        );
 
         $byName = collect($inventory['items'])->keyBy('name');
 

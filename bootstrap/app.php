@@ -3,6 +3,7 @@
 use App\Http\Middleware\EnsureAdmin;
 use App\Http\Middleware\EnsureBusinessType;
 use App\Http\Middleware\EnsureMember;
+use App\Http\Middleware\NoStoreForAuthenticated;
 use App\Http\Middleware\PostDueDepreciation;
 use App\Http\Middleware\PreventDuplicateSubmission;
 use App\Http\Middleware\SetLocale;
@@ -57,6 +58,17 @@ return Application::configure(basePath: dirname(__DIR__))
         // data HandleInertiaRequests has already loaded.
         $middleware->web(append: [
             PostDueDepreciation::class,
+        ]);
+
+        // ── NoStoreForAuthenticated ────────────────────────────
+        // A signed-in page carries its whole Inertia payload inline,
+        // so anything that stores a copy of the HTML and replays it
+        // later hands one company's books to the next visitor. See
+        // the middleware's own header for the production incident
+        // this closes, and for why it is a backstop rather than the
+        // whole fix.
+        $middleware->web(append: [
+            NoStoreForAuthenticated::class,
         ]);
 
         // ── AuthenticateSession ────────────────────────────────

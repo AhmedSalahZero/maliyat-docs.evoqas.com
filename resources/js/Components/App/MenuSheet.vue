@@ -25,6 +25,7 @@ import { Link, usePage, router } from '@inertiajs/vue3';
 import AppIcon from '@/Components/App/AppIcon.vue';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useAppTranslations } from '@/composables/useAppTranslations';
+import { purgeSessionArtifacts } from '@/composables/usePrivateCache';
 
 const props = defineProps({
     open: { type: Boolean, default: false },
@@ -64,8 +65,13 @@ function toggleLocale() {
     authStore.setLocale(locale.value === 'en' ? 'ar' : 'en');
 }
 
-function logout() {
+async function logout() {
     close();
+    // Before the post, not after: the logout response redirects and
+    // tears this page down. See composables/usePrivateCache.js for
+    // what is being purged and why it has to happen on every
+    // sign-out.
+    await purgeSessionArtifacts();
     router.post(route('logout'));
 }
 </script>

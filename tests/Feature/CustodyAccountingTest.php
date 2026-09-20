@@ -167,7 +167,7 @@ class CustodyAccountingTest extends TestCase
 
         $july = $this->pl('2026-07-01', '2026-07-31');
 
-        $this->assertEquals(0.0, $july['expenses_paid'], 'The float is still the company\'s own money');
+        $this->assertEquals(0.0, $july['operating_expenses'], 'The float is still the company\'s own money');
         $this->assertEquals(0.0, $july['net_profit']);
     }
 
@@ -178,8 +178,8 @@ class CustodyAccountingTest extends TestCase
         $this->settle($custody, [['category_id' => $this->expenseCategory()->id, 'amount' => 8000]], '2026-08-10')
             ->assertSessionHasNoErrors();
 
-        $this->assertEquals(0.0, $this->pl('2026-07-01', '2026-07-31')['expenses_paid'], 'July: handed out, nothing known yet');
-        $this->assertEquals(8000.0, $this->pl('2026-08-01', '2026-08-31')['expenses_paid'], 'August: what was actually spent');
+        $this->assertEquals(0.0, $this->pl('2026-07-01', '2026-07-31')['operating_expenses'], 'July: handed out, nothing known yet');
+        $this->assertEquals(8000.0, $this->pl('2026-08-01', '2026-08-31')['operating_expenses'], 'August: what was actually spent');
     }
 
     public function test_returned_change_is_never_counted_as_income(): void
@@ -191,8 +191,8 @@ class CustodyAccountingTest extends TestCase
 
         $july = $this->pl('2026-07-01', '2026-07-31');
 
-        $this->assertEquals(0.0, $july['income_received'], 'Getting change back is not revenue');
-        $this->assertEquals(8000.0, $july['expenses_paid']);
+        $this->assertEquals(0.0, $july['revenue'], 'Getting change back is not revenue');
+        $this->assertEquals(8000.0, $july['operating_expenses']);
         $this->assertEquals(-8000.0, $july['net_profit']);
     }
 
@@ -205,8 +205,8 @@ class CustodyAccountingTest extends TestCase
 
         $july = $this->pl('2026-07-01', '2026-07-31');
 
-        $this->assertEquals(11500.0, $july['expenses_paid']);
-        $this->assertEquals(0.0, $july['income_received']);
+        $this->assertEquals(11500.0, $july['operating_expenses']);
+        $this->assertEquals(0.0, $july['revenue']);
     }
 
     public function test_a_float_still_outstanding_contributes_nothing(): void
@@ -215,8 +215,8 @@ class CustodyAccountingTest extends TestCase
 
         foreach ([['2026-07-01', '2026-07-31'], ['2026-08-01', '2026-08-31']] as [$from, $to]) {
             $pl = $this->pl($from, $to);
-            $this->assertEquals(0.0, $pl['expenses_paid']);
-            $this->assertEquals(0.0, $pl['income_received']);
+            $this->assertEquals(0.0, $pl['operating_expenses']);
+            $this->assertEquals(0.0, $pl['revenue']);
         }
     }
 
@@ -264,10 +264,10 @@ class CustodyAccountingTest extends TestCase
 
         // 8,000 of float actually spent + 1,200 of rent, and the
         // 10,000 hand-out counted in neither.
-        $this->assertEquals(9200.00, $pl['expenses_paid']);
+        $this->assertEquals(9200.00, $pl['operating_expenses']);
 
         $this->assertEquals(
-            $pl['expenses_paid'],
+            $pl['operating_expenses'],
             round(collect($pl['expenses_by_category'])->sum('total'), 2),
             'With no stock or equipment in play, the two halves must match exactly'
         );

@@ -222,11 +222,17 @@ class ReportConsistencyTest extends TestCase
 
     public function test_the_trial_balance_balances(): void
     {
-        $trialBalance = $this->reports()->trialBalance('2026-03-31');
+        $trialBalance = $this->reports()->trialBalance('2026-03-01', '2026-03-31');
 
         $this->assertTrue($trialBalance['is_balanced']);
-        $this->assertEquals(7050.00, $trialBalance['total_debit']);
-        $this->assertEquals(7050.00, $trialBalance['total_credit']);
+
+        // Closing = opening + the period's movement, for every
+        // account. Nothing existed before March, so opening is flat
+        // and closing is the whole month.
+        $this->assertEquals(0.00, $trialBalance['total_opening_debit']);
+        $this->assertEquals(0.00, $trialBalance['total_opening_credit']);
+        $this->assertEquals(7050.00, $trialBalance['total_closing_debit']);
+        $this->assertEquals(7050.00, $trialBalance['total_closing_credit']);
     }
 
     // ── Each identity, with the figure worked out by hand ────────
@@ -317,14 +323,29 @@ class ReportConsistencyTest extends TestCase
     // ── The P&L ──────────────────────────────────────────────────
 
     /**
-     * 750 from Acme + 200 from Beta. The 50 of float coming back is
-     * NOT revenue, and this is the figure that used to include it.
+     * Revenue is what was INVOICED — 750 to Acme plus 500 to Beta —
+     * not what was collected. Beta has paid only 200 of their 500 and
+     * that makes no difference here; this report is accrual, and the
+     * uncollected 300 is a receivable, not a reduction in revenue.
+     *
+     * The 50 of float coming back is still not revenue. That is what
+     * this test was originally written to pin, back when the report
+     * was cash basis and the returned change was landing in income.
+     * The basis changed; the thing being guarded did not.
      */
-    public function test_income_excludes_returned_petty_cash(): void
+    public function test_revenue_is_invoiced_sales_and_never_returned_petty_cash(): void
     {
         $profitAndLoss = $this->reports()->profitAndLoss('2026-03-01', '2026-03-31');
 
-        $this->assertEquals(950.00, $profitAndLoss['income_received']);
+        $this->assertEquals(1250.00, $profitAndLoss['revenue'], '750 to Acme + 500 to Beta');
+
+        // Said against the ledger too, so this cannot drift from the
+        // account the Trial Balance reads. Revenue is credit-normal.
+        $this->assertEquals(
+            -$this->ledger(Account::SALES_REVENUE),
+            $profitAndLoss['revenue'],
+            'The P&L and the general ledger disagree about revenue'
+        );
     }
 
     /**
@@ -347,11 +368,17 @@ class ReportConsistencyTest extends TestCase
     {
         $profitAndLoss = $this->reports()->profitAndLoss('2026-03-01', '2026-03-31');
 
-        $headline  = $profitAndLoss['expenses_paid'];
+        $headline  = $profitAndLoss['operating_expenses'];
         $breakdown = round(collect($profitAndLoss['expenses_by_category'])->sum('total'), 2);
 
         $this->assertEquals(650.00, $headline, 'rent 400 + float spend 250 — no stock, no van');
         $this->assertEquals($headline, $breakdown, 'One report cannot hold two different totals');
+
+        // And the statement itself adds up, top to bottom.
+        $this->assertEquals(1250.00, $profitAndLoss['revenue']);
+        $this->assertEquals(500.00, $profitAndLoss['cost_of_goods_sold'], '50 widgets at 10');
+        $this->assertEquals(750.00, $profitAndLoss['gross_profit'], '1,250 - 500');
+        $this->assertEquals(100.00, $profitAndLoss['net_profit'], '750 - 650');
     }
 
     /**
@@ -400,7 +427,7 @@ class ReportConsistencyTest extends TestCase
             'vat_rate'    => 0,
         ])->assertSessionHasNoErrors();
 
-        $trialBalance = $this->reports()->trialBalance('2026-03-31');
+        $trialBalance = $this->reports()->trialBalance('2026-03-01', '2026-03-31');
         $this->assertTrue($trialBalance['is_balanced'], 'The books stopped balancing after a correction');
 
         // 500 became 600, so Beta owes 100 more.
@@ -416,9 +443,13 @@ class ReportConsistencyTest extends TestCase
 
         // And the correction stayed inside March rather than leaking
         // into the month it was made in.
-        $march = $this->reports()->trialBalance('2026-03-31');
-        $april = $this->reports()->trialBalance('2026-04-30');
-        $this->assertEquals($march['total_debit'], $april['total_debit'], 'Something landed outside March');
+        $march = $this->reports()->trialBalance('2026-03-01', '2026-03-31');
+        $april = $this->reports()->trialBalance('2026-03-01', '2026-04-30');
+        $this->assertEquals(
+            $march['total_closing_debit'],
+            $april['total_closing_debit'],
+            'Something landed outside March'
+        );
     }
 
     public function test_deleting_a_sale_leaves_every_report_agreeing(): void
@@ -427,7 +458,7 @@ class ReportConsistencyTest extends TestCase
 
         $this->delete("/app/sales/{$sale->id}")->assertSessionHasNoErrors();
 
-        $this->assertTrue($this->reports()->trialBalance('2026-03-31')['is_balanced']);
+        $this->assertTrue($this->reports()->trialBalance('2026-03-01', '2026-03-31')['is_balanced']);
 
         // Beta's debt is gone, Acme's nil balance remains.
         $this->assertEquals(0.00, $this->ledger(Account::ACCOUNTS_RECEIVABLE));

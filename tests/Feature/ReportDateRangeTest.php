@@ -283,9 +283,15 @@ class ReportDateRangeTest extends TestCase
         $row = collect($this->reports()->inventoryStatement(null, '2026-03-01', '2026-03-31')['items'])
             ->firstWhere('id', $item->id);
 
+        // period_purchased/period_sold became period_in_base/
+        // period_out_base when the stock report learned about
+        // production: "in" is now purchases AND goods produced, "out"
+        // is sales AND raw material consumed. With no production in
+        // this scenario the figures are the purchases and sales they
+        // always were.
         $this->assertEquals(100.0, $row['opening_stock'], 'What was on the shelf on 1 March');
-        $this->assertEquals(40.0, $row['period_purchased']);
-        $this->assertEquals(25.0, $row['period_sold']);
+        $this->assertEquals(40.0, $row['period_in_base']);
+        $this->assertEquals(25.0, $row['period_out_base']);
         $this->assertEquals(115.0, $row['current_stock']);
     }
 

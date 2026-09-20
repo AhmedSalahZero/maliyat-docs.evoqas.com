@@ -338,9 +338,9 @@ class ProductionCostAndProfitTest extends TestCase
 
         $pl = $this->pl();
 
-        $this->assertEquals(475.00, $pl['expenses_paid'], 'rent 400 + generic 75 — the 300 of stock is not an expense');
+        $this->assertEquals(475.00, $pl['operating_expenses'], 'rent 400 + generic 75 — the 300 of stock is not an expense');
         $this->assertEquals(
-            $pl['expenses_paid'],
+            $pl['operating_expenses'],
             round(collect($pl['expenses_by_category'])->sum('total'), 2),
             'One report cannot hold two different totals'
         );
@@ -372,12 +372,23 @@ class ProductionCostAndProfitTest extends TestCase
     }
 
     /**
-     * The other half of the same disagreement, and the one the audit
-     * did not measure: the breakdown read `expenses.amount` — what
-     * was BILLED — while the headline counted what was PAID. A bill
-     * only part-settled put the two halves out by the rest of it.
+     * A part-settled bill is an expense in FULL, and the two halves
+     * of the report still agree about it.
+     *
+     * Read the history here, because this test now asserts the
+     * opposite of what it once did. The original defect was that the
+     * headline counted payments while the breakdown read
+     * `expenses.amount`, so a bill only part-paid put the two halves
+     * out by the rest of it. The first fix made both halves cash
+     * basis. The report has since moved to accrual — it is read
+     * straight off the general ledger — so both halves now count the
+     * whole bill on its bill date, and the 700 still owed is a
+     * payable rather than a smaller expense.
+     *
+     * The figure changed twice; the property being guarded never did:
+     * the headline and the breakdown must be the same number.
      */
-    public function test_h1_a_part_paid_bill_counts_what_was_paid_not_what_was_billed(): void
+    public function test_h1_a_part_paid_bill_is_an_expense_in_full(): void
     {
         $this->submit('/app/expenses', [
             'vendor_id' => $this->supplier->id, 'category_id' => $this->rentCategory->id,
@@ -387,13 +398,14 @@ class ProductionCostAndProfitTest extends TestCase
 
         $pl = $this->pl();
 
-        $this->assertEquals(300.00, $pl['expenses_paid'], 'Cash basis: 300 left the till, 700 has not');
+        $this->assertEquals(1000.00, $pl['operating_expenses'], 'Accrual: the whole bill is this month\'s cost');
         $this->assertEquals(
-            300.00,
-            round(collect($pl['expenses_by_category'])->firstWhere('category', $this->rentCategory->name)?->total, 2)
+            1000.00,
+            round(collect($pl['expenses_by_category'])->firstWhere('category', $this->rentCategory->name)?->total, 2),
+            'The breakdown has to say the same thing the headline does'
         );
 
-        // And the 700 still owed is a payable, not a silent loss.
+        // Paying only part of it changes what is OWED, not what it cost.
         $this->assertEquals(700.00, Expense::query()->latest('id')->firstOrFail()->balance());
     }
 
@@ -410,10 +422,22 @@ class ProductionCostAndProfitTest extends TestCase
 
         $pl = $this->pl();
 
-        $this->assertEquals(60.00, $pl['expenses_paid']);
+        $this->assertEquals(60.00, $pl['operating_expenses']);
+
+        // The breakdown is drawn from ledger ACCOUNTS now, not from
+        // category names, so an uncategorised payment appears under
+        // whatever Account::MISC_EXPENSE is called rather than under
+        // a literal "Miscellaneous". Looked up rather than hardcoded
+        // so renaming the account cannot silently orphan this row.
+        $miscAccount = Account::query()
+            ->where('company_id', $this->company->id)
+            ->where('code', Account::MISC_EXPENSE)
+            ->firstOrFail();
+
         $this->assertEquals(
             60.00,
-            round(collect($pl['expenses_by_category'])->firstWhere('category', 'Miscellaneous')?->total, 2)
+            round(collect($pl['expenses_by_category'])->firstWhere('category', $miscAccount->name)?->total, 2),
+            'An uncategorised payment fell out of the breakdown entirely'
         );
     }
 
@@ -428,7 +452,9 @@ class ProductionCostAndProfitTest extends TestCase
         $before = $this->pl();
         $this->produce();
 
-        $this->assertEquals($before['expenses_paid'], $this->pl()['expenses_paid']);
+        $this->assertEquals($before['operating_expenses'], $this->pl()['operating_expenses']);
         $this->assertEquals($before['net_profit'], $this->pl()['net_profit']);
+        $this->assertEquals($before['cost_of_goods_sold'], $this->pl()['cost_of_goods_sold'],
+            'Making stock is not selling it — COGS waits for the sale');
     }
 }

@@ -32,12 +32,41 @@ trait BelongsToCompany
         });
 
         static::addGlobalScope('company', function (Builder $builder) {
-            if (auth()->check() && auth()->user()->company_id) {
+            if (! auth()->check()) {
+                return;
+            }
+
+            $user = auth()->user();
+
+            if ($user->company_id) {
                 $builder->where(
                     $builder->getModel()->getTable().'.company_id',
-                    auth()->user()->company_id
+                    $user->company_id
                 );
+
+                return;
             }
+
+            // No company_id. Only a super_admin is legitimately in
+            // this state, and they are meant to see across tenants.
+            if ($user->isSuperAdmin()) {
+                return;
+            }
+
+            // Anyone else here is an ORPHAN — a company_admin or
+            // employee whose company row is gone (users.company_id is
+            // nullOnDelete). The old code tested only
+            // `if (auth()->user()->company_id)`, so an orphan fell
+            // through to no scope at all and read EVERY company on
+            // the platform. "No company" has to mean no rows, not all
+            // rows; a filter that fails open is not a filter.
+            //
+            // User::accessDenialReason() now refuses these accounts
+            // at sign-in, which is the real fix. This is the backstop
+            // for every path that does not go through a fresh login —
+            // a session already open when the company was deleted, a
+            // queued job, an artisan command.
+            $builder->whereRaw('1 = 0');
         });
     }
 

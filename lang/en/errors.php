@@ -14,6 +14,11 @@ return [
     // a company admin (App\Http\Controllers\App\UserController).
     'account_suspended' => 'This account has been deactivated. Please contact your company administrator.',
 
+    // An account whose company no longer exists. It cannot be let in:
+    // a null company_id switches the tenant scope off rather than
+    // narrowing it — see User::accessDenialReason().
+    'account_orphaned' => 'This account is no longer linked to a company. Please contact support.',
+
     // Shown when the whole company has been switched off by a super
     // admin, or its subscription period has ended.
     'company_suspended' => 'Your company account is not active. Please contact support to reactivate it.',

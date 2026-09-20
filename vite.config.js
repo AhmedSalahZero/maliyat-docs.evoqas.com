@@ -142,20 +142,40 @@ export default defineConfig({
                     '': '/build/',
                 },
                 runtimeCaching: [
-                    // ── HTML pages — network first ──────────────────────
-                    // Always try to get fresh page from server
-                    // Fall back to cache if offline
-                    {
-                        urlPattern: ({ request }) => request.mode === 'navigate',
-                        handler:    'NetworkFirst',
-                        options: {
-                            cacheName:  'inertia-pages',
-                            expiration: {
-                                maxEntries:    50,
-                                maxAgeSeconds: 60 * 60 * 24,  // 1 day
-                            },
-                        },
-                    },
+                    // ── HTML pages are DELIBERATELY NOT CACHED ─────────
+                    //
+                    // There used to be a NetworkFirst rule here caching
+                    // every navigation into an 'inertia-pages' cache for
+                    // 24 hours. It was a cross-tenant data leak, and it
+                    // was reported from production as "I signed in as one
+                    // company's admin and landed in another company".
+                    //
+                    // Every page this app serves carries its entire
+                    // Inertia payload inline in the HTML (see the
+                    // @inertia directive in resources/views/app.blade.php)
+                    // — the signed-in user, their company, and all of
+                    // that page's data. The Cache Storage API keys on the
+                    // URL alone and knows nothing about who is signed in,
+                    // so /app/dashboard was ONE entry shared by every
+                    // account ever used on that device. NetworkFirst then
+                    // serves that entry whenever the network is slow or
+                    // briefly unreachable — handing one company's books
+                    // to whoever is signed in at that moment. Nothing
+                    // cleared it on logout, and the Cache Storage API
+                    // ignores Cache-Control, so no response header could
+                    // have prevented it either.
+                    //
+                    // For a multi-tenant bookkeeping app, offline page
+                    // viewing is not worth that. Static assets below are
+                    // safe to cache: they are identical for every tenant
+                    // and contain no data.
+                    //
+                    // If offline support is ever wanted back, it cannot
+                    // be done this way — it needs a cache partitioned per
+                    // user that is cleared on logout. See
+                    // resources/js/composables/usePrivateCache.js, which
+                    // now clears these caches on sign-out.
+
                     // ── Images — cache first ────────────────────────────
                     // Images don't change often — serve from cache
                     {

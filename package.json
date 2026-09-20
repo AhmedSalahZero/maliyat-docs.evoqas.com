@@ -3,7 +3,8 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vite build",
+        "clean": "rm -rf public/build public/sw.js public/manifest.webmanifest public/workbox-*.js",
+        "build": "npm run clean && vite build",
         "dev": "vite"
     },
     "devDependencies": {

@@ -90,20 +90,23 @@ Value     =  5 × 280  =  1,400.00   ·   VAT 196.00   ·   Total 1,596.00
 Cost per kg from this delivery = 1,400 ÷ 125 = 11.20
 ```
 
-### The weighted average — computed automatically
+### The moving average — computed automatically
 
-The application does not use the price of the last delivery. It uses the **weighted average of everything that has ever entered stock**:
+The application does not use the price of the last delivery. It keeps **one pool of quantity and value per item** and re-averages it as stock moves:
 
 ```
-                    total cost of everything in     2,500 + 1,400     3,900
-weighted average =  ─────────────────────────── =  ─────────────── = ───────  =  10.40 per kg
-                    total quantity of everything       250 + 125        375
+                  value in the pool       2,500 + 1,400     3,900
+moving average =  ───────────────────  =  ─────────────── = ───────  =  10.40 per kg
+                  quantity in the pool       250 + 125        375
 ```
 
-**Two things worth knowing:**
+**Three things worth knowing:**
 
-1. The average is taken over **everything that has ever entered stock since day one**, and it does not fall as stock is sold or consumed. This is the conventional periodic weighted average.
-2. For a finished product, the same formula is fed from a second source: **production orders** (§6).
+1. It is a **true moving average**, not a period-end one. The pool is rebuilt one calendar day at a time: that day's stock IN (purchases, finished goods from production) is added and the average recalculated **before** that day's stock OUT (sales, raw material consumed) is priced at it.
+2. Sold and consumed stock **leaves the pool**. The average describes what the stock still on the shelf is worth, not an average of everything ever bought.
+3. **There are no closed periods.** Editing or deleting a past purchase, sale or production run re-runs that item's cost forward from that date to today, and cascades into anything downstream — including the finished product a raw material feeds.
+
+For a finished product the same pool is fed from a second source: **production orders** (§6).
 
 ---
 
@@ -143,13 +146,13 @@ Cost per loaf = 1,960 ÷ 300 = 6.5333
 
 ### Valuing the finished product
 
-After this run, bread has an average cost of:
+After this run, bread enters the pool at:
 
 ```
-average cost per loaf = 1,960 ÷ 300 = 6.533333…
+cost per loaf = 1,960 ÷ 300 = 6.5333   (stored to four decimals)
 ```
 
-and that is what Cost of Goods Sold will be computed from when it sells.
+Each sale line records the cost that applied **when that sale was made**, and Cost of Goods Sold is the sum of `qty × that stored cost`. The four-decimal storage is why the figures below carry a one-cent tail — see §8.
 
 ---
 
@@ -205,13 +208,15 @@ Owed by customer            =  2,736.00
 **Second entry — cost of goods sold (automatic):**
 
 ```
-COGS = 200 loaves × 6.533333… = 1,306.67
+COGS = 200 loaves × 6.5333 (the stored cost) = 1,306.66
 ```
 
 | Account | Debit | Credit |
 |---|---:|---:|
-| 5000 Cost of Goods Sold | 1,306.67 | |
-| 1200 Inventory | | 1,306.67 |
+| 5000 Cost of Goods Sold | 1,306.66 | |
+| 1200 Inventory | | 1,306.66 |
+
+> **On that last cent.** Carrying full precision to the end would give 1,306.67. The app posts 1,306.66 because it costs each line at the rate it actually stored, and that is deliberate: the ledger agrees with the per-line cost a user can open and inspect, rather than with precision the app never kept. The cent stays in inventory, so nothing is lost.
 
 > Two separate entries, deliberately: the first says **what you sold it for**, the second **what it cost you**. The difference between them is gross profit, and it stays visible to an auditor.
 
@@ -248,44 +253,40 @@ The screen used to carry an "other costs" repeater. It has been **PARKED** — c
 | 1000 | Cash on Hand | 1,500.00 | |
 | 1100 | Accounts Receivable | 1,236.00 | |
 | 1150 | VAT Receivable (Input) | 546.00 | |
-| 1200 | Inventory (Stock) | 2,993.33 | |
+| 1200 | Inventory (Stock) | 2,993.34 | |
 | 2000 | Accounts Payable | | 4,896.00 |
 | 2100 | VAT Payable (Output) | | 336.00 |
 | 2200 | Production Labor Accrued | 0.00 | 0.00 |
 | 4000 | Sales Revenue | | 2,400.00 |
-| 5000 | Cost of Goods Sold | 1,356.67 | |
+| 5000 | Cost of Goods Sold | 1,356.66 | |
 | | **Total** | **7,632.00** | **7,632.00** |
 
 ### Checking the inventory balance independently
 
 ```
-Flour left  =  375 − 150  =  225 kg     × 10.40   =  2,340.00
-Bread left  =  300 − 200  =  100 loaves × 6.5333  =    653.33
+Flour left  =  375 − 150  =  225 kg  × 10.40      =  2,340.00
+Bread left  =  300 − 200  =  100 loaves           =    653.34   (1,960 − 1,306.66 — what is left in the pool)
                                                      ─────────
-                                                      2,993.33   ✓ agrees with the ledger
+                                                      2,993.34   ✓ agrees with the ledger
 ```
 
-### Profitability
+### And the Profit & Loss report says
 
-```
-Gross profit        =  2,400.00 − 1,306.67   =  1,093.33
-less labor variance                           −     50.00
-Operating profit                             =  1,043.33
-```
-
-### And the Profit & Loss report in the app says
+The report is **accrual**. It is read straight off the general ledger — the same rows the Trial Balance is built from — so the two can never disagree:
 
 | | |
 |---|---:|
-| Income received | 1,500.00 |
-| Expenses paid | 0.00 |
-| **Net profit** | **1,500.00** |
+| Revenue | 2,400.00 |
+| Cost of goods sold | 1,356.66 |
+| **Gross profit** | **1,043.34** |
+| Operating expenses | 0.00 |
+| **Net profit** | **1,043.34** |
 
-**These do not contradict each other — they answer different questions.** The Profit & Loss report is **cash basis**: it answers "how much came into the till, and how much left it". In April, 1,500 came in and nothing went out, because every purchase and the payroll were all on credit.
+Cost of goods sold is the 1,306.66 from the sale **plus the 50 labor variance** from §7 — the variance is a genuine cost of making the goods, so it belongs there and not among operating expenses. Operating expenses are zero only because this example carries no rent, utilities or non-production salaries; a real month would.
 
-The **accounting profit (1,043.33)** is what the Trial Balance and the general ledger show: revenue 2,400 less COGS 1,356.67.
+**Revenue is 2,400, not the 1,500 collected.** Revenue is recognised when the invoice is raised, not when the customer pays. The 1,236 still outstanding is a receivable, not a reduction in revenue — just as the 4,896 owed to suppliers is a payable, not a saving.
 
-The gap between the two figures is not an error. It is the sum of everything that has not moved as cash yet: 1,236 not yet collected, and 4,896 not yet paid.
+**What actually moved in and out of the till is a different question, and it has its own report:** Cash Flow. Answering it from the Profit & Loss is what this report used to do, and it is why its figures could not be reconciled against the Trial Balance.
 
 ---
 
@@ -295,105 +296,35 @@ The gap between the two figures is not an error. It is the sum of everything tha
 
 **2. Re-costing is from scratch.** Editing a production order recomputes the material cost entirely, because the mix of materials may itself be what changed.
 
-**3. Rounding.** Unit cost is stored to four decimals; money to two. In this example: 6.5333 per loaf, and COGS rounded once at posting time (1,306.67).
+**3. Rounding.** Unit cost is stored to four decimals; money to two. Cost of goods sold is `qty × the stored rate`, rounded once at posting time — 200 × 6.5333 = **1,306.66** in this example. See the note in §8 on why that is a cent under full precision, and why that is the right answer here.
 
-**4. Average cost is read at posting time.** Editing an old sales invoice recomputes COGS at the **current** average, not the average as it stood on the original sale date. Acceptable under a periodic weighted average, but worth knowing when correcting an old invoice after new deliveries at different prices.
+**4. Correcting the past re-costs everything after it.** There are no closed periods. Editing or deleting a past purchase, sale or production run re-runs that item's cost pool forward from that date to today, corrects the stored cost on every affected line, and reverses and reposts any ledger entry whose figure actually changed. It cascades: correcting a raw material re-costs the runs that consumed it and the finished goods those runs made.
 
 **5. Editing versus deleting.** Any employee can edit (it leaves a full trail). Only a company admin can delete.
 
 ---
 
-## 12. ⚠ Known gap — the Stock report does not know about production
+## 12. The Stock report and the ledger agree
 
-**This is an open defect, unrelated to everything above. It is documented here because it falls squarely inside this cycle.** What follows is written from the screen, not from the code: this is what you actually see, and what it will cost you.
+**This section used to document an open defect. It has since been fixed, and the record of it is kept here because the failure is worth understanding.**
 
-The **Inventory Statement** report reads purchases and sales only. It does not see raw material consumed by a production run, and it does not see finished goods produced by one.
+The Inventory Statement used to read purchases and sales only. It could not see raw material consumed by a production run, nor finished goods produced by one — so for a production company it reported:
 
----
+| | Correct | What it used to show |
+|---|---:|---:|
+| Flour | 225 kg | 375 kg (consumption ignored) |
+| Bread | 100 loaves | −200 loaves (production ignored) |
+| Cost per loaf | 6.5333 | unavailable |
+| **Total stock value** | **2,993.34** | **3,900.00** |
 
-### 12.1 What you see on screen
+Two things made it worse than a wrong number. Bread carried a red badge reading *"Negative stock — check entries"*, so the app accused the user of a mistake they had not made. And the report contradicted the production form, which refused a run for lack of material the report said was there.
 
-Open **Reports → Inventory statement** at the end of the April example. In **Quantity** mode:
+**What changed:** stock quantity and cost now come from the same moving-average ledger everything else uses, so the report counts production the way the rest of the app does. It is asserted against the general ledger in `AccrualAccountingCycleTest`: the Inventory Statement's total stock value and the Inventory (1200) account must be the same figure to the cent, on a scenario that contains purchases, production and sales.
 
-| Item | Total purchased | Total sold | Current stock |
-|---|---:|---:|---:|
-| Bread  🔴 *Negative stock — check entries* | 0 loaf | 200 loaf | **−200 loaf** |
-| Flour | 375 kg | 0 kg | **375 kg** |
-
-Switch to **Value** mode:
-
-| Item | Avg. cost / unit | Current stock | Stock value |
-|---|---:|---:|---:|
-| Bread  🔴 *Negative stock — check entries* | **—** | −200 loaf | **0.00** |
-| Flour | 10.40 | 375 kg | **3,900.00** |
-| | | **Total stock value** | **3,900.00** |
-
-The truth, from §10, is: Flour **225 kg** worth 2,340.00, Bread **100 loaves** worth 653.33, total **2,993.33**.
-
-### 12.2 What the drill-down shows
-
-Click **Bread** to open its transaction history:
-
-| Date | Type | Qty | Unit price | Stock after |
-|---|---|---:|---:|---:|
-| 20 Apr | Sale | −200 | 12.00 | **−200** |
-
-The production run of 12 April that made those 300 loaves is simply **not there**. As far as this screen is concerned, you sold 200 loaves you never had.
-
-Click **Flour**:
-
-| Date | Type | Qty | Unit price | Stock after |
-|---|---|---:|---:|---:|
-| 2 Apr | Purchase | +250 | 10.00 | 250 |
-| 9 Apr | Purchase | +125 | 11.20 | **375** |
-
-The 150 kg you consumed on 12 April is **not there** either.
-
----
-
-### 12.3 What this actually does to you
-
-**1 · The app accuses you of a mistake you did not make.**
-Bread carries a red badge reading *"Negative stock — check entries"*. There is nothing to check. Every entry is correct. You will spend an evening hunting for a sale you never recorded, and you will not find it, because it does not exist.
-
-**2 · Two screens of the same app give you two different answers.**
-The report says you have 375 kg of flour. You start a production run for 600 loaves, which needs 300 kg. The app refuses to save it:
-
-> *Only 225 kg of "Flour" are in stock. Record the purchase first, or reduce the quantity.*
-
-So the report says 375, the production form says 225, and the form tells you to record a purchase you recorded twice already. (The form is the one telling the truth.)
-
-**3 · Your physical count will not match, and you will suspect theft.**
-You count the sacks on the shelf: 225 kg. The report says 375 kg. A 150 kg difference — six full sacks — with no explanation. That is exactly what a theft looks like on paper, and nothing on the screen suggests otherwise.
-
-**4 · You cannot find out what a loaf costs you.**
-Bread's *Avg. cost / unit* shows **—**. The number exists — it is 6.5333, the app used it to post cost of goods sold on your own sales invoice — but this screen will not show it to you. So the one screen you would open to ask *"am I pricing my bread above cost?"* cannot answer.
-
-**5 · Your stock is overstated by 30%.**
-3,900.00 instead of 2,993.33 — **906.67 too high**. If you hand that figure to a bank for financing, to an insurer for a policy, or into a year-end stocktake, you are reporting stock you do not own.
-
-**6 · Your accountant will find two different inventory figures.**
-The Trial Balance says Inventory = **2,993.33**. The Stock report says **3,900.00**. Same date, same company, same app. Whoever reconciles the two will stop and ask, and the answer is not a reassuring one.
-
----
-
-### 12.4 What is still correct — do not over-worry
-
-The defect is **in this one report**. It has not corrupted anything:
-
-- **The general ledger is right.** Inventory 2,993.33 is the correct figure and the Trial Balance balances.
-- **Cost of goods sold is right.** The 1,306.67 posted on the sale used the true cost of 6.5333.
-- **You cannot over-consume or oversell.** Both the production form and the sales form check the *real* stock and refuse to go negative. Nothing wrong can be entered because of this.
-- **Trading-only companies are entirely unaffected.** With no production orders, purchases and sales are the whole story, and the report is correct.
-
-### 12.5 Working around it until it is fixed
-
-- **For total stock value:** read the **Inventory (1200)** balance off the Trial Balance. That figure is correct.
-- **For the quantity of one item:** there is **no screen that will tell you**. This report is the only place in the app that displays stock quantity at all. Until it is fixed, you either track raw-material quantities outside the app, or use this trick: open a production order, ask for an absurd quantity of that material, and read the true figure off the error message — *"Only 225 kg of "Flour" are in stock"* — then cancel without saving.
-
-### 12.6 Where the fix goes
-
-The subqueries in `ReportDataService::purchasedBase()`, `purchaseCost()` and `soldBase()` need to add production-order quantities and costs, and subtract consumed material lines — that is, do what `Item::currentStock()` and `Item::averagePurchaseCost()` already do correctly. The per-item history in `inventoryItemHistory()` needs two more row types alongside *purchase* and *sale*: **produced** and **consumed**.
+```
+Stock report total stock value   2,993.34
+Inventory (1200) on the ledger   2,993.34   ✓
+```
 
 ---
 
@@ -409,6 +340,7 @@ The subqueries in `ReportDataService::purchasedBase()`, `purchaseCost()` and `so
 | How do I know labor was settled? | Account 2200 reads zero at month end |
 | How is a finished product valued? | Total batch cost ÷ quantity produced |
 | When is COGS recognised? | The moment the sales invoice is recorded, as its own entry |
-| Why is net profit different from gross profit? | The report is cash basis, the ledger is accrual — §10 |
-| Can I trust the Stock report? | **No, if you use Production** — §12 |
-| Then where do I read stock value? | Inventory (1200) on the Trial Balance — §12.5 |
+| Is the Profit & Loss cash or accrual? | Accrual, read off the ledger. Cash is its own report — §10 |
+| Can I trust the Stock report? | Yes — it ties to the ledger to the cent (§12) |
+| Why the odd last cent? | Each line is costed at its stored 4-decimal rate — §8 |
+| What happens if I fix an old entry? | Everything after it is re-costed automatically — §11 |

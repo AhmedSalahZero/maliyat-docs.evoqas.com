@@ -22,6 +22,7 @@
 import { onMounted, computed, ref, watch } from 'vue';
 import { usePage, Link, router }           from '@inertiajs/vue3';
 import { useAuthStore }                    from '@/stores/useAuthStore';
+import { purgeSessionArtifacts } from '@/composables/usePrivateCache';
 
 // 2. Props
 defineProps({
@@ -58,7 +59,11 @@ function showFlashToast(message, type = 'success') {
     setTimeout(() => { showFlash.value = false; }, 3500);
 }
 
-function logout() {
+async function logout() {
+    // Same purge as the company-side menu — a super_admin's cached
+    // pages span every company on the platform, so this matters more
+    // here, not less. See composables/usePrivateCache.js.
+    await purgeSessionArtifacts();
     router.post(route('logout'));
 }
 

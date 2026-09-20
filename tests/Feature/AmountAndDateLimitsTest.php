@@ -176,10 +176,46 @@ class AmountAndDateLimitsTest extends TestCase
         $this->assertSame(1, Sale::count());
     }
 
-    public function test_a_modestly_post_dated_document_is_still_allowed(): void
+    /**
+     * A transaction date can never be in the future, not even by a
+     * day.
+     *
+     * This test asserted the opposite until the date window was
+     * tightened (see FinancialRules' class doc comment): a
+     * transaction date records when something HAPPENED, and nothing
+     * in this app legitimately happens later than today. There is no
+     * post-dated payment method here — every method settles the
+     * moment it is recorded — and "pay later" is the separate
+     * due_date field, which keeps its own much wider window.
+     */
+    public function test_a_post_dated_document_is_rejected(): void
     {
         $this->post('/app/sales', $this->salePayload(['date' => now()->addMonth()->toDateString()]))
-            ->assertSessionHasNoErrors();
+            ->assertSessionHasErrors('date');
+
+        $this->assertSame(0, Sale::count());
+    }
+
+    /** Today itself is the boundary, and it is inclusive. */
+    public function test_a_document_dated_today_is_accepted(): void
+    {
+        $this->post('/app/sales', $this->salePayload([
+            'date' => \Illuminate\Support\Carbon::today('Africa/Cairo')->toDateString(),
+        ]))->assertSessionHasNoErrors();
+
+        $this->assertSame(1, Sale::count());
+    }
+
+    /**
+     * But a due date still reaches years ahead — tightening the
+     * transaction date must not have tightened this with it.
+     */
+    public function test_a_due_date_a_year_out_is_still_allowed(): void
+    {
+        $this->post('/app/sales', $this->salePayload([
+            'mode'     => 'later',
+            'due_date' => now()->addYear()->toDateString(),
+        ]))->assertSessionHasNoErrors();
     }
 
     public function test_a_payment_dated_far_in_the_future_is_rejected(): void

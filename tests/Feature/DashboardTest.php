@@ -140,7 +140,7 @@ class DashboardTest extends TestCase
 
         $props = $this->dashboard()->toArray()['props'];
 
-        $this->assertSame(0.0, collect($props['sales_by_channel'])->sum('value'));
+        $this->assertEqualsWithDelta(0.0, collect($props['sales_by_channel'])->sum('value'), 0.001);
         $this->assertEmpty($props['sku_sales']);
     }
 
@@ -356,7 +356,12 @@ class DashboardTest extends TestCase
         $old = $this->sell($customer, $item, 999, 999);
         $old->forceFill(['date' => now()->subMonths(6)->toDateString()])->save();
 
-        $sku = collect($this->dashboard()->toArray()['props']['sku_sales'])->firstWhere('name', 'Cement');
+        // 'month' is asked for explicitly: the dashboard defaults to
+        // the YEAR now, and six months back is usually still inside
+        // it — so the default view would legitimately include this
+        // sale and the test would be asserting nothing.
+        $sku = collect($this->dashboard(['period' => 'month'])->toArray()['props']['sku_sales'])
+            ->firstWhere('name', 'Cement');
 
         $this->assertEqualsWithDelta(10.0, $sku['volume'], 0.001, 'A six-month-old sale leaked into "this month".');
     }
@@ -369,7 +374,7 @@ class DashboardTest extends TestCase
         $old = $this->sell($customer, $item, 50, 10);
         $old->forceFill(['date' => now()->startOfYear()->addDay()->toDateString()])->save();
 
-        $monthly = collect($this->dashboard()->toArray()['props']['sku_sales']);
+        $monthly = collect($this->dashboard(['period' => 'month'])->toArray()['props']['sku_sales']);
         $yearly  = collect($this->dashboard(['period' => 'year'])->toArray()['props']['sku_sales']);
 
         // The sale is dated the second of January, so it is outside
@@ -380,9 +385,22 @@ class DashboardTest extends TestCase
         $this->assertEqualsWithDelta(50.0, $yearly->first()['volume'], 0.001);
     }
 
-    public function test_an_unknown_period_falls_back_to_the_month(): void
+    /**
+     * The fallback is the YEAR. It used to be the month; the
+     * dashboard's default window was widened deliberately (see
+     * DashboardController::resolvePeriod()), and an unrecognised
+     * value has to land on whatever the default is rather than on
+     * some third thing.
+     */
+    public function test_an_unknown_period_falls_back_to_the_default_window(): void
     {
-        $this->assertSame('month', $this->dashboard(['period' => 'nonsense'])->toArray()['props']['period']);
+        $this->assertSame('year', $this->dashboard(['period' => 'nonsense'])->toArray()['props']['period']);
+        $this->assertSame('year', $this->dashboard()->toArray()['props']['period'], 'No period given must mean the same thing');
+
+        // And a recognised one is still honoured.
+        foreach (['month', 'quarter', 'year'] as $period) {
+            $this->assertSame($period, $this->dashboard(['period' => $period])->toArray()['props']['period']);
+        }
     }
 
     // ── What must NOT be there ───────────────────────────────────

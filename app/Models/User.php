@@ -130,8 +130,33 @@ class User extends Authenticatable
             ->whereKey($this->company_id)
             ->first(['is_active', 'trial_ends_at']);
 
+        // No company behind a non-super_admin account means the
+        // account is ORPHANED, and an orphan must not be let in.
+        //
+        // This used to `return null` — "no company, nothing to check,
+        // carry on" — and that was a cross-tenant hole, not a
+        // harmless gap. users.company_id is nullOnDelete (see
+        // 2026_09_14_000002_add_company_fields_to_users_table.php),
+        // so deleting a company leaves its admins and employees
+        // behind with company_id = null. And BelongsToCompany only
+        // applies its global scope `if (auth()->user()->company_id)`
+        // — a null company_id does not scope the query to nothing,
+        // it switches the tenant filter OFF ENTIRELY. The orphan
+        // signed in and read every company on the platform.
+        //
+        // Verified before the fix: an admin whose company row was
+        // deleted signed in normally and listed another tenant's
+        // customers. (/app/dashboard answered 403, so it was not
+        // fully usable — but "the UI mostly refuses" is not the
+        // boundary this application claims to enforce.)
+        //
+        // Admin\CompanyController::destroy() deletes a company's
+        // users explicitly, so the supported delete path does not
+        // create orphans. This covers every other way a row can go:
+        // an older build, a manual SQL delete, a restored backup, a
+        // failed migration.
         if (! $company) {
-            return null;
+            return 'errors.account_orphaned';
         }
 
         // An administrative suspension outranks a billing one: if an

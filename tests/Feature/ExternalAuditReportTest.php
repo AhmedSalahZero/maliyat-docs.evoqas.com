@@ -112,15 +112,36 @@ class ExternalAuditReportTest extends TestCase
 
     // ── Each half keeps its own filter ───────────────────────────
 
-    public function test_the_trial_balance_takes_a_single_date(): void
+    /**
+     * The Trial Balance takes its own RANGE (tb_from/tb_to), kept
+     * separate from the Journal's from/to below so that changing one
+     * filter on the page cannot silently move the other.
+     *
+     * It used to be a single as_of date. It now reports Opening,
+     * Period Movement and Closing per account, which needs two ends.
+     */
+    public function test_the_trial_balance_takes_its_own_range(): void
     {
         $this->recordSale('2026-09-01', 1000);
 
-        $before = $this->props(['as_of' => '2026-08-31'])['trialBalance'];
-        $after  = $this->props(['as_of' => '2026-09-30'])['trialBalance'];
+        $before = $this->props(['tb_from' => '2026-01-01', 'tb_to' => '2026-08-31'])['trialBalance'];
+        $after  = $this->props(['tb_from' => '2026-01-01', 'tb_to' => '2026-09-30'])['trialBalance'];
 
         $this->assertCount(0, $before['rows'], 'Nothing was posted before September');
         $this->assertNotEmpty($after['rows']);
+    }
+
+    /** Changing the Journal's range must not disturb the Trial Balance. */
+    public function test_the_two_filters_are_independent(): void
+    {
+        $this->recordSale('2026-09-01', 1000);
+
+        $props = $this->props([
+            'tb_from' => '2026-01-01', 'tb_to' => '2026-09-30',
+            'from'    => '2026-10-01', 'to'    => '2026-10-31',
+        ]);
+
+        $this->assertNotEmpty($props['trialBalance']['rows'], 'The Journal range leaked into the Trial Balance');
     }
 
     public function test_the_journal_takes_a_range(): void
@@ -138,10 +159,16 @@ class ExternalAuditReportTest extends TestCase
     {
         $this->recordSale('2026-09-01', 1000);
 
-        $trialBalance = $this->props(['as_of' => '2026-09-30'])['trialBalance'];
+        $trialBalance = $this->props(['tb_from' => '2026-01-01', 'tb_to' => '2026-09-30'])['trialBalance'];
 
         $this->assertTrue($trialBalance['is_balanced']);
-        $this->assertEquals($trialBalance['total_debit'], $trialBalance['total_credit']);
+
+        // Both ends have to balance, not just the closing position:
+        // a period whose movements did not balance would still close
+        // square if the opening imbalance happened to cancel it.
+        $this->assertEquals($trialBalance['total_opening_debit'], $trialBalance['total_opening_credit']);
+        $this->assertEquals($trialBalance['total_period_debit'], $trialBalance['total_period_credit']);
+        $this->assertEquals($trialBalance['total_closing_debit'], $trialBalance['total_closing_credit']);
     }
 
     // ── The old links still work ─────────────────────────────────
