@@ -120,7 +120,9 @@ class Item extends Model
 
     /**
      * Total base units sold, optionally only those on or before
-     * $asOf.
+     * $asOf. A sale line's own qty is in whatever unit the customer
+     * was invoiced in (e.g. Carton) — qty_per_uom converts it to
+     * base units (e.g. kg), same idea as totalPurchasedBase() above.
      */
     public function totalSoldBase(?string $asOf = null): float
     {
@@ -128,7 +130,8 @@ class Item extends Model
             ->when($asOf, fn ($q) => $q->whereHas(
                 'sale', fn ($q2) => $q2->where('date', '<=', $asOf)
             ))
-            ->sum('qty');
+            ->selectRaw('SUM(qty * qty_per_uom) as total')
+            ->value('total') ?: 0;
     }
 
     /**

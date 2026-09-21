@@ -47,14 +47,20 @@ trait GuardsStockLevels
     {
         $lines = collect($this->input('lines', []));
 
-        // How much of each item this submission wants, in total —
-        // summed first, so three lines of the same item are judged
-        // against the stock once rather than each believing it has
-        // the whole quantity to itself.
+        // How much of each item this submission wants, in BASE
+        // units, in total — summed first, so three lines of the
+        // same item are judged against the stock once rather than
+        // each believing it has the whole quantity to itself. A
+        // line sold in Cartons wants qty * qty_per_uom of the item's
+        // actual base unit (e.g. kg), not "qty" cartons of stock.
         $wanted = $lines
             ->filter(fn ($line) => ! empty($line['item_id']))
             ->groupBy('item_id')
-            ->map(fn ($rows) => (float) $rows->sum(fn ($row) => (float) ($row['qty'] ?? 0)));
+            ->map(fn ($rows) => (float) $rows->sum(function ($row) {
+                $qtyPerUom = (float) ($row['qty_per_uom'] ?? 1) ?: 1;
+
+                return (float) ($row['qty'] ?? 0) * $qtyPerUom;
+            }));
 
         if ($wanted->isEmpty()) {
             return;
@@ -62,11 +68,12 @@ trait GuardsStockLevels
 
         $items = Item::query()->whereKey($wanted->keys())->get()->keyBy('id');
 
-        // What the sale being edited currently holds, per item —
-        // released back before asking what is available.
+        // What the sale being edited currently holds, per item, in
+        // base units — released back before asking what is
+        // available.
         $released = $excluding
             ? $excluding->lines()->get()->groupBy('item_id')
-                ->map(fn ($rows) => (float) $rows->sum('qty'))
+                ->map(fn ($rows) => (float) $rows->sum(fn ($row) => $row->baseQty()))
             : collect();
 
         foreach ($wanted as $itemId => $qty) {

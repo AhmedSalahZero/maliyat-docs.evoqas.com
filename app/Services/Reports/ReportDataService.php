@@ -297,7 +297,10 @@ class ReportDataService
                 ->join('sale_lines', 'sale_lines.sale_id', '=', 'sales.id')
                 ->leftJoin('items', 'items.id', '=', 'sale_lines.item_id')
                 ->whereNotNull('sale_lines.unit_cost')
-                ->selectRaw("COALESCE(items.name, 'Other') as item, SUM(sale_lines.qty * sale_lines.unit_cost) as total")
+                // unit_cost is per BASE unit — qty * qty_per_uom
+                // converts a Carton-priced line back to the base
+                // units it actually cost, same as repriceSaleCogs().
+                ->selectRaw("COALESCE(items.name, 'Other') as item, SUM(sale_lines.qty * sale_lines.qty_per_uom * sale_lines.unit_cost) as total")
                 ->groupBy('item')
                 ->orderByDesc('total')
                 ->get()
@@ -715,7 +718,7 @@ class ReportDataService
             ->join('sales', 'sales.id', '=', 'sale_lines.sale_id')
             ->when($asOf, fn ($q) => $q->where('sales.date', '<=', $asOf))
             ->groupBy('sale_lines.item_id')
-            ->selectRaw('sale_lines.item_id as item_id, SUM(sale_lines.qty) as base')
+            ->selectRaw('sale_lines.item_id as item_id, SUM(sale_lines.qty * sale_lines.qty_per_uom) as base')
             ->get()->keyBy('item_id');
 
         $consumed = ProductionOrderMaterialLine::query()
@@ -812,16 +815,25 @@ class ReportDataService
                 'sales.id as doc_id',
                 'sales.date as date',
                 'sale_lines.qty as qty',
+                'sale_lines.qty_per_uom as qty_per_uom',
                 'sale_lines.unit_price as unit_price',
             ])
             ->get()
-            ->map(fn ($row) => [
-                'date'       => Carbon::parse($row->date)->toDateString(),
-                'type'       => 'sale',
-                'ref'        => "Sale #{$row->doc_id}",
-                'qty'        => -1 * (float) $row->qty,
-                'unit_price' => (float) $row->unit_price,
-            ]);
+            ->map(function ($row) {
+                $qtyPerUom = (float) $row->qty_per_uom ?: 1.0;
+                $baseQty   = (float) $row->qty * $qtyPerUom;
+
+                return [
+                    'date'       => Carbon::parse($row->date)->toDateString(),
+                    'type'       => 'sale',
+                    'ref'        => "Sale #{$row->doc_id}",
+                    'qty'        => -1 * $baseQty,
+                    // Shown per base unit, same as the purchase row
+                    // above, so a mixed history of Cartons and kg
+                    // reads on one consistent unit price scale.
+                    'unit_price' => $qtyPerUom > 0 ? (float) $row->unit_price / $qtyPerUom : (float) $row->unit_price,
+                ];
+            });
 
         // NEW — this item made via a Production Order (stock in), at
         // the batch's own unit cost. Only meaningful for a 'product'

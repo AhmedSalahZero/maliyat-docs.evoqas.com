@@ -45,10 +45,20 @@ class StoreSaleRequest extends FormRequest
             ],
             'date' => ['required', ...FinancialRules::date()],
 
-            'lines'              => ['required', 'array', 'min:1'],
-            'lines.*.item_id'    => ['nullable', Rule::exists('items', 'id')->where('company_id', $companyId)],
-            'lines.*.qty'        => ['required', ...FinancialRules::qty()],
-            'lines.*.unit_price' => ['required', ...FinancialRules::amount(0)],
+            'lines'                  => ['required', 'array', 'min:1'],
+            'lines.*.item_id'        => ['nullable', Rule::exists('items', 'id')->where('company_id', $companyId)],
+            'lines.*.qty'            => ['required', ...FinancialRules::qty()],
+            // The unit this line was actually sold in — e.g. "Carton"
+            // — and how many base units (e.g. "kg") one of it equals.
+            // Optional: a free-text line, or one submitted with no
+            // unit info, is simply read as already being in base
+            // units (qty_per_uom defaults to 1 — see
+            // SaleController::lineAttributes()), same as before this
+            // feature existed.
+            'lines.*.uom'            => ['nullable', 'string', 'max:40'],
+            'lines.*.qty_per_uom'    => ['nullable', ...FinancialRules::qty()],
+            'lines.*.base_unit_name' => ['nullable', 'string', 'max:40'],
+            'lines.*.unit_price'     => ['required', ...FinancialRules::amount(0)],
 
             'vat_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
 

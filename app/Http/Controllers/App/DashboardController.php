@@ -287,7 +287,11 @@ class DashboardController extends Controller
             ->select([
                 'items.id',
                 'items.name',
-                DB::raw('COALESCE(SUM(sale_lines.qty), 0) AS volume'),
+                // Base units, not raw qty — a line sold in Cartons
+                // and one sold in kg must land on the same scale
+                // before they can be summed into one "volume" figure
+                // (see Item::totalSoldBase() for the same rule).
+                DB::raw('COALESCE(SUM(sale_lines.qty * sale_lines.qty_per_uom), 0) AS volume'),
                 DB::raw('COALESCE(SUM(sale_lines.line_total), 0) AS value'),
                 DB::raw('COUNT(DISTINCT sale_lines.sale_id) AS transactions'),
             ])
@@ -399,7 +403,7 @@ class DashboardController extends Controller
         // Volume comes from its own correlated subquery instead, so
         // both figures stay correct without fighting each other.
         $volume = "COALESCE((
-            SELECT SUM(l.qty)
+            SELECT SUM(l.qty * l.qty_per_uom)
             FROM sale_lines l
             JOIN sales s2 ON s2.id = l.sale_id
             WHERE s2.customer_id = customers.id

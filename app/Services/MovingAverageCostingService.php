@@ -184,9 +184,17 @@ class MovingAverageCostingService
             $daySaleLines = $outboundSaleLines->filter(fn (SaleLine $l) => $l->sale->date->toDateString() === $date);
             $dayMaterialLines = $outboundMaterialLines->filter(fn (ProductionOrderMaterialLine $l) => $l->productionOrder->date->toDateString() === $date);
 
-            $qtyOut = round((float) $daySaleLines->sum('qty') + (float) $dayMaterialLines->sum('qty'), 2);
+            // A sale line's own qty is in whatever unit it was
+            // invoiced in (e.g. Carton) — baseQty() converts it to
+            // base units before it can be weighed against the pool,
+            // same as an inbound purchase line already does.
+            $qtyOut = round((float) $daySaleLines->sum(fn (SaleLine $l) => $l->baseQty()) + (float) $dayMaterialLines->sum('qty'), 2);
 
             foreach ($daySaleLines as $line) {
+                // unit_cost is always cost PER BASE UNIT (per kg,
+                // say) regardless of which unit the line was sold
+                // in — repriceSaleCogs() multiplies it back out by
+                // this line's base quantity, not its raw qty.
                 if ((float) ($line->unit_cost ?? -1) !== $averageCost) {
                     $affectedSaleIds->push($line->sale_id);
                 }
@@ -268,10 +276,14 @@ class MovingAverageCostingService
             return;
         }
 
+        // qty * qty_per_uom converts each line back to the base
+        // units unit_cost is actually priced per — a line sold in
+        // Cartons must be costed on the kg it actually took out of
+        // stock, not on the number of cartons on the invoice.
         $newTotal = round((float) SaleLine::query()
             ->where('sale_id', $saleId)
             ->whereNotNull('unit_cost')
-            ->selectRaw('SUM(qty * unit_cost) as total')
+            ->selectRaw('SUM(qty * qty_per_uom * unit_cost) as total')
             ->value('total'), 2);
 
         $currentlyPosted = $this->currentCogsPostedFor($sale);

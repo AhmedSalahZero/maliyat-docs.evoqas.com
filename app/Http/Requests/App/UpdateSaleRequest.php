@@ -43,10 +43,13 @@ class UpdateSaleRequest extends FormRequest
             ],
             'date' => ['required', ...FinancialRules::date()],
 
-            'lines'              => ['required', 'array', 'min:1'],
-            'lines.*.item_id'    => ['nullable', Rule::exists('items', 'id')->where('company_id', $companyId)],
-            'lines.*.qty'        => ['required', ...FinancialRules::qty()],
-            'lines.*.unit_price' => ['required', ...FinancialRules::amount(0)],
+            'lines'                  => ['required', 'array', 'min:1'],
+            'lines.*.item_id'        => ['nullable', Rule::exists('items', 'id')->where('company_id', $companyId)],
+            'lines.*.qty'            => ['required', ...FinancialRules::qty()],
+            'lines.*.uom'            => ['nullable', 'string', 'max:40'],
+            'lines.*.qty_per_uom'    => ['nullable', ...FinancialRules::qty()],
+            'lines.*.base_unit_name' => ['nullable', 'string', 'max:40'],
+            'lines.*.unit_price'     => ['required', ...FinancialRules::amount(0)],
 
             'vat_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             // A due date entered wrongly at creation could never be

@@ -40,7 +40,7 @@ import { usePermissions } from '@/composables/usePermissions';
 
 const props = defineProps({
     customers: { type: Array, required: true },
-    items:     { type: Array, required: true },
+    items:     { type: Array, required: true }, // each: {id, name, uom, qty_per_uom, base_unit_name}
     paymentChannels: { type: Array, required: true },
     salesChannels: { type: Array, required: true },
     sales:     { type: Object, required: true }, // paginator: { data, links, ... }
@@ -147,11 +147,21 @@ const otherErrors = computed(() =>
 // ── Edit state ───────────────────────────────────────────────────
 const editingSale = ref(null); // the full sale row being edited, or null when creating
 
+// A fresh line defaults to "1 base unit" (qty_per_uom 1, uom/
+// base_unit_name 'unit') — meaningless until an item is picked, at
+// which point onItemChange() below fills in that item's real base
+// unit (e.g. "kg"). Matches how a free-text/service line (no item
+// ever picked) behaves: qty is simply read as-is, same as before
+// this feature existed.
+function newSaleLine() {
+    return { item_id: null, qty: null, uom: 'unit', qty_per_uom: 1, base_unit_name: 'unit', unit_price: null };
+}
+
 const defaultFormState = () => ({
     customer_id: null,
     sales_channel_id: defaultSalesChannelId(),
     date: todayIso(),
-    lines: [{ item_id: null, qty: null, unit_price: null }],
+    lines: [newSaleLine()],
     vat_rate: 0,
     mode: 'now',
     method: 'cash',
@@ -188,12 +198,56 @@ const installmentSchedule = computed(() => {
 });
 
 function addLine() {
-    form.lines.push({ item_id: null, qty: null, unit_price: null });
+    form.lines.push(newSaleLine());
 }
 
 function removeLine(index) {
     if (form.lines.length <= 1) return;
     form.lines.splice(index, 1);
+}
+
+// Selecting an item defaults the line to selling in that item's
+// BASE unit (e.g. "kg", factor 1) — the same unit every sale used
+// implicitly before this feature existed, so nothing changes for an
+// item that's only ever been bought/sold one way. The dropdown next
+// to qty (see saleUnitOptions()) is how the user switches it to the
+// item's packaging unit (e.g. "Carton") instead.
+function onItemChange(index, itemId) {
+    form.lines[index].item_id = itemId;
+    const item = itemList.value.find((i) => i.id === itemId);
+    form.lines[index].uom = item?.base_unit_name ?? 'unit';
+    form.lines[index].qty_per_uom = 1;
+    form.lines[index].base_unit_name = item?.base_unit_name ?? 'unit';
+}
+
+// The unit choices for one line: always the item's base unit (kg),
+// plus its packaging unit (Carton) too — but only when that's
+// actually a different, meaningfully-sized unit (qty_per_uom > 1
+// just means "no packaging unit has ever been recorded for this
+// item"). A free-text line with no item has nothing to choose from.
+function saleUnitOptions(line) {
+    const item = itemList.value.find((i) => i.id === line.item_id);
+    if (!item) return [];
+
+    const base = { factor: 1, label: item.base_unit_name || 'unit' };
+    const pack = Number(item.qty_per_uom) > 1 ? { factor: Number(item.qty_per_uom), label: item.uom } : null;
+
+    return pack ? [base, pack] : [base];
+}
+
+// Switching a line's unit only changes what its qty is COUNTED in
+// (e.g. "5 Carton" vs "5 kg") — it deliberately leaves the qty
+// number itself untouched, same as re-picking a currency wouldn't
+// rewrite an amount already typed in.
+function onUnitChange(index, factor) {
+    const line = form.lines[index];
+    const item = itemList.value.find((i) => i.id === line.item_id);
+    const options = saleUnitOptions(line);
+    const chosen = options.find((o) => o.factor === Number(factor));
+
+    line.qty_per_uom = chosen?.factor ?? 1;
+    line.uom = chosen?.label ?? (item?.base_unit_name ?? 'unit');
+    line.base_unit_name = item?.base_unit_name ?? 'unit';
 }
 
 async function createCustomer(name) {
@@ -247,8 +301,15 @@ function startEdit(sale) {
     form.sales_channel_id = sale.sales_channel_id ?? defaultSalesChannelId();
     form.date = sale.date;
     form.lines = sale.lines.length
-        ? sale.lines.map((l) => ({ item_id: l.item_id, qty: l.qty, unit_price: l.unit_price }))
-        : [{ item_id: null, qty: null, unit_price: null }];
+        ? sale.lines.map((l) => ({
+            item_id: l.item_id,
+            qty: l.qty,
+            uom: l.uom ?? 'unit',
+            qty_per_uom: Number(l.qty_per_uom) || 1,
+            base_unit_name: l.base_unit_name ?? 'unit',
+            unit_price: l.unit_price,
+        }))
+        : [newSaleLine()];
     form.vat_rate = sale.vat_rate;
     form.due_date = editingSale.value?.due_date ?? null;
     form.clearErrors();
@@ -440,12 +501,13 @@ function saleItemsLabel(sale) {
 
             <table class="lines">
                 <colgroup>
-                    <col class="col-item"><col class="col-qty"><col class="col-price"><col class="col-total"><col class="col-rm">
+                    <col class="col-item"><col class="col-qty"><col class="col-uom"><col class="col-price"><col class="col-total"><col class="col-rm">
                 </colgroup>
                 <thead>
                     <tr>
                         <th>{{ t('itemLbl') }}</th>
                         <th>{{ t('qtyLbl') }}</th>
+                        <th>{{ t('unitLbl') }}</th>
                         <th>{{ t('unitPriceLbl') }}</th>
                         <th>{{ t('lineTotalLbl') }}</th>
                         <th></th>
@@ -455,16 +517,33 @@ function saleItemsLabel(sale) {
                     <tr v-for="(line, index) in form.lines" :key="index">
                         <td :data-label="t('itemLbl')">
                             <ComboSelect
-                                v-model="line.item_id"
+                                :model-value="line.item_id"
                                 :options="itemList"
                                 :creating="creatingItemForRow === index"
                                 :placeholder="t('selectPlaceholder')"
                                 :add-new-label="t('addNewItem')"
                                 :inline="false"
+                                @update:model-value="(val) => onItemChange(index, val)"
                                 @create="(name) => createItem(name, index)"
                             />
                         </td>
                         <td :data-label="t('qtyLbl')"><input v-model.number="line.qty" type="number" min="0" step="0.01" placeholder="0"></td>
+                        <td :data-label="t('unitLbl')">
+                            <!-- Only worth a dropdown once the item actually has
+                                 two known units (its base unit AND a packaging
+                                 unit, e.g. kg vs Carton) — see saleUnitOptions().
+                                 Anything else (no item picked, or an item with
+                                 only one unit ever recorded) just shows the
+                                 unit as plain text. -->
+                            <select v-if="saleUnitOptions(line).length > 1"
+                                    :value="line.qty_per_uom"
+                                    @change="onUnitChange(index, $event.target.value)">
+                                <option v-for="opt in saleUnitOptions(line)" :key="opt.factor" :value="opt.factor">
+                                    {{ opt.label }}
+                                </option>
+                            </select>
+                            <span v-else class="muted-inline">{{ line.uom || t('baseUnitLbl') }}</span>
+                        </td>
                         <td :data-label="t('unitPriceLbl')"><input v-model.number="line.unit_price" type="number" min="0" step="0.01" placeholder="0.00"></td>
                         <td class="linetotal" :data-label="t('lineTotalLbl')">{{ currency }} {{ money((line.qty || 0) * (line.unit_price || 0)) }}</td>
                         <td class="rm-cell"><button type="button" class="rm-line" @click="removeLine(index)">✕</button></td>

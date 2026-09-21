@@ -20,7 +20,7 @@
 //  Used by the Sales, Expenses, Inventory and Equipment forms.
 // ══════════════════════════════════════════════════════════════════
 
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
@@ -108,6 +108,31 @@ function closeForm() {
     adding.value = false;
     editingId.value = null;
 }
+
+// Opening the record for editing (Sale/Purchase/Expense/Equipment)
+// already brings you here — if there's only ONE payment on it, that
+// is almost always the one thing you actually came to correct, so
+// this skips the second "Edit" click and opens it straight away.
+// With two or more payments there's no way to guess which one you
+// mean, so those are left as a plain list to choose from.
+//
+// Keyed on payableId rather than firing on every props.payments
+// change: the record itself only changes to another one when
+// payableId changes (switching which Sale/Purchase you're editing),
+// so this runs once per record — never re-firing (and re-opening
+// the form) just because submitting or removing a payment updated
+// the list while you're already looking at it.
+watch(
+    () => props.payableId,
+    () => {
+        if (props.payments.length === 1) {
+            openEdit(props.payments[0]);
+        } else {
+            closeForm();
+        }
+    },
+    { immediate: true }
+);
 
 function submitPayment() {
     if (!draft.value.amount || draft.value.amount <= 0) return;
