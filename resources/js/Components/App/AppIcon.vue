@@ -36,6 +36,7 @@ const PROTOTYPE_ICONS = {
 // New icons, drawn to match the same 20x20 / stroke style
 const NEW_ICONS = {
     audit:    '<rect x="3" y="3" width="11" height="14" rx="1.5"/><line x1="6" y1="7" x2="11" y2="7"/><line x1="6" y1="10" x2="9" y2="10"/><circle cx="13.5" cy="13.5" r="3.5"/><line x1="16.2" y1="16.2" x2="18.5" y2="18.5"/>',
+    install:  '<rect x="6" y="2.5" width="8" height="15" rx="1.6"/><path d="M10 6.5v6M7.8 10.3 10 12.5l2.2-2.2"/><line x1="9" y1="15.2" x2="11" y2="15.2"/>',
     home:     '<path d="M3 10.5 10 4l7 6.5"/><path d="M5 9v7a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9"/><path d="M8 17v-4h4v4"/>',
     plus:     '<line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/>',
     close:    '<line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/>',

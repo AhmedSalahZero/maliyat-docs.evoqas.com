@@ -9,6 +9,7 @@ use App\Models\Customer;
 use App\Models\Item;
 use App\Models\PaymentChannel;
 use App\Models\Sale;
+use App\Models\SaleDraft;
 use App\Models\SalesChannel;
 use App\Services\JournalService;
 use App\Services\MovingAverageCostingService;
@@ -114,6 +115,22 @@ class SaleController extends Controller
             'paymentChannels'=> PaymentChannel::query()->orderBy('name')->get(['id', 'name']),
             'salesChannels'  => SalesChannel::query()->orderBy('id')->get(['id', 'name', 'name_ar']),
             'sales'          => $sales,
+            // Unfinished sales, shared by the whole team — see
+            // SaleDraftController. Newest first.
+            'drafts'         => SaleDraft::query()
+                ->with(['creator:id,name', 'updater:id,name'])
+                ->latest('updated_at')
+                ->latest('id')
+                ->limit(50)
+                ->get()
+                ->map(fn (SaleDraft $draft) => [
+                    'id'         => $draft->id,
+                    'data'       => $draft->data,
+                    'created_by' => $draft->creator?->name,
+                    'updated_by' => $draft->updater?->name,
+                    'updated_at' => $draft->updated_at?->toIso8601String(),
+                ])
+                ->values(),
         ]);
     }
 
@@ -183,6 +200,14 @@ class SaleController extends Controller
 
             if ($payment) {
                 $this->journal->postSaleReceipt($payment);
+            }
+
+            // Recorded from a draft? The draft has done its job.
+            // Inside the transaction so a failed sale keeps its
+            // draft. A draft somebody else already removed is simply
+            // not found — not an error.
+            if (! empty($data['draft_id'])) {
+                SaleDraft::query()->whereKey($data['draft_id'])->delete();
             }
         });
 

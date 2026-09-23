@@ -54,11 +54,18 @@ return [
     'after_or_equal'  => 'يجب أن يكون :attribute في :date أو بعده.',
     'before_or_equal' => 'يجب أن يكون :attribute في :date أو قبله.',
 
+    // Inventory purchase quantities — see App\Rules\HalfStepQuantity.
+    'half_step_qty' => 'يجب أن تكون الكمية رقماً صحيحاً أو نصفاً (مثل 1 أو 1.5 أو 2 أو 2.5).',
+
+    // Sales date — see StoreSaleRequest::messages().
+    'sale_date_not_future' => 'يمكن تسجيل البيع بتاريخ اليوم أو أي تاريخ سابق. لا يُسمح بتاريخ مستقبلي.',
+
     // The password rules the project applies — see
     // App\Support\PasswordRules.
     'password' => [
         'letters'       => 'يجب أن تحتوي كلمة المرور على حرف واحد على الأقل.',
         'mixed'         => 'يجب أن تحتوي كلمة المرور على حرف كبير وحرف صغير.',
+        'uppercase'     => 'يجب أن تحتوي كلمة المرور على حرف إنجليزي كبير واحد على الأقل (مثل A).',
         'numbers'       => 'يجب أن تحتوي كلمة المرور على رقم واحد على الأقل.',
         'symbols'       => 'يجب أن تحتوي كلمة المرور على رمز واحد على الأقل.',
         'uncompromised' => 'ظهرت كلمة المرور هذه في تسريب بيانات. يرجى اختيار كلمة أخرى.',

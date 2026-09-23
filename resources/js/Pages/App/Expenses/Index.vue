@@ -389,6 +389,9 @@ function freqLabel(freq) {
                     <button type="button" :class="{ active: form.mode === 'partial' }" @click="form.mode = 'partial'">{{ t('payPartialLbl') }}</button>
                     <button v-if="!isRecurring" type="button" :class="{ active: form.mode === 'installment' }" @click="form.mode = 'installment'">{{ t('payInstallmentLbl') }}</button>
                 </div>
+                <!-- Recurring: the choice above only covers payment #1 — see
+                     RecurringExpenseService::createSeries(). -->
+                <div v-if="isRecurring" class="alert info" style="margin-top: 10px;">{{ t('recurringPayFirstOnlyNote') }}</div>
 
                 <div v-if="form.mode === 'now'" class="paymode-sub">
                     <PaymentMethodField v-model="form.method" v-model:channel-id="form.payment_channel_id"

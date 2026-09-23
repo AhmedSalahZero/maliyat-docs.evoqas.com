@@ -83,4 +83,16 @@ class UpdateSaleRequest extends FormRequest
             $this->rejectOversellingStock($validator, $this->route('sale'));
         });
     }
+
+    /**
+     * A future date is refused (see FinancialRules::date()); say so
+     * in plain words instead of "must be a date before or equal to
+     * 2026-09-23".
+     */
+    public function messages(): array
+    {
+        return [
+            'date.before_or_equal' => __('validation.sale_date_not_future'),
+        ];
+    }
 }

@@ -506,6 +506,50 @@ table.lines input, table.lines select,
 }
 .avatar img { width: 100%; height: 100%; object-fit: cover; }
 
+/* Mobile header — less crowded (owner feedback, Sep 2026).
+   Phone only; the desktop header is untouched. Smaller, lighter
+   language and theme buttons (32px — kept at a size a finger can
+   still hit reliably), tighter spacing, and the company name moved
+   under "Maliyat Docs" on its own line, ending in "…" if it is too
+   long instead of pushing the buttons around. */
+@media (max-width: 767px) {
+    .app-header .app-header__inner { padding-inline: 12px; gap: 8px; }
+    .app-header .app-header__brand { gap: 8px; min-width: 0; flex: 1 1 auto; }
+    .app-header .app-header__logo { width: 30px; height: 30px; }
+    .app-header .app-header__name-line {
+        flex-direction: column;
+        align-items: flex-start;
+        flex-wrap: nowrap;
+        gap: 3px;
+        min-width: 0;
+        max-width: 100%;
+    }
+    .app-header .app-header__title { font-size: 16px; }
+    .app-header .app-header__company {
+        display: block;
+        max-width: 100%;
+        font-size: 11px;
+        padding: 2px 8px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .app-header .app-header__actions { gap: 6px; flex-shrink: 0; }
+    .app-header .lang-btn {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        font-size: 12px;
+        border-width: 1px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .app-header .theme-toggle { width: 32px; height: 32px; border-width: 1px; }
+    .app-header .theme-toggle svg { width: 16px; height: 16px; }
+    .app-header .avatar { width: 34px; height: 34px; font-size: 13px; }
+}
+
 /* Notification bell */
 .bell-btn {
     position: relative;
@@ -1094,6 +1138,55 @@ table.lines td.linetotal { text-align: end; white-space: nowrap; padding-inline-
 .equals-cell > span { color: var(--color-text-muted); flex-shrink: 0; }
 .equals-cell input[data-role="qtyperuom"] { width: 46px; flex-shrink: 0; }
 .equals-cell input[data-role="baseunit"] { width: 100%; min-width: 50px; }
+
+/* Inventory Purchase line table only (owner feedback, Sep 2026):
+   wider "Bought as" (e.g. Carton) and "Each one contains"
+   (e.g. = 24 piece) boxes so the words fit, plus the plain-language
+   explanation box and the per-line "what this adds to stock"
+   sentence. Scoped to .lines--purchase so the Sales table, which
+   shares table.lines, is unchanged. */
+table.lines.lines--purchase col.col-qty    { width: 96px; }
+table.lines.lines--purchase col.col-uom    { width: 150px; }
+table.lines.lines--purchase col.col-equals { width: 230px; }
+table.lines.lines--purchase col.col-price  { width: 136px; }
+table.lines.lines--purchase col.col-total  { width: 130px; }
+table.lines.lines--purchase .equals-cell { gap: 6px; }
+table.lines.lines--purchase .equals-cell input[data-role="qtyperuom"] { width: 72px; }
+table.lines.lines--purchase .equals-cell input[data-role="baseunit"]  { flex: 1; min-width: 90px; }
+table.lines.lines--purchase input.inp-invalid { border-color: var(--color-danger); }
+table.lines.lines--purchase .line-error { color: var(--color-danger); font-size: 11.5px; margin-top: 4px; line-height: 1.35; white-space: normal; }
+table.lines.lines--purchase tr.line-explain td {
+    padding: 0 6px 10px;
+    font-size: 12.5px;
+    color: var(--color-text-muted);
+    border-bottom: 1px solid var(--color-border);
+}
+table.lines.lines--purchase tr:has(+ tr.line-explain) td { border-bottom: none; }
+table.lines.lines--purchase .line-explain__cost::before { content: "·"; margin-inline: 8px; }
+.uom-explain {
+    margin: 12px 0 6px;
+    padding: 10px 14px;
+    border: 1px solid var(--color-border);
+    border-inline-start: 4px solid var(--color-primary);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    line-height: 1.55;
+}
+.uom-explain__title { font-weight: 600; margin-bottom: 4px; }
+.uom-explain ul { margin: 0; padding-inline-start: 18px; }
+.uom-explain__example { margin-top: 6px; color: var(--color-primary-dark); font-weight: 500; }
+@media (max-width: 640px) {
+    table.lines.lines--purchase tr.line-explain {
+        border: none;
+        padding: 0 4px;
+        margin: -4px 0 12px;
+    }
+    table.lines.lines--purchase tr.line-explain td { border-bottom: none; padding: 0; display: block; }
+    table.lines.lines--purchase tr.line-explain td::before { content: none; }
+    table.lines.lines--purchase .line-explain__cost { display: block; }
+    table.lines.lines--purchase .line-explain__cost::before { content: none; }
+    table.lines.lines--purchase .equals-cell input[data-role="baseunit"] { min-width: 0; }
+}
 
 /* Mobile: a 5-column table simply cannot work on a phone screen —
    each row becomes its own labelled mini-card instead. The
@@ -1992,13 +2085,25 @@ html[dir="rtl"] .report-toolbar__btn, body.lang-ar .report-toolbar__btn { font-f
         gap: 10px;
         text-align: end;
     }
+    /* The LABEL gives way, never the number (customer report, Sep
+       2026: on External Audit, "EGP 10,550,000.00" was pushed out
+       of its card because the label beside it refused to shrink).
+       The label may now shrink and wrap onto a second line; the
+       amount stays whole on one line and inside the card. */
     .report-table--stack td::before {
         content: attr(data-label);
         font-size: 11px;
         font-weight: 600;
         color: var(--color-text-muted);
-        flex-shrink: 0;
+        flex: 0 1 auto;
+        min-width: 0;
+        white-space: normal;
+        overflow-wrap: break-word;
+        line-height: 1.35;
         text-align: start;
+    }
+    .report-table--stack td.num {
+        white-space: nowrap;
     }
     .report-table--stack td.stack-primary {
         font-weight: 700;

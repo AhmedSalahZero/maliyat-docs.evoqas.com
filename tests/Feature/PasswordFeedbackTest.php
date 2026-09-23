@@ -47,8 +47,8 @@ class PasswordFeedbackTest extends TestCase
             'email'                 => uniqid().'@example.test',
             'currency'              => 'EGP',
             'language'              => 'en',
-            'password'              => 'password123',
-            'password_confirmation' => 'password123',
+            'password'              => 'Password123!',
+            'password_confirmation' => 'Password123!',
             'business_types'        => ['trading'],
             '_hp'                   => '',
         ], $overrides));
@@ -70,6 +70,9 @@ class PasswordFeedbackTest extends TestCase
             'too short'      => ['abc1'],
             'numbers only'   => ['12345678'],
             'letters only'   => ['password'],
+            'no capital'     => ['password1!'],
+            'no symbol'      => ['Password123'],
+            'no number'      => ['Password!!'],
         ];
     }
 
@@ -96,7 +99,7 @@ class PasswordFeedbackTest extends TestCase
     public function test_a_mismatched_confirmation_says_they_do_not_match(): void
     {
         $this->register([
-            'password'              => 'password123',
+            'password'              => 'Password123!',
             'password_confirmation' => 'different999',
         ])->assertSessionHasErrors('password');
 
@@ -164,7 +167,7 @@ class PasswordFeedbackTest extends TestCase
     {
         $strings = require lang_path('ar/validation.php');
 
-        foreach (['letters', 'numbers'] as $rule) {
+        foreach (['letters', 'numbers', 'symbols', 'uppercase'] as $rule) {
             $this->assertArrayHasKey($rule, $strings['password'] ?? []);
             $this->assertMatchesRegularExpression('/\p{Arabic}/u', $strings['password'][$rule]);
         }

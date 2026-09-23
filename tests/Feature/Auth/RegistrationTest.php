@@ -36,8 +36,8 @@ class RegistrationTest extends TestCase
             'business_types'        => ['trading'],
             'name'                  => 'Amina Salah',
             'email'                 => 'amina@example.test',
-            'password'              => 'secret-pass1',
-            'password_confirmation' => 'secret-pass1',
+            'password'              => 'Secret-pass1',
+            'password_confirmation' => 'Secret-pass1',
             'language'              => 'ar',
         ], $overrides);
     }

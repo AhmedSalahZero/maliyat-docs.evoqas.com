@@ -3,8 +3,17 @@ import { ref, readonly } from 'vue'
 const deferredPrompt = ref(null)
 const showBanner     = ref(false)
 const showIosBanner  = ref(false)
+// True once Maliyat runs as an installed app (home-screen icon) —
+// the Settings "Install app" item hides itself then.
+const isInstalled    = ref(false)
 
-const DELAY_MS            = 4000
+// Short pause before the install banner appears, so it doesn't pop
+// up mid-render. Was 4000 ms; customer feedback (Sep 2026) said the
+// wait after signing in was too long, so it is now ~1 second. The
+// rest of any wait is the browser itself getting ready
+// (beforeinstallprompt), which the app does not control — the
+// Settings → "Install app" item covers that case.
+const DELAY_MS            = 1000
 const DISMISS_SNOOZE_MS   = 10000
 const STORAGE_INSTALLED   = 'mm_pwa_installed'
 const STORAGE_DISMISSED   = 'mm_pwa_dismissed'
@@ -73,8 +82,10 @@ export function syncPwaInstallState() {
 
     if (isStandaloneDisplay()) {
         localStorage.setItem(STORAGE_INSTALLED, '1')
+        isInstalled.value = true
         return
     }
+    isInstalled.value = false
 
     if (localStorage.getItem(STORAGE_INSTALLED)) {
         localStorage.removeItem(STORAGE_INSTALLED)
@@ -172,9 +183,25 @@ function onBeforeInstallPrompt(e) {
 export function registerServiceWorker() {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
 
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {})
-    })
+    // Register straight away instead of waiting for window 'load'.
+    // The browser only offers the install once the service worker is
+    // in place, and 'load' waits for every image and font first —
+    // part of the "noticeable wait" customers saw after signing in.
+    // (Also covers the case where 'load' had already fired, which
+    // meant the listener never ran at all.)
+    const register = () => navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {})
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', register, { once: true })
+    } else {
+        register()
+    }
+}
+
+/** Samsung Internet — installs through its own menu, not a prompt. */
+export function isSamsungBrowser() {
+    if (typeof navigator === 'undefined') return false
+    return /SamsungBrowser/i.test(navigator.userAgent || '')
 }
 
 export function initPwaInstallListener() {
@@ -189,6 +216,16 @@ export function initPwaInstallListener() {
             syncPwaInstallState()
             captureDeferredPrompt()
             tryShowBanner()
+        })
+
+        // Installed through the browser's own menu (or our prompt):
+        // hide every install offer from now on.
+        window.addEventListener('appinstalled', () => {
+            localStorage.setItem(STORAGE_INSTALLED, '1')
+            isInstalled.value    = true
+            showBanner.value     = false
+            showIosBanner.value  = false
+            deferredPrompt.value = null
         })
 
         document.addEventListener('inertia:finish', () => {
@@ -213,6 +250,8 @@ export function usePwaInstall() {
         showBanner:    readonly(showBanner),
         showIosBanner: readonly(showIosBanner),
         canInstall:    readonly(deferredPrompt),
+        isInstalled:   readonly(isInstalled),
+        isSamsung:     isSamsungBrowser(),
         isIos:         isIosDevice(),
         isAndroid:     isAndroidDevice(),
 
@@ -228,6 +267,7 @@ export function usePwaInstall() {
 
             if (choice?.outcome === 'accepted') {
                 localStorage.setItem(STORAGE_INSTALLED, '1')
+                isInstalled.value = true
             }
 
             return choice

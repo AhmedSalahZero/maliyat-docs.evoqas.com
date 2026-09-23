@@ -134,6 +134,47 @@ function removeLine(index) {
     form.lines.splice(index, 1);
 }
 
+// ── Quantity: whole or half only (1, 1.5, 2, 2.5 …) ───────────────
+// The server enforces the same rule (App\Rules\HalfStepQuantity);
+// this just tells the user straight away, before they press Record.
+function isHalfStep(value) {
+    if (value === null || value === '' || value === undefined) return true;
+    const doubled = Number(value) * 2;
+    return Number.isFinite(doubled) && Math.abs(doubled - Math.round(doubled)) < 0.000001;
+}
+
+// Up to two decimals, no trailing zeros: 36, 1.5, 0.25.
+function plainNumber(v) {
+    return String(Math.round((Number(v) || 0) * 100) / 100);
+}
+
+// The plain-language sentence under each line, e.g.
+// "10 Carton × 24 = 240 piece will be added to stock"
+// "Price 240.00 per Carton = 10.00 per piece".
+function lineExplain(line) {
+    const qty = Number(line.qty) || 0;
+    const per = Number(line.qty_per_uom) || 0;
+    if (!line.item_id || qty <= 0 || per <= 0) return null;
+
+    const buyUnit   = (line.uom || '').trim() || t('inv_uom_placeholder');
+    const pieceUnit = (line.base_unit_name || '').trim() || t('inv_piece_placeholder');
+
+    const stockText = t('inv_line_stock', {
+        qty: plainNumber(qty), buyUnit, per: plainNumber(per),
+        stock: plainNumber(qty * per), pieceUnit,
+    });
+
+    const price = Number(line.unit_price) || 0;
+    const costText = price > 0
+        ? t('inv_line_cost', {
+            currencyA: currency.value, price: money(price), buyUnit,
+            currencyB: currency.value, each: money(price / per), pieceUnit,
+        })
+        : '';
+
+    return { stockText, costText };
+}
+
 // Selecting an item pre-fills its last-used UOM definition.
 function onItemChange(index, itemId) {
     form.lines[index].item_id = itemId;
@@ -321,23 +362,38 @@ function onConfirmDialogConfirm() {
             </div>
             <div v-if="form.errors.vendor_id" class="form-error">{{ form.errors.vendor_id }}</div>
 
-            <table class="lines">
+            <!-- Always-visible explanation of "Bought as" / "Each one
+                 contains" / price — owner feedback: the UOM fields were
+                 not self-explanatory. -->
+            <div class="uom-explain">
+                <div class="uom-explain__title">{{ t('inv_explain_title') }}</div>
+                <ul>
+                    <li>{{ t('inv_explain_1') }}</li>
+                    <li>{{ t('inv_explain_2') }}</li>
+                    <li><strong>{{ t('inv_explain_3') }}</strong></li>
+                    <li>{{ t('inv_explain_4') }}</li>
+                </ul>
+                <div class="uom-explain__example">{{ t('inv_explain_example') }}</div>
+            </div>
+
+            <table class="lines lines--purchase">
                 <colgroup>
                     <col class="col-item"><col class="col-qty"><col class="col-uom"><col class="col-equals"><col class="col-price"><col class="col-total"><col class="col-rm">
                 </colgroup>
                 <thead>
                     <tr>
                         <th>{{ t('itemLbl') }}</th>
-                        <th>{{ t('qtyLbl') }}</th>
-                        <th>{{ t('uomLbl') }}</th>
-                        <th>{{ t('equalsLbl') }}</th>
-                        <th>{{ t('unitCostLbl') }}</th>
+                        <th>{{ t('inv_qty_lbl') }}</th>
+                        <th>{{ t('inv_uom_lbl') }}</th>
+                        <th>{{ t('inv_contains_lbl') }}</th>
+                        <th>{{ t('inv_price_lbl') }}</th>
                         <th>{{ t('lineTotalLbl') }}</th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="(line, index) in form.lines" :key="index">
+                    <template v-for="(line, index) in form.lines" :key="index">
+                    <tr>
                         <td :data-label="t('itemLbl')">
                             <ComboSelect
                                 :model-value="line.item_id"
@@ -354,19 +410,32 @@ function onConfirmDialogConfirm() {
                                 {{ t('newItemIsRawMaterialLbl') }}
                             </label>
                         </td>
-                        <td :data-label="t('qtyLbl')"><input v-model.number="line.qty" type="number" min="0" step="0.01" placeholder="0"></td>
-                        <td :data-label="t('uomLbl')"><input v-model="line.uom" type="text" placeholder="Carton"></td>
-                        <td :data-label="t('equalsLbl')">
+                        <td :data-label="t('inv_qty_lbl')">
+                            <input v-model.number="line.qty" type="number" min="0.5" step="0.5" placeholder="1"
+                                   :class="{ 'inp-invalid': !isHalfStep(line.qty) }">
+                            <div v-if="!isHalfStep(line.qty)" class="line-error">{{ t('inv_qty_half_error') }}</div>
+                            <div v-else-if="form.errors[`lines.${index}.qty`]" class="line-error">{{ form.errors[`lines.${index}.qty`] }}</div>
+                        </td>
+                        <td :data-label="t('inv_uom_lbl')"><input v-model="line.uom" type="text" :placeholder="t('inv_uom_placeholder')"></td>
+                        <td :data-label="t('inv_contains_lbl')">
                             <span class="equals-cell">
                                 <span>=</span>
-                                <input v-model.number="line.qty_per_uom" data-role="qtyperuom" type="number" min="0" placeholder="1" style="width:5rem">
-                                <input v-model="line.base_unit_name" data-role="baseunit" type="text" placeholder="unit">
+                                <input v-model.number="line.qty_per_uom" data-role="qtyperuom" type="number" min="0" placeholder="24">
+                                <input v-model="line.base_unit_name" data-role="baseunit" type="text" :placeholder="t('inv_piece_placeholder')">
                             </span>
                         </td>
-                        <td :data-label="t('unitCostLbl')"><input v-model.number="line.unit_price" type="number" min="0" step="0.01" placeholder="0.00"></td>
+                        <td :data-label="t('inv_price_lbl')"><input v-model.number="line.unit_price" type="number" min="0" step="0.01" placeholder="0.00"></td>
                         <td class="linetotal" :data-label="t('lineTotalLbl')">{{ currency }} {{ money((line.qty || 0) * (line.unit_price || 0)) }}</td>
                         <td class="rm-cell"><button type="button" class="rm-line" @click="removeLine(index)">✕</button></td>
                     </tr>
+                    <!-- What this line actually does, in words. -->
+                    <tr v-if="lineExplain(line)" class="line-explain">
+                        <td colspan="7">
+                            <span>{{ lineExplain(line).stockText }}</span>
+                            <span v-if="lineExplain(line).costText" class="line-explain__cost">{{ lineExplain(line).costText }}</span>
+                        </td>
+                    </tr>
+                    </template>
                 </tbody>
             </table>
             <button type="button" class="addline-btn" @click="addLine">{{ t('addLineBtn') }}</button>

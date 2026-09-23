@@ -44,6 +44,9 @@ const props = defineProps({
     paymentChannels: { type: Array, required: true },
     salesChannels: { type: Array, required: true },
     sales:     { type: Object, required: true }, // paginator: { data, links, ... }
+    // Unfinished sales shared by the team — see SaleDraftController.
+    // Each: { id, data, created_by, updated_by, updated_at }.
+    drafts:    { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -56,7 +59,7 @@ const formCard = ref(null);
 // Delete is company-admin only — mirrors Controller::authorizeDelete().
 const { canDelete } = usePermissions();
 
-const { currency, money } = useMoneyFormat();
+const { currency, money, intlLocale } = useMoneyFormat();
 
 // Laravel's pagination links come as e.g. "&laquo; Previous" / "Next
 // &raquo;" — decoding just these two known-safe arrow entities lets
@@ -295,6 +298,8 @@ async function createSalesChannel(name) {
 }
 
 function startEdit(sale) {
+    activeDraftId.value = null;
+    lastRecorded.value = null;
     editingSale.value = sale;
     saleKind.value = 'invoice';
     form.customer_id = sale.customer_id;
@@ -332,6 +337,13 @@ function submit() {
 }
 
 function submitCreate() {
+    // Captured now, because the form is emptied the moment the sale
+    // is saved and the "… recorded" line still needs to say what.
+    const recordedSummary = {
+        name: isCashSale.value ? t('saleKindCashLbl') : (selectedCustomer.value?.name ?? t('saleKindCashLbl')),
+        total: total.value,
+    };
+
     form.transform((data) => ({
         ...data,
         // A line only needs qty + unit price to be real — the item
@@ -342,11 +354,18 @@ function submitCreate() {
         // for a Cash Sale with no item selected, so the sale ended
         // up with zero lines and was rejected.
         lines: data.lines.filter((line) => Number(line.qty) > 0 && line.unit_price !== null && line.unit_price !== ''),
+        // Recording a saved draft — the server removes the draft
+        // once the sale is saved (SaleController::store()).
+        draft_id: activeDraftId.value,
     })).post(route('app.sales.store'), {
         preserveScroll: true,
+        // Keep this screen's own state (sale kind, the chosen date)
+        // across the save, so resetForNextSale() below decides what
+        // is cleared — not a page reload.
+        preserveState: true,
         onSuccess: () => {
-            form.reset();
-            Object.assign(form, defaultFormState());
+            lastRecorded.value = recordedSummary;
+            resetForNextSale();
         },
         onError: (errors) => {
             // Temporary debugging aid — open the browser console
@@ -373,6 +392,177 @@ function doSubmitEdit(saleId) {
 
 // ── Confirm dialogs (delete / edit-deficit-surplus) ─────────────
 const confirmDialog = ref({ open: false, title: '', message: '', danger: false, action: null });
+
+// ── After a sale is recorded: empty the form for the next one ────
+// Everything is cleared EXCEPT the date (owner's decision, Sep
+// 2026: somebody entering a batch of past sales keeps the same
+// date) and the Invoice / Cash choice at the top, which is how
+// they work rather than part of one sale.
+const lastRecorded = ref(null); // { name, total } of the sale just saved
+
+function resetForNextSale() {
+    const keepDate = form.date || todayIso();
+    Object.assign(form, { ...defaultFormState(), date: keepDate, lines: [newSaleLine()] });
+    form.clearErrors();
+    activeDraftId.value = null;
+}
+
+// ── Drafts: unfinished sales ─────────────────────────────────────
+// A draft is parked in its own table (sale_drafts) and has NO effect
+// on the accounts — no stock, no customer balance, no journal, no
+// report — until somebody presses Record. Shared by the whole team.
+const activeDraftId = ref(null); // the draft currently loaded in the form, if any
+const savingDraft = ref(false);
+
+const activeDraft = computed(() =>
+    props.drafts.find((d) => d.id === activeDraftId.value) ?? null
+);
+
+// Is there anything in the form worth keeping?
+const formHasContent = computed(() =>
+    Boolean(form.customer_id)
+    || form.lines.some((l) => l.item_id || Number(l.qty) > 0 || (l.unit_price !== null && l.unit_price !== ''))
+);
+
+function draftSnapshot() {
+    return {
+        sale_kind: saleKind.value,
+        customer_id: form.customer_id,
+        sales_channel_id: form.sales_channel_id,
+        date: form.date,
+        lines: form.lines.map((l) => ({
+            item_id: l.item_id, qty: l.qty, uom: l.uom, qty_per_uom: l.qty_per_uom,
+            base_unit_name: l.base_unit_name, unit_price: l.unit_price,
+        })),
+        vat_rate: form.vat_rate,
+        mode: form.mode,
+        method: form.method,
+        payment_channel_id: form.payment_channel_id,
+        amount_now: form.amount_now,
+        due_in_days: form.due_in_days,
+        installment_count: form.installment_count,
+        installment_interval_days: form.installment_interval_days,
+    };
+}
+
+// Saving parks the sale and empties the form (date kept), so the
+// next customer can be served straight away.
+function saveDraft() {
+    if (!formHasContent.value || savingDraft.value) return;
+
+    const options = {
+        preserveScroll: true,
+        preserveState: true,
+        onStart: () => { savingDraft.value = true; },
+        onFinish: () => { savingDraft.value = false; },
+        onSuccess: () => {
+            lastRecorded.value = null;
+            resetForNextSale();
+        },
+    };
+    const payload = { data: draftSnapshot() };
+
+    if (activeDraftId.value && activeDraft.value) {
+        router.put(route('app.sale-drafts.update', activeDraftId.value), payload, options);
+    } else {
+        router.post(route('app.sale-drafts.store'), payload, options);
+    }
+}
+
+function loadDraft(draft) {
+    const data = draft.data || {};
+    editingSale.value = null;
+    saleKind.value = data.sale_kind === 'cash' ? 'cash' : 'invoice';
+
+    const fresh = defaultFormState();
+    const picked = {};
+    for (const key of Object.keys(fresh)) {
+        if (key !== 'lines' && data[key] !== undefined) picked[key] = data[key];
+    }
+    // A draft saved on another day may carry a date that is now
+    // fine, or none at all; never let it be later than today.
+    if (!picked.date || picked.date > todayIso()) picked.date = fresh.date;
+
+    Object.assign(form, {
+        ...fresh,
+        ...picked,
+        lines: (data.lines && data.lines.length)
+            ? data.lines.map((l) => ({ ...newSaleLine(), ...l }))
+            : [newSaleLine()],
+    });
+    form.clearErrors();
+    lastRecorded.value = null;
+    activeDraftId.value = draft.id;
+    scrollToForm(formCard);
+}
+
+function continueDraft(draft) {
+    // Don't silently throw away something typed but not saved.
+    if (formHasContent.value && activeDraftId.value !== draft.id) {
+        confirmDialog.value = {
+            open: true,
+            title: t('continueDraftTitle'),
+            message: t('replaceFormConfirm'),
+            danger: false,
+            action: () => loadDraft(draft),
+        };
+        return;
+    }
+    loadDraft(draft);
+}
+
+// Leave the draft as it was saved and give back an empty form.
+function closeDraft() {
+    lastRecorded.value = null;
+    resetForNextSale();
+}
+
+function confirmDeleteDraft(draft) {
+    confirmDialog.value = {
+        open: true,
+        title: t('deleteDraftTitle'),
+        message: t('deleteDraftConfirm'),
+        danger: true,
+        action: () => router.delete(route('app.sale-drafts.destroy', draft.id), {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => {
+                if (activeDraftId.value === draft.id) activeDraftId.value = null;
+            },
+        }),
+    };
+}
+
+// For the Drafts list.
+function draftCustomerLabel(draft) {
+    const data = draft.data || {};
+    if (data.sale_kind === 'cash') return t('saleKindCashLbl');
+    return customerList.value.find((c) => c.id === data.customer_id)?.name ?? t('draftNoCustomer');
+}
+
+function draftItemsLabel(draft) {
+    return (draft.data?.lines || [])
+        .map((l) => itemList.value.find((i) => i.id === l.item_id)?.name)
+        .filter(Boolean)
+        .join(', ');
+}
+
+function draftTotal(draft) {
+    const data = draft.data || {};
+    const sub = (data.lines || []).reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.unit_price) || 0), 0);
+    return sub + sub * (Number(data.vat_rate) || 0) / 100;
+}
+
+function draftSavedLabel(draft) {
+    const who = draft.updated_by || draft.created_by || '—';
+    let when = '';
+    try {
+        when = draft.updated_at
+            ? new Intl.DateTimeFormat(intlLocale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(draft.updated_at))
+            : '';
+    } catch (e) { when = ''; }
+    return `${t('draftSavedBy', { name: who })}${when ? ' · ' + when : ''}`;
+}
 
 function prepareEditSubmit() {
     const sale = editingSale.value;
@@ -455,6 +645,10 @@ function saleItemsLabel(sale) {
 
         <div ref="formCard" class="card card--in">
             <div v-if="editingSale" class="alert info">{{ t('editingBanner') }}</div>
+            <div v-else-if="activeDraftId" class="alert info draft-banner">
+                <span>{{ t('continuingDraftBanner') }}</span>
+                <button type="button" class="btn btn-ghost btn-sm" @click="closeDraft">{{ t('closeDraftBtn') }}</button>
+            </div>
 
             <div v-if="!editingSale" class="toggle-btns" style="margin-bottom: 16px;">
                 <button type="button" :class="{ active: saleKind === 'invoice' }" @click="saleKind = 'invoice'">{{ t('saleKindInvoiceLbl') }}</button>
@@ -465,6 +659,7 @@ function saleItemsLabel(sale) {
                 <div class="field">
                     <label>{{ t('dateLbl') }}</label>
                     <input v-model="form.date" type="date" :max="todayIso()" class="inp-date" style="width: 15rem;">
+                    <div class="form-hint">{{ t('saleDateNote') }}</div>
                 </div>
                 <div class="field">
                     <label>{{ t('salesChannelLbl') }}</label>
@@ -667,11 +862,43 @@ function saleItemsLabel(sale) {
                 <button type="button" :disabled="form.processing" @click="submit">
                     {{ editingSale ? t('saveChangesBtn') : (isCashSale ? t('recordCashSaleBtn') : t('recordSaleBtn')) }}
                 </button>
+                <button v-if="!editingSale" type="button" class="btn btn-ghost"
+                        :disabled="!formHasContent || savingDraft || form.processing" @click="saveDraft">
+                    {{ activeDraftId ? t('updateDraftBtn') : t('saveDraftBtn') }}
+                </button>
             </div>
-            <div v-if="form.recentlySuccessful" class="status-line">
-                {{ selectedCustomer?.name ?? t('saleKindCashLbl') }} — {{ currency }} {{ money(total) }} {{ t('recordedNote') }}
+            <div v-if="lastRecorded && form.recentlySuccessful" class="status-line">
+                {{ lastRecorded.name }} — {{ currency }} {{ money(lastRecorded.total) }} {{ t('recordedNote') }}
+                {{ t('nextSaleReadyNote') }}
             </div>
         </div>
+
+        <!-- ── Drafts — unfinished sales, no accounting effect ─────── -->
+        <template v-if="props.drafts.length">
+            <h3 class="sub">{{ t('draftsTitle') }} ({{ props.drafts.length }})</h3>
+            <div class="form-hint" style="margin: -4px 0 10px;">{{ t('draftsNote') }}</div>
+            <div class="settle-list">
+                <div v-for="draft in props.drafts" :key="draft.id" class="settle-item draft-item"
+                     :class="{ 'draft-item--active': draft.id === activeDraftId }">
+                    <div class="settle-top">
+                        <div>
+                            <div class="who">
+                                {{ draftCustomerLabel(draft) }}
+                                <span v-if="draftItemsLabel(draft)" class="who-items">— {{ draftItemsLabel(draft) }}</span>
+                            </div>
+                            <div class="meta">
+                                {{ draft.data?.date }} · {{ draftSavedLabel(draft) }}
+                            </div>
+                        </div>
+                        <div>
+                            <span class="amt">{{ currency }} {{ money(draftTotal(draft)) }}</span>
+                            <button type="button" class="btn btn-ghost btn-sm" @click="continueDraft(draft)">{{ t('continueDraftBtn') }}</button>
+                            <button type="button" class="btn btn-ghost btn-sm" style="color: var(--color-danger);" @click="confirmDeleteDraft(draft)">{{ t('deleteBtn') }}</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
 
         <!-- ── Recent sales — Edit / Delete ─────────────────────── -->
         <h3 class="sub">{{ t('recentSalesTitle') }}</h3>
@@ -736,6 +963,20 @@ function saleItemsLabel(sale) {
     font-size: 12.5px;
     color: var(--color-text-secondary);
     font-family: var(--font-mono);
+}
+
+.draft-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* The draft currently open in the form. */
+.draft-item--active {
+    border-inline-start: 3px solid var(--color-primary);
+    padding-inline-start: 10px;
 }
 
 .settle-top > div:last-child {

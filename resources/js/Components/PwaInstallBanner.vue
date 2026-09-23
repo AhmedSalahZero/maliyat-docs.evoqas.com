@@ -31,7 +31,7 @@
           {{ isRTL ? 'ثبّت ماليات دوكس' : 'Install Maliyat Docs' }}
         </div>
         <div class="pwa-banner__sub">
-          {{ isRTL ? 'حساباتك معك في أي وقت — حتى بدون إنترنت' : 'Your books, anytime — even offline' }}
+          {{ isRTL ? 'حساباتك معك في أي وقت — بلمسة واحدة من الشاشة الرئيسية' : 'Your books, anytime — one tap from your home screen' }}
         </div>
       </div>
       <div class="pwa-banner__actions">

@@ -300,11 +300,11 @@ class AdminActivityTest extends TestCase
         $user = User::factory()->companyAdmin($this->company)->create([
             'name'              => 'Ahmed',
             'email'             => 'ahmed@acme.test',
-            'password'          => 'password123',
+            'password'          => 'Password123!',
             'email_verified_at' => now(),
         ]);
 
-        $this->post('/login', ['email' => $user->email, 'password' => 'password123'])
+        $this->post('/login', ['email' => $user->email, 'password' => 'Password123!'])
             ->assertSessionHasNoErrors();
 
         $rows = $this->rows();

@@ -73,13 +73,13 @@ class ProfileTest extends TestCase
         $this->actingAs($user)
             ->patch(route('app.profile.password'), [
                 'current_password'      => 'password',
-                'password'              => 'new-password1',
-                'password_confirmation' => 'new-password1',
+                'password'              => 'New-password1',
+                'password_confirmation' => 'New-password1',
             ])
             ->assertSessionHasNoErrors()
             ->assertRedirect();
 
-        $this->assertTrue(Hash::check('new-password1', $user->refresh()->password));
+        $this->assertTrue(Hash::check('New-password1', $user->refresh()->password));
     }
 
     public function test_the_current_password_must_be_right(): void
@@ -89,8 +89,8 @@ class ProfileTest extends TestCase
         $this->actingAs($user)
             ->patch(route('app.profile.password'), [
                 'current_password'      => 'not-the-password',
-                'password'              => 'new-password1',
-                'password_confirmation' => 'new-password1',
+                'password'              => 'New-password1',
+                'password_confirmation' => 'New-password1',
             ])
             ->assertSessionHasErrors('current_password');
 

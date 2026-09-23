@@ -58,15 +58,15 @@ class PasswordResetTest extends TestCase
         $this->post('/reset-password', [
             'token'                 => $token,
             'email'                 => $user->email,
-            'password'              => 'brand-new1',
-            'password_confirmation' => 'brand-new1',
+            'password'              => 'Brand-new1',
+            'password_confirmation' => 'Brand-new1',
         ])
             ->assertSessionHasNoErrors()
             // A successful reset signs the user straight in rather
             // than bouncing them back to the login form.
             ->assertRedirect(route('app.dashboard'));
 
-        $this->assertTrue(Hash::check('brand-new1', $user->refresh()->password));
+        $this->assertTrue(Hash::check('Brand-new1', $user->refresh()->password));
         $this->assertAuthenticatedAs($user->refresh());
     }
 
@@ -77,8 +77,8 @@ class PasswordResetTest extends TestCase
         $this->post('/reset-password', [
             'token'                 => 'not-a-real-token',
             'email'                 => $user->email,
-            'password'              => 'brand-new1',
-            'password_confirmation' => 'brand-new1',
+            'password'              => 'Brand-new1',
+            'password_confirmation' => 'Brand-new1',
         ])->assertSessionHasErrors();
 
         $this->assertTrue(Hash::check('password', $user->refresh()->password));

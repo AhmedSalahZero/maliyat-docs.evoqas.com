@@ -183,12 +183,12 @@ class EditableRecordsTest extends TestCase
             ->patch(route('app.team.update', $employee->id), [
                 'name'                  => $employee->name,
                 'email'                 => $employee->email,
-                'password'              => 'fresh-secret1',
-                'password_confirmation' => 'fresh-secret1',
+                'password'              => 'Fresh-secret1',
+                'password_confirmation' => 'Fresh-secret1',
             ])
             ->assertSessionHasNoErrors();
 
-        $this->assertTrue(Hash::check('fresh-secret1', $employee->fresh()->password));
+        $this->assertTrue(Hash::check('Fresh-secret1', $employee->fresh()->password));
     }
 
     public function test_a_weak_password_is_refused(): void

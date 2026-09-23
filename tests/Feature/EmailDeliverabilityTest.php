@@ -179,8 +179,8 @@ class EmailDeliverabilityTest extends TestCase
             'email'                 => 'ahmed@example.test',
             'currency'              => 'EGP',
             'language'              => 'en',
-            'password'              => 'password123',
-            'password_confirmation' => 'password123',
+            'password'              => 'Password123!',
+            'password_confirmation' => 'Password123!',
             'business_types'        => ['trading'],
             '_hp'                   => '',
         ])->assertSessionHasNoErrors();

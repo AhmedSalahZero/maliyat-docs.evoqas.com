@@ -117,7 +117,7 @@ class AuditFixesTest extends TestCase
         $this->post('/register', [
             'name' => 'Ahmed Salah', 'company_name' => '', 'email' => 'a@example.test',
             'currency' => 'EGP', 'language' => 'en',
-            'password' => 'password123', 'password_confirmation' => 'password123', '_hp' => '',
+            'password' => 'Password123!', 'password_confirmation' => 'Password123!', '_hp' => '',
         ])->assertSessionHasErrors('company_name');
 
         $this->assertStringNotContainsString(
@@ -252,7 +252,7 @@ class AuditFixesTest extends TestCase
     public function test_m2_changing_a_password_invalidates_other_sessions(): void
     {
         $user = User::factory()->companyAdmin($this->company)->create([
-            'password'          => 'password123',
+            'password'          => 'Password123!',
             'email_verified_at' => now(),
         ]);
 
@@ -265,16 +265,16 @@ class AuditFixesTest extends TestCase
         // throws — and this test reported success until the status
         // was checked too.
         $this->actingAs($user)->patch('/app/profile/password', [
-            'current_password'      => 'password123',
-            'password'              => 'new-password456',
-            'password_confirmation' => 'new-password456',
+            'current_password'      => 'Password123!',
+            'password'              => 'New-password456',
+            'password_confirmation' => 'New-password456',
         ])->assertRedirect()->assertSessionHasNoErrors();
 
         $after = $user->fresh()->password;
 
         $this->assertNotSame($before, $after);
-        $this->assertTrue(Hash::check('new-password456', $after), 'The new password does not work');
-        $this->assertFalse(Hash::check('password123', $after), 'The old password still works');
+        $this->assertTrue(Hash::check('New-password456', $after), 'The new password does not work');
+        $this->assertFalse(Hash::check('Password123!', $after), 'The old password still works');
     }
 
     /**
@@ -313,13 +313,13 @@ class AuditFixesTest extends TestCase
     public function test_m2_the_wrong_current_password_is_refused(): void
     {
         $user = User::factory()->companyAdmin($this->company)->create([
-            'password' => 'password123', 'email_verified_at' => now(),
+            'password' => 'Password123!', 'email_verified_at' => now(),
         ]);
 
         $this->actingAs($user)->patch('/app/profile/password', [
             'current_password'      => 'not-it',
-            'password'              => 'new-password456',
-            'password_confirmation' => 'new-password456',
+            'password'              => 'New-password456',
+            'password_confirmation' => 'New-password456',
         ])->assertSessionHasErrors('current_password');
     }
 
@@ -647,13 +647,13 @@ class AuditFixesTest extends TestCase
     {
         config([
             'app.super_admin_email' => 'admin@example.test',
-            'app.default_password'  => 'seeded123pass',
+            'app.default_password'  => 'Seeded123!pass',
         ]);
 
         $this->seedSuperAdmin();
 
         $admin = User::where('email', 'admin@example.test')->firstOrFail();
-        $admin->update(['password' => 'TheOwnersOwn1']);
+        $admin->update(['password' => 'TheOwnersOwn1!']);
 
         // Same seeder, same configured password, run again.
         $this->seedSuperAdmin();
@@ -661,11 +661,11 @@ class AuditFixesTest extends TestCase
         $admin->refresh();
 
         $this->assertTrue(
-            Hash::check('TheOwnersOwn1', $admin->password),
+            Hash::check('TheOwnersOwn1!', $admin->password),
             'Re-seeding overwrote the password the owner had set'
         );
         $this->assertFalse(
-            Hash::check('seeded123pass', $admin->password),
+            Hash::check('Seeded123!pass', $admin->password),
             'Re-seeding put the configured password back'
         );
         $this->assertSame(
@@ -682,14 +682,14 @@ class AuditFixesTest extends TestCase
     {
         config([
             'app.super_admin_email' => 'admin@example.test',
-            'app.default_password'  => 'seeded123pass',
+            'app.default_password'  => 'Seeded123!pass',
         ]);
 
         $this->seedSuperAdmin();
 
         $admin = User::where('email', 'admin@example.test')->firstOrFail();
 
-        $this->assertTrue(Hash::check('seeded123pass', $admin->password));
+        $this->assertTrue(Hash::check('Seeded123!pass', $admin->password));
         $this->assertSame(\App\Enums\UserRole::SuperAdmin->value, $admin->role);
         $this->assertNull($admin->company_id, 'A super_admin must not be scoped to a company');
         $this->assertTrue((bool) $admin->is_active);

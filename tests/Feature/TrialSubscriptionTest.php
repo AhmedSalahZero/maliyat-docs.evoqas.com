@@ -56,7 +56,7 @@ class TrialSubscriptionTest extends TestCase
             'company_name' => 'Signed Up Co', 'currency' => 'SAR',
             'business_types' => ['trading'],
             'name' => 'Owner', 'email' => 'owner@example.test',
-            'password' => 'secret-pass1', 'password_confirmation' => 'secret-pass1',
+            'password' => 'Secret-pass1', 'password_confirmation' => 'Secret-pass1',
         ])->assertSessionHasNoErrors();
 
         $this->assertNotNull(Company::sole()->trial_ends_at);

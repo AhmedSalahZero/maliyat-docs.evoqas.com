@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\ActivityController as AdminActivityController;
 use App\Http\Controllers\Admin\CompanyController as AdminCompanyController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\App\CategoryController;
+use App\Http\Controllers\App\SaleDraftController;
 use App\Http\Controllers\App\PaymentChannelController;
 use App\Http\Controllers\App\CustodyController;
 use App\Http\Controllers\App\CustomerController;
@@ -130,6 +131,15 @@ Route::middleware(['auth', 'auth.session', 'verified', 'member', 'no-duplicate']
         Route::post('/sales', [SaleController::class, 'store'])->name('sales.store');
         Route::put('/sales/{sale}', [SaleController::class, 'update'])->name('sales.update');
         Route::delete('/sales/{sale}', [SaleController::class, 'destroy'])->name('sales.destroy');
+
+        // Unfinished sales ("drafts") — no accounting effect, see
+        // SaleDraftController. Exempt from the duplicate guard:
+        // pressing "Save as draft" twice with nothing changed is
+        // harmless, and being told "duplicate submission" for it
+        // would only confuse.
+        Route::post('/sale-drafts', [SaleDraftController::class, 'store'])->name('sale-drafts.store')->withoutMiddleware('no-duplicate');
+        Route::put('/sale-drafts/{saleDraft}', [SaleDraftController::class, 'update'])->name('sale-drafts.update')->withoutMiddleware('no-duplicate');
+        Route::delete('/sale-drafts/{saleDraft}', [SaleDraftController::class, 'destroy'])->name('sale-drafts.destroy')->withoutMiddleware('no-duplicate');
 
         Route::get('/sales-channels', [SalesChannelController::class, 'index'])->name('sales-channels.index');
         Route::post('/sales-channels', [SalesChannelController::class, 'store'])->name('sales-channels.store');

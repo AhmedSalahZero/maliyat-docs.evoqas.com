@@ -59,6 +59,14 @@ document.documentElement.setAttribute('dir', savedLocale === 'ar' ? 'rtl' : 'ltr
 // ── PWA — service worker + install prompt (before Vue mounts) ───
 registerServiceWorker();
 
+// Earlier builds saved whole signed-in pages on the device (the
+// "inertia-pages" cache — see vite.config.js for why that was
+// removed). Delete any such copy left behind, rather than waiting
+// for each user to log out. Harmless if it does not exist.
+if (typeof window !== 'undefined' && 'caches' in window) {
+    window.caches.delete('inertia-pages').catch(() => {});
+}
+
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     window.__maliyat_pwa_prompt = e;

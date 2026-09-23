@@ -48,8 +48,8 @@ class AuthThrottleVisibilityTest extends TestCase
             'email'                 => "person{$n}@example.test",
             'currency'              => 'EGP',
             'language'              => 'en',
-            'password'              => 'password123',
-            'password_confirmation' => 'password123',
+            'password'              => 'Password123!',
+            'password_confirmation' => 'Password123!',
             'business_types'        => ['trading'],
             '_hp'                   => '',
         ];
@@ -159,7 +159,7 @@ class AuthThrottleVisibilityTest extends TestCase
         $company = Company::factory()->create();
         $user    = User::factory()->companyAdmin($company)->create([
             'email'             => 'someone@example.test',
-            'password'          => 'password123',
+            'password'          => 'Password123!',
             'email_verified_at' => now(),
         ]);
 

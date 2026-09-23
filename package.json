@@ -3,7 +3,7 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "clean": "rm -rf public/build public/sw.js public/manifest.webmanifest public/workbox-*.js",
+        "clean": "node -e \"require('fs').rmSync('public/build', { recursive: true, force: true })\"",
         "build": "npm run clean && vite build",
         "dev": "vite"
     },

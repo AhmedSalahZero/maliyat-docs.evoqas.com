@@ -25,8 +25,9 @@
 //  (shares .sheet-item / .sheet-header styles from app.css).
 // ══════════════════════════════════════════════════════════════════
 
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Link } from '@inertiajs/vue3';
+import { usePwaInstall } from '@/composables/usePwaInstall';
 import AppIcon from '@/Components/App/AppIcon.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
 import { useBusinessType } from '@/composables/useBusinessType';
@@ -59,6 +60,37 @@ const links = computed(() => {
     return items;
 });
 
+// ── "Install app" — first item, at the top (customer feedback,
+// Sep 2026: installing must not depend on catching the banner).
+// Hidden once Maliyat is running as an installed app.
+//   - Android Chrome/Edge (and desktop Chrome): the browser's own
+//     one-tap install dialog, when the browser has made it available.
+//   - iPhone/iPad: Apple allows no one-tap install, so short steps.
+//   - Samsung Internet, or a browser not ready yet: steps via the
+//     browser's own menu.
+const { isInstalled, canInstall, isIos, isSamsung, install } = usePwaInstall();
+const installHelp = ref(null); // null | 'ios' | 'samsung' | 'manual'
+const installing = ref(false);
+
+async function onInstall() {
+    if (installing.value) return;
+
+    if (canInstall.value && !isSamsung) {
+        installing.value = true;
+        try {
+            const choice = await install();
+            if (choice?.outcome === 'accepted') close();
+        } finally {
+            installing.value = false;
+        }
+        return;
+    }
+
+    installHelp.value = isIos ? 'ios' : (isSamsung ? 'samsung' : 'manual');
+}
+
+watch(() => props.open, (open) => { if (!open) installHelp.value = null; });
+
 function close() {
     emit('update:open', false);
 }
@@ -78,6 +110,24 @@ function close() {
                 </div>
 
                 <div class="sheet-list">
+                    <button v-if="!isInstalled" type="button" class="sheet-item sheet-item--install" @click="onInstall">
+                        <span class="sheet-item__icon"><AppIcon name="install" /></span>
+                        <span class="sheet-item__text">
+                            <span class="sheet-item__title">{{ t('settings_install_title') }}</span>
+                            <span class="sheet-item__sub">{{ t('settings_install_sub') }}</span>
+                        </span>
+                        <AppIcon name="chevron" class="sheet-item__chevron" />
+                    </button>
+
+                    <div v-if="installHelp" class="install-help">
+                        <div class="install-help__title">{{ t('install_help_title') }}</div>
+                        <ol>
+                            <li>{{ t(`install_help_${installHelp}_1`) }}</li>
+                            <li>{{ t(`install_help_${installHelp}_2`) }}</li>
+                        </ol>
+                        <button type="button" class="btn btn-ghost btn-sm" @click="installHelp = null">{{ t('install_help_ok') }}</button>
+                    </div>
+
                     <Link
                         v-for="item in links"
                         :key="item.key"
@@ -112,6 +162,33 @@ function close() {
     font-size: 17px;
     color: var(--color-text-primary);
 }
+
+/* The install item is a <button>, the rest are links — make it
+   look identical, and give it a light highlight so it stands out
+   as the first thing to do on a new phone. */
+.sheet-item--install {
+    width: 100%;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--color-border-light);
+    font: inherit;
+    text-align: start;
+}
+.sheet-item--install .sheet-item__icon {
+    background: var(--color-primary);
+    color: var(--color-text-on-primary);
+}
+
+.install-help {
+    margin: 4px 0 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-surface-alt);
+    font-size: 13px;
+    line-height: 1.55;
+}
+.install-help__title { font-weight: 600; margin-bottom: 4px; }
+.install-help ol { margin: 0 0 8px; padding-inline-start: 20px; }
 
 .sheet-list {
     display: flex;

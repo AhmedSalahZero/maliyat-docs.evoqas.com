@@ -45,6 +45,11 @@ class StoreSaleRequest extends FormRequest
             ],
             'date' => ['required', ...FinancialRules::date()],
 
+            // Set when this sale is being recorded from a saved draft;
+            // the draft is removed once the sale is saved. See
+            // SaleDraftController.
+            'draft_id' => ['nullable', 'integer'],
+
             'lines'                  => ['required', 'array', 'min:1'],
             'lines.*.item_id'        => ['nullable', Rule::exists('items', 'id')->where('company_id', $companyId)],
             'lines.*.qty'            => ['required', ...FinancialRules::qty()],
@@ -98,5 +103,17 @@ class StoreSaleRequest extends FormRequest
             // not also told it is out of stock.
             $this->rejectOversellingStock($validator, null);
         });
+    }
+
+    /**
+     * A future date is refused (see FinancialRules::date()); say so
+     * in plain words instead of "must be a date before or equal to
+     * 2026-09-23".
+     */
+    public function messages(): array
+    {
+        return [
+            'date.before_or_equal' => __('validation.sale_date_not_future'),
+        ];
     }
 }

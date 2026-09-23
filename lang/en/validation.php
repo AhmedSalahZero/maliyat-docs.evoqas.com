@@ -20,6 +20,20 @@
 
 return [
 
+    // Laravel has no built-in message for "at least one capital
+    // letter" (see App\Rules\ContainsUppercaseLetter), so this one
+    // line is ours. The other password messages (letters, numbers,
+    // symbols) still come from the framework.
+    'password' => [
+        'uppercase' => 'The password must contain at least one capital letter (e.g. A).',
+    ],
+
+    // Inventory purchase quantities — see App\Rules\HalfStepQuantity.
+    'half_step_qty' => 'Quantity must be a whole or half number (e.g. 1, 1.5, 2, 2.5).',
+
+    // Sales date — see StoreSaleRequest::messages().
+    'sale_date_not_future' => 'A sale can be recorded for today or any past date. Future dates are not allowed.',
+
     'attributes' => [
         'name'                  => 'name',
         'company_name'          => 'company name',

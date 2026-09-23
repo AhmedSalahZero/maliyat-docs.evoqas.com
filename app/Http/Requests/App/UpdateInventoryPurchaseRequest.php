@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\App;
 
+use App\Rules\HalfStepQuantity;
 use App\Http\Requests\Concerns\GuardsDocumentTotal;
 use App\Support\FinancialRules;
 use Illuminate\Foundation\Http\FormRequest;
@@ -26,7 +27,8 @@ class UpdateInventoryPurchaseRequest extends FormRequest
 
             'lines'                  => ['required', 'array', 'min:1'],
             'lines.*.item_id'        => ['required', Rule::exists('items', 'id')->where('company_id', $companyId)],
-            'lines.*.qty'            => ['required', ...FinancialRules::qty()],
+            // Whole or half only (1, 1.5, 2, 2.5 …) — see HalfStepQuantity.
+            'lines.*.qty'            => ['required', ...FinancialRules::qty(0.5), new HalfStepQuantity],
             'lines.*.uom'            => ['nullable', 'string', 'max:40'],
             'lines.*.qty_per_uom'    => ['nullable', ...FinancialRules::qty()],
             'lines.*.base_unit_name' => ['nullable', 'string', 'max:40'],

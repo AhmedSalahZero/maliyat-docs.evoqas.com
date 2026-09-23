@@ -50,8 +50,8 @@ class VerificationScreenTest extends TestCase
             'email'                 => $email,
             'currency'              => 'EGP',
             'language'              => 'en',
-            'password'              => 'password123',
-            'password_confirmation' => 'password123',
+            'password'              => 'Password123!',
+            'password_confirmation' => 'Password123!',
             'business_types'        => ['trading'],
             '_hp'                   => '',
         ])->assertSessionHasNoErrors();
@@ -124,11 +124,11 @@ class VerificationScreenTest extends TestCase
         $company = Company::factory()->create();
         $user    = User::factory()->companyAdmin($company)->create([
             'email'             => 'unverified@example.test',
-            'password'          => 'password123',
+            'password'          => 'Password123!',
             'email_verified_at' => null,
         ]);
 
-        $this->post('/login', ['email' => $user->email, 'password' => 'password123']);
+        $this->post('/login', ['email' => $user->email, 'password' => 'Password123!']);
 
         $this->assertSame('unverified@example.test', $this->addressOnScreen());
     }

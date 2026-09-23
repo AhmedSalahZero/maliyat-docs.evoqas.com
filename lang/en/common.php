@@ -127,4 +127,9 @@ return [
     'consent_confirm'     => 'Yes, share my information',
     'consent_cancel'      => 'No, keep it private',
 
+
+    // ── Sale drafts ───────────────────────────────────────────
+    'sale_draft_saved'   => 'Draft saved. You can continue it any time from the Drafts list.',
+    'sale_draft_deleted' => 'Draft deleted.',
+
 ];

@@ -155,6 +155,23 @@ export const appTranslations = {
         editConfirmDeficitPayable: 'This record already has :paid paid against it. Changing the total to :total will leave :amount still owed to the vendor. Continue?',
         editConfirmSurplusPayable: 'This record already has :paid paid against it. Changing the total to :total means you have now overpaid the vendor by :amount. Continue?',
         recordedNote: 'recorded.',
+        nextSaleReadyNote: 'The form is ready for the next sale.',
+        saleDateNote: 'You can record a sale for today or any past date. Future dates are not allowed.',
+
+        // Sale drafts (unfinished sales) — see SaleDraftController.
+        saveDraftBtn: 'Save as draft',
+        updateDraftBtn: 'Save draft',
+        draftsTitle: 'Drafts — unfinished sales',
+        draftsNote: 'Drafts are not sales yet. They do not change stock, customer balances or any report until you press Record.',
+        continueDraftBtn: 'Continue',
+        continueDraftTitle: 'Continue draft',
+        draftSavedBy: 'Saved by :name',
+        draftNoCustomer: 'No customer yet',
+        continuingDraftBanner: 'You are continuing a draft. Press Record to turn it into a real sale, or Save draft to keep your changes for later.',
+        closeDraftBtn: 'Close draft',
+        deleteDraftTitle: 'Delete draft',
+        deleteDraftConfirm: 'Delete this draft? Only the unfinished sale is removed — nothing in your accounts changes.',
+        replaceFormConfirm: 'The form has information that is not saved yet. Replace it with this draft?',
 
         // ── Inventory Purchase page ──────────────────────────────
         uomLbl: 'UOM',
@@ -279,7 +296,8 @@ export const appTranslations = {
         cashExpenseLbl: 'Cash Expense',
         recordCashExpenseBtn: 'Record cash expense',
         recurFreqLbl: 'Repeats',
-        howManyTimesLbl: 'How many times',
+        howManyTimesLbl: 'To Be Repeated For',
+        recurringPayFirstOnlyNote: 'This payment choice applies to the first payment only. The remaining payments are recorded as unpaid, each due on its own date, and you pay them as they come.',
         freqWeekly: 'Weekly',
         freqMonthly: 'Monthly',
         freqQ3: 'Every 3 months',
@@ -314,6 +332,17 @@ export const appTranslations = {
 
         new_record_sheet_title: 'New record',
         settings_sheet_title: 'Settings',
+        // Settings → Install app (see SettingsSheet.vue).
+        settings_install_title: 'Install app',
+        settings_install_sub: 'Add Maliyat Docs to your home screen — it opens like a normal app',
+        install_help_title: 'How to install',
+        install_help_ok: 'Got it',
+        install_help_ios_1: 'Tap the Share button in Safari (the square with an arrow pointing up).',
+        install_help_ios_2: 'Choose "Add to Home Screen", then tap "Add".',
+        install_help_samsung_1: 'Tap the menu button (☰) at the bottom of the screen.',
+        install_help_samsung_2: 'Choose "Add page to", then "Home screen".',
+        install_help_manual_1: 'Open your browser menu (⋮ at the top corner of the screen).',
+        install_help_manual_2: 'Choose "Install app" or "Add to Home screen". If you do not see it, wait a few seconds and try again.',
 
         // ── Menu (the rest) ──────────────────────────────────────
         menu_title: 'Menu',
@@ -423,10 +452,28 @@ export const appTranslations = {
         // ── Inventory purchase ──
         howto_inventory_1: 'Pick the supplier you bought from.',
         howto_inventory_2: 'Set the date on the supplier\'s invoice.',
-        howto_inventory_3: 'Add a line per product: how many units, what is inside one unit (a carton of 12, say), and the price you paid.',
+        howto_inventory_3: 'Add a line per product: how many you bought (whole or half, e.g. 1 or 1.5), what you bought it as (Carton, Bag…), how many pieces are inside one, and the price of ONE carton.',
         howto_inventory_4: 'Add VAT if the invoice has it.',
         howto_inventory_5: 'Say how you paid, then press Record. Your stock goes up straight away.',
-        howto_inventory_tip: 'Getting "what is inside one unit" right matters — it is what lets you buy by the carton and sell by the piece.',
+        howto_inventory_tip: 'Getting "Each one contains" right matters — it is what lets you buy by the carton and sell by the piece.',
+
+        // Inventory Purchase line table — plain-language labels and
+        // explanations (owner feedback, Sep 2026).
+        inv_qty_lbl: 'Quantity bought',
+        inv_uom_lbl: 'Bought as',
+        inv_contains_lbl: 'Each one contains',
+        inv_price_lbl: 'Price for ONE',
+        inv_uom_placeholder: 'Carton',
+        inv_piece_placeholder: 'piece',
+        inv_qty_half_error: 'Whole or half numbers only (1, 1.5, 2, 2.5…).',
+        inv_explain_title: 'How buying by the carton works',
+        inv_explain_1: '"Bought as" is how the supplier sells it to you: Carton, Bag, Box… or Piece if you buy single pieces.',
+        inv_explain_2: '"Each one contains" is how many single pieces are inside ONE of those. If you buy single pieces, enter 1.',
+        inv_explain_3: 'The price is for ONE carton (or bag, box…), not for one piece.',
+        inv_explain_4: 'Quantity can be whole or half: 1, 1.5, 2, 2.5…',
+        inv_explain_example: 'Example: 10 Cartons, each contains 24 pieces, price 240 per carton → 240 pieces are added to your stock, you pay 2,400, and each piece costs you 10.',
+        inv_line_stock: ':qty :buyUnit × :per = :stock :pieceUnit will be added to stock',
+        inv_line_cost: 'Price :currencyA :price per :buyUnit = :currencyB :each per :pieceUnit',
 
         // ── Production ("Day production") ──
         howto_production_1: 'Pick the product you made, and how many you made.',
@@ -539,7 +586,7 @@ export const appTranslations = {
         profile_current_password: 'Current password',
         profile_new_password: 'New password',
         profile_confirm_password: 'Confirm new password',
-        profile_password_hint: 'At least 8 characters, with letters and numbers.',
+        profile_password_hint: 'At least 8 characters, with a capital letter, a number and a symbol (e.g. ! @ #).',
         profile_update_password: 'Update password',
 
         // ── Team (Pages/App/Team/Index.vue) ──────────────────────
@@ -822,6 +869,23 @@ export const appTranslations = {
         editConfirmDeficitPayable: 'تم دفع :paid من هذا القيد بالفعل. تغيير الإجمالي إلى :total سيترك :amount مستحقاً للمورد. هل تريد المتابعة؟',
         editConfirmSurplusPayable: 'تم دفع :paid من هذا القيد بالفعل. تغيير الإجمالي إلى :total يعني أنك دفعت للمورد زيادة قدرها :amount. هل تريد المتابعة؟',
         recordedNote: 'تم التسجيل.',
+        nextSaleReadyNote: 'النموذج جاهز للبيع التالي.',
+        saleDateNote: 'يمكنك تسجيل البيع بتاريخ اليوم أو أي تاريخ سابق. لا يُسمح بتاريخ مستقبلي.',
+
+        // Sale drafts (unfinished sales) — see SaleDraftController.
+        saveDraftBtn: 'حفظ كمسودة',
+        updateDraftBtn: 'حفظ المسودة',
+        draftsTitle: 'المسودات — مبيعات غير مكتملة',
+        draftsNote: 'المسودات ليست مبيعات بعد. لا تؤثر على المخزون أو أرصدة العملاء أو أي تقرير حتى تضغط تسجيل.',
+        continueDraftBtn: 'إكمال',
+        continueDraftTitle: 'إكمال المسودة',
+        draftSavedBy: 'حفظها :name',
+        draftNoCustomer: 'لم يُحدَّد العميل بعد',
+        continuingDraftBanner: 'أنت تُكمل مسودة. اضغط تسجيل لتحويلها إلى بيع فعلي، أو حفظ المسودة للاحتفاظ بالتعديلات لوقت لاحق.',
+        closeDraftBtn: 'إغلاق المسودة',
+        deleteDraftTitle: 'حذف المسودة',
+        deleteDraftConfirm: 'حذف هذه المسودة؟ سيُحذف البيع غير المكتمل فقط — لن يتغير أي شيء في حساباتك.',
+        replaceFormConfirm: 'النموذج يحتوي على بيانات لم تُحفظ بعد. هل تريد استبدالها بهذه المسودة؟',
 
         uomLbl: 'وحدة الشراء',
         baseUnitLbl: 'وحدة',
@@ -940,7 +1004,8 @@ export const appTranslations = {
         cashExpenseLbl: 'مصروف نقدي',
         recordCashExpenseBtn: 'تسجيل مصروف نقدي',
         recurFreqLbl: 'يتكرر',
-        howManyTimesLbl: 'عدد المرات',
+        howManyTimesLbl: 'عدد مرات التكرار',
+        recurringPayFirstOnlyNote: 'اختيار طريقة الدفع هذا ينطبق على الدفعة الأولى فقط. باقي الدفعات تُسجَّل كغير مدفوعة، ولكل منها تاريخ استحقاقها، وتدفعها عند حلول موعدها.',
         freqWeekly: 'أسبوعياً',
         freqMonthly: 'شهرياً',
         freqQ3: 'كل 3 أشهر',
@@ -975,6 +1040,17 @@ export const appTranslations = {
 
         new_record_sheet_title: 'قيد جديد',
         settings_sheet_title: 'الإعدادات',
+        // Settings → Install app (see SettingsSheet.vue).
+        settings_install_title: 'تثبيت التطبيق',
+        settings_install_sub: 'أضف ماليات دوكس إلى الشاشة الرئيسية — يفتح كتطبيق عادي',
+        install_help_title: 'طريقة التثبيت',
+        install_help_ok: 'فهمت',
+        install_help_ios_1: 'اضغط على زر المشاركة في Safari (المربع الذي به سهم لأعلى).',
+        install_help_ios_2: 'اختر «إضافة إلى الشاشة الرئيسية» ثم اضغط «إضافة».',
+        install_help_samsung_1: 'اضغط على زر القائمة (☰) أسفل الشاشة.',
+        install_help_samsung_2: 'اختر «إضافة الصفحة إلى» ثم «الشاشة الرئيسية».',
+        install_help_manual_1: 'افتح قائمة المتصفح (⋮ في أعلى الشاشة).',
+        install_help_manual_2: 'اختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية». لو لم يظهر، انتظر بضع ثوانٍ وحاول مرة أخرى.',
 
         menu_title: 'القائمة',
         menu_customers: 'العملاء',
@@ -1083,10 +1159,28 @@ export const appTranslations = {
         // ── مشتريات المخزون ──
         howto_inventory_1: 'اختر المورّد الذي اشتريت منه.',
         howto_inventory_2: 'حدّد التاريخ المكتوب على فاتورة المورّد.',
-        howto_inventory_3: 'أضف سطراً لكل صنف: عدد الوحدات، وما بداخل الوحدة الواحدة (كرتونة بها 12 مثلاً)، والسعر الذي دفعته.',
+        howto_inventory_3: 'أضف سطراً لكل صنف: الكمية المشتراة (رقم صحيح أو نصف، مثل 1 أو 1.5)، ووحدة الشراء (كرتونة، شوال…)، وعدد القطع داخل الوحدة الواحدة، وسعر الكرتونة الواحدة.',
         howto_inventory_4: 'أضف الضريبة لو كانت على الفاتورة.',
         howto_inventory_5: 'حدّد طريقة الدفع ثم اضغط تسجيل. سيزيد مخزونك فوراً.',
-        howto_inventory_tip: 'ضبط "ما بداخل الوحدة" مهم جداً — فهو ما يتيح لك الشراء بالكرتونة والبيع بالقطعة.',
+        howto_inventory_tip: 'ضبط "كل وحدة بها" مهم جداً — فهو ما يتيح لك الشراء بالكرتونة والبيع بالقطعة.',
+
+        // Inventory Purchase line table — plain-language labels and
+        // explanations (owner feedback, Sep 2026).
+        inv_qty_lbl: 'الكمية المشتراة',
+        inv_uom_lbl: 'وحدة الشراء',
+        inv_contains_lbl: 'كل وحدة بها',
+        inv_price_lbl: 'سعر الوحدة الواحدة',
+        inv_uom_placeholder: 'كرتونة',
+        inv_piece_placeholder: 'قطعة',
+        inv_qty_half_error: 'أرقام صحيحة أو أنصاف فقط (1، 1.5، 2، 2.5…).',
+        inv_explain_title: 'كيف يُحسب الشراء بالكرتونة',
+        inv_explain_1: '"وحدة الشراء" هي الطريقة التي يبيع لك بها المورّد: كرتونة، شوال، علبة… أو قطعة لو تشتري بالقطعة.',
+        inv_explain_2: '"كل وحدة بها" هو عدد القطع داخل الوحدة الواحدة. لو تشتري بالقطعة اكتب 1.',
+        inv_explain_3: 'السعر هو سعر الكرتونة الواحدة (أو الشوال، العلبة…) وليس سعر القطعة.',
+        inv_explain_4: 'الكمية تكون رقماً صحيحاً أو نصفاً: 1، 1.5، 2، 2.5…',
+        inv_explain_example: 'مثال: 10 كراتين، كل كرتونة بها 24 قطعة، والسعر 240 للكرتونة ← يُضاف 240 قطعة إلى مخزونك، وتدفع 2,400، وتكلفة القطعة الواحدة 10.',
+        inv_line_stock: ':qty :buyUnit × :per = :stock :pieceUnit ستُضاف إلى المخزون',
+        inv_line_cost: 'السعر :currencyA :price لكل :buyUnit = :currencyB :each لكل :pieceUnit',
 
         // ── الإنتاج ("إنتاج اليوم") ──
         howto_production_1: 'اختر المنتج الذي صنعته، وكم قطعة صنعت.',
@@ -1199,7 +1293,7 @@ export const appTranslations = {
         profile_current_password: 'كلمة المرور الحالية',
         profile_new_password: 'كلمة المرور الجديدة',
         profile_confirm_password: 'تأكيد كلمة المرور الجديدة',
-        profile_password_hint: '‏8 أحرف على الأقل، تتضمن حروفًا وأرقامًا.',
+        profile_password_hint: '‏8 أحرف على الأقل، تتضمن حرفًا إنجليزيًا كبيرًا ورقمًا ورمزًا (مثل ! @ #).',
         profile_update_password: 'تحديث كلمة المرور',
 
         // ── Team (Pages/App/Team/Index.vue) ──────────────────────

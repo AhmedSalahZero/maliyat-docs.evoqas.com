@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Rules\ContainsUppercaseLetter;
 use Illuminate\Validation\Rules\Password;
 
 class PasswordRules
@@ -23,10 +24,22 @@ class PasswordRules
      * deliberate fallback that treats a failed check as "allow",
      * not Laravel's default behavior.
      */
+    /**
+     * Current rule (Sep 2026): at least 8 characters, with a letter,
+     * at least one CAPITAL letter, a number and a symbol.
+     * A small letter is deliberately NOT required — one capital is
+     * enough (owner's decision), which is why ->mixedCase() is not
+     * used here.
+     *
+     * Only applies when a password is set or changed; existing
+     * passwords keep working at login.
+     */
     public static function defaults(): Password
     {
         return Password::min(8)
             ->letters()
-            ->numbers();
+            ->numbers()
+            ->symbols()
+            ->rules([new ContainsUppercaseLetter]);
     }
 }
