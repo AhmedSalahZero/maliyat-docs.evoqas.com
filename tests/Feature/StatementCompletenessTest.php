@@ -146,10 +146,12 @@ class StatementCompletenessTest extends TestCase
     }
 
     /**
-     * A payment OUT tagged to a customer is a refund — it increases
-     * what they owe rather than reducing it.
+     * A payment OUT tagged to a customer is booked as an expense in
+     * the ledger — it never touched their account — so it is listed
+     * on their statement but leaves the balance unchanged (audit M1:
+     * the statement must agree with the ledger).
      */
-    public function test_a_refund_to_a_customer_increases_what_they_owe(): void
+    public function test_a_payment_out_tagged_to_a_customer_is_listed_but_does_not_move_their_balance(): void
     {
         $customer = $this->customer();
 
@@ -168,7 +170,8 @@ class StatementCompletenessTest extends TestCase
 
         $this->assertCount(1, $statement['entries']);
         $this->assertEquals(200.0, $statement['entries'][0]['debit']);
-        $this->assertEquals(200.0, $statement['balance']);
+        $this->assertEquals(200.0, $statement['entries'][0]['credit']);
+        $this->assertEquals(0.0, $statement['balance']);
     }
 
     /**
@@ -197,7 +200,12 @@ class StatementCompletenessTest extends TestCase
 
     // ── Supplier statement ───────────────────────────────────────
 
-    public function test_a_payment_tagged_to_a_supplier_appears_on_their_statement(): void
+    /**
+     * Audit M1 — a payment to a named supplier with no bill behind it
+     * would be booked as an expense while the statement counted it as
+     * paying them. It is refused now.
+     */
+    public function test_a_payment_to_a_supplier_without_a_bill_is_refused(): void
     {
         $vendor   = $this->vendor();
         $category = Category::query()->where('company_id', $this->company->id)
@@ -210,14 +218,30 @@ class StatementCompletenessTest extends TestCase
             'amount'      => 300,
             'method'      => 'cash',
             'note'        => 'Petty purchase, no bill',
+        ])->assertSessionHasErrors('payable_id');
+
+        $this->assertSame(0, \App\Models\Payment::count());
+    }
+
+    /**
+     * One recorded before the rule existed is listed on the statement
+     * but leaves the balance where the ledger has it: nothing owed.
+     */
+    public function test_an_older_supplier_payment_without_a_bill_does_not_move_the_balance(): void
+    {
+        $vendor = $this->vendor();
+
+        $this->post('/app/payments/pay', [
+            'date' => '2026-09-05', 'amount' => 300, 'method' => 'cash', 'note' => 'Petty purchase, no bill',
         ])->assertSessionHasNoErrors();
+
+        \App\Models\Payment::query()->latest('id')->firstOrFail()->update(['vendor_id' => $vendor->id]);
 
         $statement = $this->reports()->supplierStatement($vendor->fresh());
 
         $this->assertCount(1, $statement['entries']);
         $this->assertSame('Petty purchase, no bill', $statement['entries'][0]['ref']);
-        $this->assertEquals(300.0, $statement['entries'][0]['debit']);
-        $this->assertEquals(-300.0, $statement['balance'], 'Paid without a bill leaves them owing us');
+        $this->assertEquals(0.0, $statement['balance']);
     }
 
     public function test_a_tagged_payment_reduces_what_is_owed_to_the_supplier(): void
@@ -235,11 +259,11 @@ class StatementCompletenessTest extends TestCase
         ])->assertSessionHasNoErrors();
 
         $this->post('/app/payments/pay', [
-            'vendor_id'   => $vendor->id,
-            'category_id' => $category->id,
-            'date'        => '2026-09-05',
-            'amount'      => 400,
-            'method'      => 'cash',
+            'payable_type' => 'expense',
+            'payable_id'   => \App\Models\Expense::query()->firstOrFail()->id,
+            'date'         => '2026-09-05',
+            'amount'       => 400,
+            'method'       => 'cash',
         ])->assertSessionHasNoErrors();
 
         $statement = $this->reports()->supplierStatement($vendor->fresh());

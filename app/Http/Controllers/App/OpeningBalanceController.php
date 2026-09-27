@@ -59,6 +59,17 @@ class OpeningBalanceController extends Controller
     {
         abort_unless(auth()->user()->isCompanyAdmin(), 403);
 
+        // Real payments recorded later against an opening balance
+        // must be removed first — see resetPaymentProblem(). Opening
+        // stock that was already sold or used cannot simply vanish
+        // either — see resetStockProblem().
+        $companyId = auth()->user()->company_id;
+
+        if ($problem = $this->openingBalances->resetPaymentProblem($companyId)
+            ?? $this->openingBalances->resetStockProblem($companyId)) {
+            return back()->with('error', $problem);
+        }
+
         $this->openingBalances->reset(auth()->user()->company_id);
 
         return redirect()

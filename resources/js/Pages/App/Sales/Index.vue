@@ -34,15 +34,18 @@ import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
 import { useMoneyFormat } from '@/composables/useMoneyFormat';
-import { todayIso } from '@/Utils/date';
+import { todayIso, addDaysIso } from '@/Utils/date';
 import { scrollToForm } from '@/composables/useScrollToForm';
 import { usePermissions } from '@/composables/usePermissions';
+import { useBusinessType } from '@/composables/useBusinessType';
 
 const props = defineProps({
     customers: { type: Array, required: true },
     items:     { type: Array, required: true }, // each: {id, name, uom, qty_per_uom, base_unit_name}
     paymentChannels: { type: Array, required: true },
     salesChannels: { type: Array, required: true },
+    // The channel a new sale starts on, by id (SalesChannel::defaultChannel()).
+    defaultSalesChannelId: { type: [Number, null], default: null },
     sales:     { type: Object, required: true }, // paginator: { data, links, ... }
     // Unfinished sales shared by the team — see SaleDraftController.
     // Each: { id, data, created_by, updated_by, updated_at }.
@@ -86,13 +89,23 @@ const creatingItemForRow = ref(null);
 const creatingChannel = ref(false);
 const creatingSalesChannel = ref(false);
 
-// "Direct Sales" is what every new sale defaults to — see
-// SalesChannel::defaultChannel() on the backend. Falls back to
-// whichever channel happens to be first if that name isn't found
-// (shouldn't normally happen — seedDefaults() always creates it).
+// Every new sale starts on the company's default channel ("Direct
+// Sales" to begin with). The server says WHICH one by id — see
+// SalesChannel::defaultChannel() — so renaming or translating that
+// channel changes nothing (audit finding M11). It used to be looked
+// up here by its English name.
 function defaultSalesChannelId() {
-    const direct = salesChannelList.value.find((c) => c.name === 'Direct Sales');
-    return direct?.id ?? salesChannelList.value[0]?.id ?? null;
+    const known = salesChannelList.value.some((c) => c.id === props.defaultSalesChannelId);
+    return known ? props.defaultSalesChannelId : (salesChannelList.value[0]?.id ?? null);
+}
+
+// A line with no item picked is a SERVICE line: no stock is taken
+// and no cost of goods is recorded. Only companies that offer
+// services may use one; a goods-only company must pick the item
+// (the server enforces this too — audit finding M8).
+const { isService } = useBusinessType();
+function isServiceLine(line) {
+    return !line.item_id && (Number(line.qty) > 0 || (line.unit_price !== null && line.unit_price !== ''));
 }
 
 const selectedCustomer = computed(() =>
@@ -133,18 +146,27 @@ watch(saleKind, (kind) => {
     if (kind === 'cash') form.mode = 'now';
 });
 
-// Debugging aid: every field with its own v-if below (date,
-// customer_id, the top-level "lines" array rule, amount_now,
-// installment_count, due_date) is listed here so it isn't shown
-// twice — everything else Laravel might reject the request for
-// (a specific line's qty/unit_price/item_id, mode, method,
-// payment_channel_id, vat_rate, or anything else) previously had
-// no v-if anywhere in this form at all, so a rejection on one of
-// those fields showed the person literally nothing — the page just
-// sat there looking like "did not save". This surfaces all of it.
+// Every field with its own message under it (date, customer_id,
+// the "lines" rule, amount_now, installment_count, due_date) is
+// listed here so it isn't shown twice. Any OTHER problem the server
+// reports is still shown at the bottom of the form — as a plain
+// message, never with its technical field name (audit finding M11)
+// — so a failed save is never silent.
 const shownErrorKeys = ['date', 'customer_id', 'sales_channel_id', 'lines', 'amount_now', 'installment_count', 'due_date'];
+// Quantity problems on individual lines (e.g. "Only 0 pc of Rice
+// were in stock on 5 Sep…") are shown in plain words under the lines
+// table. Grouped rather than placed on each row because blank rows
+// are dropped before sending, so the server's line numbers do not
+// always match the rows on screen. Duplicates (two lines of the same
+// item) are shown once.
+const isLineQtyError = (key) => /^lines\.\d+\.(qty|item_id)$/.test(key);
+const lineQtyErrors = computed(() =>
+    [...new Set(Object.entries(form.errors).filter(([key]) => isLineQtyError(key)).map(([, message]) => message))]
+);
 const otherErrors = computed(() =>
-    Object.entries(form.errors).filter(([key]) => !shownErrorKeys.includes(key))
+    [...new Set(Object.entries(form.errors)
+        .filter(([key]) => !shownErrorKeys.includes(key) && !isLineQtyError(key))
+        .map(([, message]) => message))]
 );
 
 // ── Edit state ───────────────────────────────────────────────────
@@ -189,14 +211,14 @@ const installmentSchedule = computed(() => {
     const interval = Math.max(1, Number(form.installment_interval_days) || 1);
     const per = Math.round((total.value / count) * 100) / 100;
     let allocated = 0;
-    const today = new Date();
+    // Counted from the document's own date, not today — the server
+    // does the same, so the preview matches what is saved (audit M13).
+    const startDate = form.date || todayIso();
     return Array.from({ length: count }, (_, i) => {
         const isLast = i === count - 1;
         const amount = isLast ? Math.round((total.value - allocated) * 100) / 100 : per;
         allocated += amount;
-        const due = new Date(today);
-        due.setDate(due.getDate() + interval * (i + 1));
-        return { sequence: i + 1, due_date: due.toISOString().slice(0, 10), amount };
+        return { sequence: i + 1, due_date: addDaysIso(startDate, interval * (i + 1)), amount };
     });
 });
 
@@ -366,12 +388,6 @@ function submitCreate() {
         onSuccess: () => {
             lastRecorded.value = recordedSummary;
             resetForNextSale();
-        },
-        onError: (errors) => {
-            // Temporary debugging aid — open the browser console
-            // (F12) after a failed save to see exactly what the
-            // server rejected and why.
-            console.error('Sale did not save — server validation errors:', errors);
         },
     });
 }
@@ -688,7 +704,7 @@ function saleItemsLabel(sale) {
                     :add-new-label="t('addNewCustomer')"
                     @create="createCustomer"
                 />
-                <button v-if="selectedCustomer" type="button" class="inline-icon-btn" title="Rename" @click="showRename = true">
+                <button v-if="selectedCustomer" type="button" class="inline-icon-btn" :title="t('renameTitle')" :aria-label="t('renameTitle')" @click="showRename = true">
                     <AppIcon name="pencil" />
                 </button>
             </div>
@@ -721,8 +737,15 @@ function saleItemsLabel(sale) {
                                 @update:model-value="(val) => onItemChange(index, val)"
                                 @create="(name) => createItem(name, index)"
                             />
+                            <div v-if="isServiceLine(line)" class="line-hint" :class="{ 'line-hint--warn': !isService }">
+                                {{ isService ? t('sale_service_line_hint') : t('sale_line_needs_item_hint') }}
+                            </div>
                         </td>
-                        <td :data-label="t('qtyLbl')"><input v-model.number="line.qty" type="number" min="0" step="0.01" placeholder="0"></td>
+                        <td :data-label="t('qtyLbl')">
+                            <!-- Cartons/sacks: whole or half, like purchases. Base unit: to 0.01. -->
+                            <input v-model.number="line.qty" type="number" min="0"
+                                   :step="Number(line.qty_per_uom) > 1 ? 0.5 : 0.01" placeholder="0">
+                        </td>
                         <td :data-label="t('unitLbl')">
                             <!-- Only worth a dropdown once the item actually has
                                  two known units (its base unit AND a packaging
@@ -747,6 +770,7 @@ function saleItemsLabel(sale) {
             </table>
             <button type="button" class="addline-btn" @click="addLine">{{ t('addLineBtn') }}</button>
             <div v-if="form.errors.lines" class="form-error">{{ form.errors.lines }}</div>
+            <div v-for="message in lineQtyErrors" :key="message" class="form-error">{{ message }}</div>
 
             <div class="field-row" style="margin-top: 16px;">
                 <div class="field field--narrow">
@@ -847,14 +871,10 @@ function saleItemsLabel(sale) {
                 @create-channel="createChannel"
             />
 
-            <!-- Temporary debugging aid — shows any server rejection
-                 not already displayed next to its own field above,
-                 so a failed save is never silent. Safe to remove
-                 once Cash Sales is confirmed working. -->
+            <!-- Any problem not already shown next to its own field above,
+                 in plain words, so a failed save is never silent. -->
             <div v-if="otherErrors.length" class="alert warning" style="margin-top: 12px;">
-                <div v-for="[key, message] in otherErrors" :key="key">
-                    <strong>{{ key }}:</strong> {{ message }}
-                </div>
+                <div v-for="message in otherErrors" :key="message">{{ message }}</div>
             </div>
 
             <div class="submit-row" style="display: flex; gap: 10px;">
@@ -944,7 +964,7 @@ function saleItemsLabel(sale) {
 
         <RenameModal
             v-model:open="showRename"
-            title="Rename customer"
+            :title="t('renameCustomerTitle')"
             :current-name="selectedCustomer?.name ?? ''"
             :saving="renaming"
             @save="saveRename"
@@ -953,6 +973,8 @@ function saleItemsLabel(sale) {
 </template>
 
 <style scoped>
+.line-hint { margin-top: 4px; font-size: 0.78rem; color: var(--color-text-muted); }
+.line-hint--warn { color: var(--color-danger, #B91C2C); }
 .installment-preview {
     list-style: none;
     margin: 10px 0 0;

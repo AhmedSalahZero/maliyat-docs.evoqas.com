@@ -80,6 +80,9 @@ class UpdateSaleRequest extends FormRequest
 
             // Last, so a line already rejected for a bad quantity is
             // not also told it is out of stock.
+            $this->rejectLinesWithoutItem($validator);
+            $this->rejectFractionalPackagingQty($validator);
+
             $this->rejectOversellingStock($validator, $this->route('sale'));
         });
     }

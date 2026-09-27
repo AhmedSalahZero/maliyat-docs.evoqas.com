@@ -41,6 +41,21 @@ class MovingAverageCostingService
     /** Recursion guard for the raw-material → product cascade. */
     private const MAX_CASCADE_DEPTH = 5;
 
+    /**
+     * Quantities in the stock ledger are kept to 4 decimals (audit
+     * M9). With 2, a purchase of 3 cartons × 0.333 kg, or a sale of
+     * 1.5 × 0.75, lost part of a unit every time, so over months the
+     * quantity on hand drifted away from what was really bought and
+     * sold. Money stays at 2 decimals (cents); the average cost at 4.
+     */
+    public const QTY_DECIMALS = 4;
+
+    /** One outbound line's cost, rounded to the cent as posted. */
+    public static function lineCost(float $baseQty, float $unitCost): float
+    {
+        return round($baseQty * $unitCost, 2);
+    }
+
     public function __construct(
         private readonly JournalService $journal,
     ) {}
@@ -114,7 +129,7 @@ class MovingAverageCostingService
             ->get()
             ->map(fn (InventoryPurchaseLine $line) => [
                 'date'  => $line->inventoryPurchase->date->toDateString(),
-                'qty'   => (float) $line->qty * (float) $line->qty_per_uom,
+                'qty'   => round((float) $line->qty * (float) $line->qty_per_uom, self::QTY_DECIMALS),
                 'value' => (float) $line->line_total,
             ]);
 
@@ -172,7 +187,7 @@ class MovingAverageCostingService
             $qtyIn   = (float) ($inboundByDate[$date]['qty'] ?? 0);
             $valueIn = (float) ($inboundByDate[$date]['value'] ?? 0);
 
-            $availableQty   = round($dayBeginningQty + $qtyIn, 2);
+            $availableQty   = round($dayBeginningQty + $qtyIn, self::QTY_DECIMALS);
             $availableValue = round($dayBeginningValue + $valueIn, 2);
 
             // No stock available to average — an item never bought/
@@ -188,7 +203,15 @@ class MovingAverageCostingService
             // invoiced in (e.g. Carton) — baseQty() converts it to
             // base units before it can be weighed against the pool,
             // same as an inbound purchase line already does.
-            $qtyOut = round((float) $daySaleLines->sum(fn (SaleLine $l) => $l->baseQty()) + (float) $dayMaterialLines->sum('qty'), 2);
+            $qtyOut = round((float) $daySaleLines->sum(fn (SaleLine $l) => $l->baseQty()) + (float) $dayMaterialLines->sum('qty'), self::QTY_DECIMALS);
+
+            // What leaves stock today is valued LINE BY LINE, each line
+            // rounded to the cent exactly as it is posted to Cost of
+            // Goods Sold (repriceSaleCogs() / material line_total). It
+            // used to be one rounded figure for the whole day, so the
+            // stock value here and the Inventory account in the ledger
+            // could drift apart by a cent or two a day (audit M9).
+            $valueOut = 0.0;
 
             foreach ($daySaleLines as $line) {
                 // unit_cost is always cost PER BASE UNIT (per kg,
@@ -199,6 +222,7 @@ class MovingAverageCostingService
                     $affectedSaleIds->push($line->sale_id);
                 }
                 $line->forceFill(['unit_cost' => $averageCost])->save();
+                $valueOut += self::lineCost($line->baseQty(), $averageCost);
             }
 
             foreach ($dayMaterialLines as $line) {
@@ -207,11 +231,12 @@ class MovingAverageCostingService
                     $affectedProductionOrderIds->push($line->production_order_id);
                 }
                 $line->forceFill(['unit_cost_snapshot' => $averageCost, 'line_total' => $lineTotal])->save();
+                $valueOut += $lineTotal;
             }
 
-            $valueOut = round($qtyOut * $averageCost, 2);
+            $valueOut = round($valueOut, 2);
 
-            $endingQty   = round($availableQty - $qtyOut, 2);
+            $endingQty   = round($availableQty - $qtyOut, self::QTY_DECIMALS);
             $endingValue = round($availableValue - $valueOut, 2);
 
             InventoryStockLedger::create([
@@ -280,11 +305,15 @@ class MovingAverageCostingService
         // units unit_cost is actually priced per — a line sold in
         // Cartons must be costed on the kg it actually took out of
         // stock, not on the number of cartons on the invoice.
+        // Each line rounded to the cent on its own, then added — the
+        // same figure recalculateItem() takes out of the stock value,
+        // so the ledger's Inventory account and the stock ledger stay
+        // equal to the cent (audit M9).
         $newTotal = round((float) SaleLine::query()
             ->where('sale_id', $saleId)
             ->whereNotNull('unit_cost')
-            ->selectRaw('SUM(qty * qty_per_uom * unit_cost) as total')
-            ->value('total'), 2);
+            ->get()
+            ->sum(fn (SaleLine $line) => self::lineCost($line->baseQty(), (float) $line->unit_cost)), 2);
 
         $currentlyPosted = $this->currentCogsPostedFor($sale);
 

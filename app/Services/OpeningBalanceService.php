@@ -13,6 +13,7 @@ use App\Models\Payment;
 use App\Models\Sale;
 use App\Models\Vendor;
 use App\Services\MovingAverageCostingService;
+use App\Services\StockTimeline;
 use Illuminate\Support\Facades\DB;
 
 // ══════════════════════════════════════════════════════════════════
@@ -258,13 +259,23 @@ class OpeningBalanceService
                 $vendor ??= $this->systemVendor($companyId);
                 $category = Category::query()->findOrFail($row['category_id']);
 
+                $assetDate  = $row['date'] ?? $date;
+                $usefulLife = $category->default_useful_life_years
+                    ?? Category::DEFAULT_EQUIPMENT_USEFUL_LIFE_YEARS;
+
+                [$accumulated, $depreciatedThrough] = $this->openingDepreciation(
+                    (float) $row['amount'], (int) $usefulLife, $assetDate, $date,
+                    $row['accumulated_depreciation'] ?? null,
+                );
+
                 $purchase = EquipmentPurchase::create([
                     'company_id' => $companyId, 'vendor_id' => $vendor->id,
                     'category_id' => $category->id, 'name' => $row['name'],
                     'qty' => 1, 'unit_price' => $row['amount'], 'amount' => $row['amount'],
-                    'date' => $row['date'] ?? $date,
-                    'useful_life_years' => $category->default_useful_life_years
-                        ?? Category::DEFAULT_EQUIPMENT_USEFUL_LIFE_YEARS,
+                    'date' => $assetDate,
+                    'useful_life_years' => $usefulLife,
+                    'accumulated_depreciation' => $accumulated,
+                    'last_depreciated_through' => $depreciatedThrough,
                     'is_opening_balance' => true,
                 ]);
 
@@ -318,12 +329,30 @@ class OpeningBalanceService
                 $expense->delete();
             });
 
-            InventoryPurchase::query()->where('is_opening_balance', true)->get()->each(function (InventoryPurchase $purchase) {
+            // Items whose opening stock is removed below, with the
+            // earliest date each one loses stock — their cost ledgers
+            // must be rebuilt from there once it is gone, exactly as
+            // InventoryPurchaseController::destroy() does. Without
+            // this the Inventory Statement kept showing the removed
+            // opening stock and its value.
+            $recalculateFrom = [];
+
+            InventoryPurchase::query()->where('is_opening_balance', true)->get()->each(function (InventoryPurchase $purchase) use (&$recalculateFrom) {
+                $date = $purchase->date->toDateString();
+
+                foreach ($purchase->lines()->pluck('item_id')->filter()->unique() as $itemId) {
+                    $recalculateFrom[(int) $itemId] = min($recalculateFrom[(int) $itemId] ?? $date, $date);
+                }
+
                 $this->journal->reverseAllForPayable($purchase);
                 $purchase->payments()->delete();
                 $purchase->lines()->delete();
                 $purchase->delete();
             });
+
+            foreach ($recalculateFrom as $itemId => $fromDate) {
+                $this->costing->onItemMovementChanged($companyId, (int) $itemId, $fromDate);
+            }
 
             EquipmentPurchase::query()->where('is_opening_balance', true)->get()->each(function (EquipmentPurchase $purchase) {
                 $this->journal->reverseAllForPayable($purchase);
@@ -340,6 +369,130 @@ class OpeningBalanceService
                 'status' => 'draft', 'posted_at' => null, 'posted_by' => null,
             ]);
         });
+    }
+
+    /**
+     * Why a reset must be refused because real money has already
+     * moved against an opening balance, or null if it is safe.
+     *
+     * Reset used to delete every payment on the opening documents —
+     * including real collections from customers and real payments to
+     * suppliers recorded weeks later — while the screen promised it
+     * "does not affect any other sales, expenses, or records" (audit
+     * finding 4.1). Cash and bank then no longer matched the real
+     * bank. Now those payments must be removed deliberately first,
+     * one by one from the Payments screen, where each removal is
+     * logged; only then can the opening balance be cleared.
+     */
+    public function resetPaymentProblem(int $companyId): ?string
+    {
+        $payables = [
+            Sale::class, Expense::class, InventoryPurchase::class, EquipmentPurchase::class,
+        ];
+
+        $payments = Payment::query()
+            ->where('company_id', $companyId)
+            ->where('is_opening_balance', false)
+            ->where(function ($q) use ($payables, $companyId) {
+                foreach ($payables as $model) {
+                    $q->orWhere(fn ($q2) => $q2
+                        ->where('payable_type', $model)
+                        ->whereIn('payable_id', $model::query()
+                            ->where('company_id', $companyId)
+                            ->where('is_opening_balance', true)
+                            ->select('id')));
+                }
+            })
+            ->orderBy('date')
+            ->get();
+
+        if ($payments->isEmpty()) {
+            return null;
+        }
+
+        $first = $payments->first();
+
+        return __('errors.ob_reset_has_payments', [
+            'count'  => $payments->count(),
+            'amount' => number_format((float) $first->amount, 2),
+            'date'   => StockTimeline::readableDate($first->date->toDateString()),
+        ]);
+    }
+
+    /**
+     * Why a reset must be refused because of stock, or null if it is
+     * safe: removing opening stock that has already been sold or used
+     * in production would leave those sales with nothing to take a
+     * cost from (see App\Services\StockTimeline).
+     */
+    public function resetStockProblem(int $companyId): ?string
+    {
+        $changesByItem = [];
+
+        InventoryPurchase::query()
+            ->where('company_id', $companyId)
+            ->where('is_opening_balance', true)
+            ->with('lines')
+            ->get()
+            ->each(function (InventoryPurchase $purchase) use (&$changesByItem) {
+                $date = $purchase->date->toDateString();
+
+                foreach ($purchase->lines as $line) {
+                    $changesByItem[(int) $line->item_id][] = [$date, -((float) $line->qty * ((float) $line->qty_per_uom ?: 1))];
+                }
+            });
+
+        return app(StockTimeline::class)->removalProblem($changesByItem);
+    }
+
+    /**
+     * Depreciation an already-owned asset had taken BEFORE the
+     * opening date, and the month the app's own depreciation should
+     * continue from (audit finding 4.2).
+     *
+     * Before this, an opening asset came in at full original cost
+     * and the daily catch-up then charged depreciation for every
+     * month since it was bought — years of it, dumped into the first
+     * P&L the app produced as a large, false loss. Depreciation from
+     * before the opening date belongs to years this app never
+     * recorded; it reduces the asset's opening book value (and so
+     * Owner's Equity), never this period's profit.
+     *
+     *   - $given (what the user typed) wins when it was entered;
+     *   - otherwise it is worked out straight-line: one month's
+     *     depreciation for every full month from the purchase month
+     *     up to (not including) the opening month, capped at cost;
+     *   - the app's depreciation then resumes with the opening month.
+     *
+     * @return array{0: float, 1: ?string}  [accumulated, last_depreciated_through]
+     */
+    private function openingDepreciation(float $cost, int $usefulLifeYears, string $assetDate, string $openingDate, mixed $given): array
+    {
+        $openingMonth = \Illuminate\Support\Carbon::parse($openingDate)->startOfMonth();
+        $assetMonth   = \Illuminate\Support\Carbon::parse($assetDate)->startOfMonth();
+
+        // Bought in the opening month (or later): nothing happened
+        // before the app, depreciation simply starts as normal.
+        if ($assetMonth->greaterThanOrEqualTo($openingMonth)) {
+            $accumulated = ($given !== null && $given !== '') ? (float) $given : 0.0;
+
+            return [round(min($accumulated, $cost), 2), null];
+        }
+
+        $depreciatedThrough = $openingMonth->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
+
+        if ($given !== null && $given !== '') {
+            return [round(min((float) $given, $cost), 2), $depreciatedThrough];
+        }
+
+        if ($usefulLifeYears <= 0) {
+            return [0.0, $depreciatedThrough];
+        }
+
+        $monthly       = round($cost / ($usefulLifeYears * 12), 2);
+        $monthsElapsed = (int) $assetMonth->diffInMonths($openingMonth);
+
+        return [round(min($cost, $monthly * $monthsElapsed), 2), $depreciatedThrough];
     }
 
     private function headerArray(OpeningBalance $header): array

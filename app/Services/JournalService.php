@@ -97,15 +97,45 @@ class JournalService
     }
 
     /**
-     * A receipt with no invoice behind it at all (Receive Money's
-     * "or log a generic receipt" — a cash sale of a service with no
-     * formal invoice, a tip, etc.) — recognised as revenue directly.
+     * A receipt with no invoice AND no customer behind it (a tip, a
+     * one-off service with no paperwork) — recognised as revenue
+     * directly. A receipt FROM A CUSTOMER that settles no invoice is
+     * not this: see postCustomerCreditReceipt().
      */
     public function postStandaloneReceipt(Payment $payment): void
     {
         $this->post($payment->company_id, $payment->date->toDateString(), 'Cash receipt (no invoice)', $payment, [
             ['account' => $this->cashAccountFor($payment->method), 'debit' => (float) $payment->amount],
             ['account' => Account::SALES_REVENUE, 'credit' => (float) $payment->amount],
+        ]);
+    }
+
+    /**
+     * A customer paid money that settles no invoice — in advance, or
+     * the extra over an invoice they overpaid. That is NOT revenue:
+     * nothing has been sold for it yet, and the business owes it back
+     * (in goods, services or cash). It is held in Customer Credits,
+     * a liability, until used against one of their invoices (audit
+     * finding 4.6 — it used to be booked straight to Sales Revenue).
+     */
+    public function postCustomerCreditReceipt(Payment $payment): void
+    {
+        $this->post($payment->company_id, $payment->date->toDateString(), 'Customer credit received (advance / overpayment)', $payment, [
+            ['account' => $this->cashAccountFor($payment->method), 'debit' => (float) $payment->amount],
+            ['account' => Account::CUSTOMER_CREDITS, 'credit' => (float) $payment->amount],
+        ]);
+    }
+
+    /**
+     * Part of a customer's credit used to pay one of their invoices.
+     * No money moves — the credit they already have simply settles
+     * what they owe.
+     */
+    public function postCustomerCreditApplied(Payment $payment): void
+    {
+        $this->post($payment->company_id, $payment->date->toDateString(), 'Customer credit used against invoice', $payment, [
+            ['account' => Account::CUSTOMER_CREDITS, 'debit' => (float) $payment->amount],
+            ['account' => Account::ACCOUNTS_RECEIVABLE, 'credit' => (float) $payment->amount],
         ]);
     }
 
@@ -223,9 +253,9 @@ class JournalService
 
     /**
      * The real payroll Expense checked "This is Production Labor" —
-     * reconciles what was ESTIMATED across this month's Production
-     * Orders (parked in Production Labor Accrued) against what was
-     * ACTUALLY paid. The difference (either direction) lands
+     * reconciles what was ESTIMATED on Production Orders and is still
+     * outstanding in Production Labor Accrued (any month — see
+     * productionLaborOutstanding()) against what was ACTUALLY paid. The difference (either direction) lands
      * directly in Cost of Goods Sold rather than sitting unexplained:
      *
      *   - Clears $appliedAmount out of Production Labor Accrued.
@@ -260,6 +290,52 @@ class JournalService
         $lines[] = ['account' => Account::ACCOUNTS_PAYABLE, 'credit' => $actual];
 
         $this->post($expense->company_id, $expense->date->toDateString(), 'Production labor (payroll vs. estimate)', $expense, $lines);
+    }
+
+    /**
+     * What is still sitting in Production Labor Accrued (account
+     * 2200): labour ESTIMATED on production runs that no real payroll
+     * has cleared yet. Positive = owed (a credit balance).
+     *
+     * Read straight from the ledger, so it naturally includes every
+     * month — a run from last month whose wages are paid this month,
+     * or a month in which no payroll was ever ticked "Production
+     * Labor", is still here waiting to be cleared (audit finding
+     * 4.3: the old month-by-month matching left those in 2200
+     * forever).
+     *
+     * With $asOf, the balance as of that day — but never more than
+     * the balance today, so a payroll entered with an earlier date
+     * cannot clear an estimate that a later payroll already cleared.
+     */
+    public function productionLaborOutstanding(int $companyId, ?string $asOf = null): float
+    {
+        // Read-only: never seeds a chart of accounts just to answer.
+        $account = Account::query()
+            ->where('company_id', $companyId)
+            ->where('code', Account::PRODUCTION_LABOR_ACCRUED)
+            ->first();
+
+        if (! $account) {
+            return 0.0;
+        }
+
+        $balance = function (?string $upTo) use ($companyId, $account): float {
+            $row = DB::table('journal_lines')
+                ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
+                ->where('journal_lines.company_id', $companyId)
+                ->where('journal_entries.company_id', $companyId)
+                ->where('journal_lines.account_id', $account->id)
+                ->when($upTo, fn ($q) => $q->whereDate('journal_entries.date', '<=', $upTo))
+                ->selectRaw('COALESCE(SUM(journal_lines.credit), 0) - COALESCE(SUM(journal_lines.debit), 0) as balance')
+                ->first();
+
+            return round((float) ($row->balance ?? 0), 2);
+        };
+
+        $outstanding = $asOf ? min($balance($asOf), $balance(null)) : $balance(null);
+
+        return max(0.0, $outstanding);
     }
 
     /**
@@ -374,12 +450,33 @@ class JournalService
         ]);
     }
 
+    /**
+     * Already-owned equipment at the opening date: its original cost
+     * goes to Equipment, the depreciation it had ALREADY taken before
+     * the opening date to Accumulated Depreciation, and only the
+     * difference — its book value — to Owner's Equity (audit finding
+     * 4.2; it used to come in at full cost with nothing depreciated).
+     *
+     * Dated on the asset's own purchase date, as before.
+     */
     public function postOpeningBalanceEquipment(EquipmentPurchase $purchase): void
     {
-        $this->post($purchase->company_id, $purchase->date->toDateString(), 'Opening balance — already-owned equipment', $purchase, [
-            ['account' => Account::EQUIPMENT_ASSET, 'debit' => (float) $purchase->amount],
-            ['account' => Account::OWNERS_EQUITY, 'credit' => (float) $purchase->amount],
-        ]);
+        $cost        = (float) $purchase->amount;
+        $accumulated = round(min($cost, max(0.0, (float) $purchase->accumulated_depreciation)), 2);
+
+        $lines = [
+            ['account' => Account::EQUIPMENT_ASSET, 'debit' => $cost],
+        ];
+
+        if (round($cost - $accumulated, 2) > 0) {
+            $lines[] = ['account' => Account::OWNERS_EQUITY, 'credit' => round($cost - $accumulated, 2)];
+        }
+
+        if ($accumulated > 0) {
+            $lines[] = ['account' => Account::ACCUMULATED_DEPRECIATION, 'credit' => $accumulated];
+        }
+
+        $this->post($purchase->company_id, $purchase->date->toDateString(), 'Opening balance — already-owned equipment', $purchase, $lines);
     }
 
     // ── Custody ──────────────────────────────────────────────────

@@ -38,7 +38,11 @@ class HandleInertiaRequests extends Middleware
 
             'auth' => fn () => $this->resolveAuth($request),
 
-            'flash' => [
+            // Read when the page is built, not before the controller
+            // runs — so a message a controller sets for THIS page (e.g.
+            // "that report date was not valid", audit M5) is shown too,
+            // not only messages left over from the previous request.
+            'flash' => fn () => [
                 'success' => $request->session()->get('success'),
                 'error'   => $request->session()->get('error'),
                 'warning' => $request->session()->get('warning'),

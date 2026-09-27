@@ -9,7 +9,6 @@ use App\Http\Requests\App\UpdateExpenseRequest;
 use App\Models\Category;
 use App\Models\Expense;
 use App\Models\PaymentChannel;
-use App\Models\ProductionOrder;
 use App\Models\Vendor;
 use App\Services\JournalService;
 use App\Services\PaymentRecorderService;
@@ -93,6 +92,10 @@ class ExpenseController extends Controller
             'paymentChannels' => PaymentChannel::query()->orderBy('name')->get(['id', 'name']),
             'expenses'        => $expenses,
             'recurringSeries' => $this->recurringSeriesSummary(),
+            // Labour estimated on production runs that no payroll has
+            // cleared yet — shown beside the "This is Production
+            // Labor" tick box so it is never forgotten (audit 4.3).
+            'laborAccruedOutstanding' => $this->journal->productionLaborOutstanding((int) auth()->user()->company_id),
         ]);
     }
 
@@ -240,17 +243,22 @@ class ExpenseController extends Controller
             return;
         }
 
-        $totalForMonth = ProductionOrder::totalLaborForMonth($expense->company_id, $expense->date->toDateString());
-
-        $alreadyClaimed = (float) Expense::query()
-            ->where('company_id', $expense->company_id)
-            ->where('is_production_labor', true)
-            ->where('id', '!=', $expense->id)
-            ->whereYear('date', $expense->date->year)
-            ->whereMonth('date', $expense->date->month)
-            ->sum('production_labor_applied_snapshot');
-
-        $availableToApply = max(0, round($totalForMonth - $alreadyClaimed, 2));
+        // Everything still estimated-but-unpaid in Production Labor
+        // Accrued up to this payroll's date — from ANY month, not
+        // just this one (audit finding 4.3). Matching month by month
+        // left an estimate in account 2200 forever whenever wages
+        // were paid in the following month, or a month's payroll was
+        // never ticked. Reading the ledger balance instead means each
+        // ticked payroll clears whatever is outstanding, so 2200
+        // always returns to zero. Any earlier ticked payroll has
+        // already cleared its share in the ledger, so nothing is
+        // double-cleared (the old "already claimed" sum is no longer
+        // needed). On edit, this expense's own entry was reversed
+        // just before this runs, so it is not counted against itself.
+        $availableToApply = $this->journal->productionLaborOutstanding(
+            (int) $expense->company_id,
+            $expense->date->toDateString(),
+        );
 
         $expense->forceFill(['production_labor_applied_snapshot' => $availableToApply])->save();
 

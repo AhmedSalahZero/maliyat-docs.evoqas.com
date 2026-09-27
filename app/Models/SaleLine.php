@@ -48,6 +48,7 @@ class SaleLine extends Model
      */
     public function baseQty(): float
     {
-        return round((float) $this->qty * ((float) $this->qty_per_uom ?: 1), 2);
+        // 4 decimals, the stock ledger's own precision (audit M9).
+        return round((float) $this->qty * ((float) $this->qty_per_uom ?: 1), 4);
     }
 }

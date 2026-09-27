@@ -2,6 +2,7 @@
 
 namespace App\Support\Reports;
 
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
@@ -128,7 +129,7 @@ class ExcelReportExporter
                     'income' => 'E3F7EA', 'expense' => 'FDE8E9', 'primary' => self::SOFT_BLUE, default => 'EEF2FA',
                 };
                 $sheet->setCellValue("{$colLetter}{$statsRow}", self::safeCell($stat['label']));
-                $sheet->setCellValue("{$colLetter}".($statsRow + 1), self::safeCell($stat['value']));
+                self::writeCell($sheet, "{$colLetter}".($statsRow + 1), $stat['value'], true);
                 $sheet->getStyle("{$colLetter}{$statsRow}")->applyFromArray([
                     'font' => ['size' => 9, 'color' => ['rgb' => self::TEXT_DARK]],
                     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $fill]],
@@ -185,7 +186,7 @@ class ExcelReportExporter
 
                 foreach ($columns as $i => $column) {
                     $colLetter = self::columnLetter($i + 1);
-                    $sheet->setCellValue("{$colLetter}{$row}", self::safeCell($cells[$i] ?? ''));
+                    self::writeCell($sheet, "{$colLetter}{$row}", $cells[$i] ?? '', ($column['align'] ?? 'start') === 'end');
                     $align = $sheet->getStyle("{$colLetter}{$row}")->getAlignment();
                     $align->setHorizontal(
                         ($column['align'] ?? 'start') === 'end' ? Alignment::HORIZONTAL_RIGHT : Alignment::HORIZONTAL_LEFT
@@ -229,7 +230,10 @@ class ExcelReportExporter
             if (! empty($section['totals'])) {
                 foreach ($columns as $i => $column) {
                     $colLetter = self::columnLetter($i + 1);
-                    $sheet->setCellValue("{$colLetter}{$row}", self::safeCell($section['totals'][$i] ?? ''));
+                    self::writeCell($sheet, "{$colLetter}{$row}", $section['totals'][$i] ?? '', ($column['align'] ?? 'start') === 'end');
+                    if (($column['align'] ?? 'start') === 'end') {
+                        $sheet->getStyle("{$colLetter}{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+                    }
                 }
                 $sheet->getStyle("A{$row}:".self::columnLetter(count($columns))."{$row}")->applyFromArray([
                     'font' => ['bold' => true, 'color' => ['rgb' => self::BRAND_DARK]],
@@ -260,6 +264,89 @@ class ExcelReportExporter
         $response->headers->set('Cache-Control', 'max-age=0');
 
         return $response;
+    }
+
+    /**
+     * Write one cell. In a figures column (right-aligned: amounts,
+     * quantities, percentages) a value that reads as a number is
+     * written as a REAL number with a display format, not as text
+     * (audit finding M4) — so SUM(), sorting and formulas work in
+     * Excel without the accountant converting every column.
+     *
+     * The report builder hands over display strings such as
+     * "EGP 1,250.00", "-300.00", "12.5" or "34.2%". Those are
+     * recognised here and turned back into their value, and the cell
+     * is formatted to look exactly as before (currency, thousands
+     * separator, 2 decimals). Anything else — "—", a label, a name —
+     * is written as text, still guarded against formula injection.
+     */
+    private static function writeCell(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, string $coordinate, mixed $value, bool $figuresColumn): void
+    {
+        if (is_int($value) || is_float($value)) {
+            $sheet->setCellValueExplicit($coordinate, $value, DataType::TYPE_NUMERIC);
+            $sheet->getStyle($coordinate)->getNumberFormat()->setFormatCode('#,##0.00');
+
+            return;
+        }
+
+        if ($figuresColumn && is_string($value) && ($parsed = self::parseFigure($value)) !== null) {
+            [$number, $format] = $parsed;
+            $sheet->setCellValueExplicit($coordinate, $number, DataType::TYPE_NUMERIC);
+            $sheet->getStyle($coordinate)->getNumberFormat()->setFormatCode($format);
+
+            return;
+        }
+
+        $sheet->setCellValue($coordinate, self::safeCell($value));
+    }
+
+    /**
+     * "EGP 1,250.00" → [1250.0, '"EGP "#,##0.00;"EGP "-#,##0.00']
+     * "-300.5"       → [-300.5, '#,##0.00']  (2 decimals kept as shown)
+     * "12"           → [12.0,   '#,##0']
+     * "34.2%"        → [0.342,  '0.0%']
+     * anything else  → null (stays text)
+     *
+     * @return array{0: float, 1: string}|null
+     */
+    public static function parseFigure(string $value): ?array
+    {
+        $value = trim($value);
+
+        // An optional sign may come before the currency too — the Cash
+        // Flow report writes "+EGP 500.00" / "-EGP 200.00".
+        if (! preg_match('/^([+-]?)(?:(\p{L}[\p{L}.$]{0,5}|[$€£¥])\s?)?(-?)(\d{1,3}(?:,\d{3})*|\d+)(?:\.(\d+))?(%)?$/u', $value, $m)) {
+            return null;
+        }
+
+        [$all, $leadSign, $currency, $innerSign, $whole] = $m;
+        // Brackets matter: PHP's `xor` binds more loosely than `=`, so
+        // without them the minus sign was silently dropped.
+        $negative = (($leadSign === '-') xor ($innerSign === '-'));
+        $sign     = $negative ? '-' : '';
+        $decimals = $m[5] ?? '';
+        $percent  = ($m[6] ?? '') === '%';
+
+        $number = (float) (str_replace(',', '', $whole).($decimals !== '' ? '.'.$decimals : ''));
+        if ($sign === '-') {
+            $number = -$number;
+        }
+
+        if ($percent) {
+            $places = max(strlen($decimals), 0);
+
+            return [$number / 100, '0'.($places ? '.'.str_repeat('0', $places) : '').'%'];
+        }
+
+        $pattern = $decimals !== '' ? '#,##0.'.str_repeat('0', strlen($decimals)) : '#,##0';
+
+        if ($currency !== '') {
+            $prefix = '"'.str_replace('"', '', $currency).' "';
+
+            return [$number, $prefix.$pattern.';'.$prefix.'-'.$pattern];
+        }
+
+        return [$number, $pattern];
     }
 
     private static function columnLetter(int $index): string

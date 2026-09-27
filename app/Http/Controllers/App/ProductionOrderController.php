@@ -107,6 +107,19 @@ class ProductionOrderController extends Controller
     {
         $this->authorizeDelete();
 
+        // Refused if the product this run made was already sold —
+        // those sales would be left with no stock and costed at zero
+        // (see App\Services\StockTimeline). The raw materials going
+        // back into stock can never cause that, so only the product
+        // is checked.
+        $problem = app(\App\Services\StockTimeline::class)->removalProblem([
+            (int) $productionOrder->item_id => [[$productionOrder->date->toDateString(), -(float) $productionOrder->qty_produced]],
+        ]);
+
+        if ($problem) {
+            return back()->with('error', $problem);
+        }
+
         $this->productionOrders->delete($productionOrder);
 
         return back()->with('success', 'Production order deleted.');

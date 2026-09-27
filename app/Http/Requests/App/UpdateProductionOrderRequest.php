@@ -86,6 +86,13 @@ class UpdateProductionOrderRequest extends FormRequest
 
             // The order being edited releases its own materials first.
             $this->rejectOverusingRawMaterials($validator, $this->route('productionOrder'));
+
+            // ...and cannot take away finished product that was
+            // already sold (smaller quantity, later date, or another
+            // product picked).
+            if ($this->route('productionOrder')) {
+                $this->rejectRemovingSoldProduct($validator, $this->route('productionOrder'));
+            }
         });
     }
 }

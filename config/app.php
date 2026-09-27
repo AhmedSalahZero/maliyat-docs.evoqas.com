@@ -60,12 +60,17 @@ return [
     |--------------------------------------------------------------------------
     |
     | Here you may specify the default timezone for your application, which
-    | will be used by the PHP date and date-time functions. The timezone
-    | is set to "UTC" by default as it is suitable for most use cases.
+    | will be used by the PHP date and date-time functions.
+    |
+    | Maliyat Docs serves Egyptian businesses, so "today" must mean today
+    | in Cairo everywhere — in the date checks, the reports, the daily
+    | catch-up jobs and the timestamps (audit finding M6). This used to be
+    | UTC while the business rules used Cairo time, so for 2–3 hours after
+    | midnight the two disagreed about what day it was.
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'Africa/Cairo'),
 
     /*
     |--------------------------------------------------------------------------

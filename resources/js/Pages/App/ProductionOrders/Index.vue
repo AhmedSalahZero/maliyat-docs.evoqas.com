@@ -149,6 +149,12 @@ function cancelEdit() {
     Object.assign(form, defaultFormState());
 }
 
+// Server messages about individual material rows ("materials.0.qty"),
+// de-duplicated — see the template note next to where they show.
+const materialErrors = computed(() =>
+    [...new Set(Object.entries(form.errors).filter(([key]) => /^materials\.\d+\./.test(key)).map(([, message]) => message))]
+);
+
 function submit() {
     const shaped = form.transform((data) => ({
         ...data,
@@ -257,6 +263,12 @@ function onConfirmDialogConfirm() {
             <button type="button" class="addline-btn" @click="addMaterialLine">{{ t('addMaterialBtn') }}</button>
             <p class="form-hint">{{ t('materialsMustBePurchasedHint') }}</p>
             <div v-if="form.errors.materials" class="form-error">{{ form.errors.materials }}</div>
+            <!-- Per-material problems (e.g. not enough of a raw material
+                 on the run's date). Shown here, grouped, because blank
+                 rows are dropped before sending, so the server's row
+                 numbers don't always match the rows on screen. These
+                 were previously never displayed at all. -->
+            <div v-for="message in materialErrors" :key="message" class="form-error">{{ message }}</div>
 
             <div class="field-row" style="margin-top: 16px;">
                 <div class="field">

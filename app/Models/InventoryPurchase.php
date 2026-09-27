@@ -69,6 +69,15 @@ class InventoryPurchase extends Model
 
     public function balance(): float
     {
+        // Opening-balance stock/equipment was already OWNED on the
+        // opening date — it was booked against Owner's Equity, not
+        // against a supplier, so nobody is owed anything for it.
+        // Without this it showed as an unpaid bill from the
+        // "Opening Balance" vendor (audit finding 3.3).
+        if ($this->is_opening_balance) {
+            return 0.0;
+        }
+
         return (float) $this->amount - $this->paidAmount();
     }
 

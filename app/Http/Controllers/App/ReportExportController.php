@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\App;
 
+use App\Http\Controllers\Concerns\ReadsReportDates;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\Owner;
 use App\Models\Vendor;
 use App\Services\Reports\ReportDataService;
 use App\Support\Reports\ExcelReportExporter;
@@ -30,11 +32,13 @@ use Symfony\Component\HttpFoundation\Response;
 // ══════════════════════════════════════════════════════════════════
 class ReportExportController extends Controller
 {
+    use ReadsReportDates;
+
     public function __construct(private readonly ReportDataService $reports) {}
 
     public function ledger(Request $request, string $format): Response
     {
-        [$from, $to] = $this->reports->monthRange($request->string('from')->value() ?: null, $request->string('to')->value() ?: null);
+        [$from, $to] = $this->reports->monthRange(...$this->reportRange($request));
         $entries = $this->reports->ledger($from, $to);
         $l = $this->labels();
         $currency = $this->currency();
@@ -66,7 +70,7 @@ class ReportExportController extends Controller
 
     public function profitAndLoss(Request $request, string $format): Response
     {
-        [$from, $to] = $this->reports->monthRange($request->string('from')->value() ?: null, $request->string('to')->value() ?: null);
+        [$from, $to] = $this->reports->monthRange(...$this->reportRange($request));
         $data = $this->reports->profitAndLoss($from, $to);
         $l = $this->labels();
         $currency = $this->currency();
@@ -271,7 +275,7 @@ class ReportExportController extends Controller
 
     public function cashFlow(Request $request, string $format): Response
     {
-        [$from, $to] = $this->reports->monthRange($request->string('from')->value() ?: null, $request->string('to')->value() ?: null);
+        [$from, $to] = $this->reports->monthRange(...$this->reportRange($request));
         $data = $this->reports->cashFlow($from, $to);
         $l = $this->labels();
         $currency = $this->currency();
@@ -314,16 +318,90 @@ class ReportExportController extends Controller
     }
 
     /**
+     * Owner Statement — Withdrawals or Profit Pay, for one owner
+     * (?owner=) or all owners — the same figures, range and brought-
+     * forward balance the screen shows (audit finding M7).
+     */
+    public function ownerStatement(Request $request, string $format): Response
+    {
+        [$from, $to] = $this->statementRange($request);
+
+        $type  = $request->string('type')->value() === 'profit' ? 'profit' : 'withdrawals';
+        // Company-scoped lookup: another company's owner is simply not found.
+        $owner = $request->filled('owner') ? Owner::query()->findOrFail($request->integer('owner')) : null;
+
+        $data = $this->reports->ownerStatement($owner, $type, $from, $to);
+        $l = $this->labels();
+        $currency = $this->currency();
+
+        $columns = [['label' => $l['date']]];
+        if (! $owner) {
+            $columns[] = ['label' => $l['owner']];
+        }
+        $columns[] = ['label' => $l['reference']];
+        $columns[] = ['label' => $l['amount_in'], 'align' => 'end'];
+        $columns[] = ['label' => $l['amount_out'], 'align' => 'end'];
+        if ($data['running_balance']) {
+            $columns[] = ['label' => $l['running_balance'], 'align' => 'end'];
+        }
+
+        $rows = $data['entries']->map(function ($e) use ($owner, $data, $currency) {
+            $row = [$e['date']];
+            if (! $owner) {
+                $row[] = $e['owner'];
+            }
+            $row[] = $e['ref'].($e['note'] ? ' — '.$e['note'] : '');
+            $row[] = $e['amount_in'] > 0 ? $this->money($e['amount_in'], $currency) : '—';
+            $row[] = $e['amount_out'] > 0 ? $this->money($e['amount_out'], $currency) : '—';
+            if ($data['running_balance']) {
+                $row[] = $this->money($e['balance'], $currency);
+            }
+
+            return $row;
+        })->all();
+
+        // Brought-forward figure first, as on the customer statement.
+        if ($from && $data['running_balance']) {
+            array_unshift($rows, [$from, $l['balance_brought_forward'], '—', '—', $this->money($data['opening_balance'], $currency)]);
+        }
+
+        $totals = array_fill(0, count($columns), '');
+        $inIndex = $owner ? 2 : 3;
+        $totals[$inIndex - 1] = $l['totals'];
+        $totals[$inIndex]     = $this->money($data['total_in'], $currency);
+        $totals[$inIndex + 1] = $this->money($data['total_out'], $currency);
+        if ($data['running_balance']) {
+            $totals[$inIndex + 2] = $this->money($data['closing_balance'], $currency);
+        }
+
+        $title = ($type === 'profit' ? $l['report_owner_profit'] : $l['report_owner_withdrawals'])
+            .($owner ? ' — '.$owner->name : ' — '.$l['all_owners']);
+
+        $doc = $this->baseDoc($title, $from, $to, [
+            ['columns' => $columns, 'rows' => $rows, 'totals' => $totals],
+        ]);
+
+        $doc['stats'] = [
+            ['label' => $l['amount_in'], 'value' => $this->money($data['total_in'], $currency), 'tone' => 'income'],
+            ['label' => $l['amount_out'], 'value' => $this->money($data['total_out'], $currency), 'tone' => 'expense'],
+            [
+                'label' => $data['running_balance'] ? $l['closing_balance'] : $l['net_flow'],
+                'value' => $this->money($data['running_balance'] ? $data['closing_balance'] : $data['net'], $currency),
+                'tone'  => 'primary',
+            ],
+        ];
+
+        return $this->respond($format, $doc, 'owner-statement-'.$type.($owner ? '-'.str($owner->name)->slug() : ''));
+    }
+
+    /**
      * Trial Balance — every account's Opening Balance, this period's
      * Total Debit / Total Credit, and End Balance. Meant for the
      * company's auditor; see ReportDataService::trialBalance().
      */
     public function trialBalance(Request $request, string $format): Response
     {
-        [$from, $to] = $this->reports->yearRange(
-            $request->string('tb_from')->value() ?: null,
-            $request->string('tb_to')->value() ?: null,
-        );
+        [$from, $to] = $this->reports->yearRange(...$this->reportRange($request, 'tb_from', 'tb_to'));
         $data = $this->reports->trialBalance($from, $to);
         $l = $this->labels();
         $currency = $this->currency();
@@ -370,7 +448,7 @@ class ReportExportController extends Controller
      */
     public function balanceSheet(Request $request, string $format): Response
     {
-        $asOf = $request->string('bs_as_of')->value() ?: now()->toDateString();
+        $asOf = $this->reportDate($request, 'bs_as_of') ?? now()->toDateString();
         $data = $this->reports->balanceSheet($asOf);
         $l = $this->labels();
         $currency = $this->currency();
@@ -420,7 +498,7 @@ class ReportExportController extends Controller
      */
     public function journal(Request $request, string $format): Response
     {
-        [$from, $to] = $this->reports->monthRange($request->string('from')->value() ?: null, $request->string('to')->value() ?: null);
+        [$from, $to] = $this->reports->monthRange(...$this->reportRange($request));
         $entries = $this->reports->journalReport($from, $to);
         $l = $this->labels();
         $currency = $this->currency();
@@ -468,10 +546,7 @@ class ReportExportController extends Controller
      */
     private function statementRange(Request $request): array
     {
-        return [
-            $request->string('from')->value() ?: null,
-            $request->string('to')->value() ?: null,
-        ];
+        return $this->reportRange($request);
     }
 
     private function baseDoc(string $title, ?string $from, ?string $to, array $sections): array
@@ -552,6 +627,8 @@ class ReportExportController extends Controller
             'balance_sheet' => 'Balance Sheet', 'assets' => 'Assets', 'liabilities' => 'Liabilities',
             'equity' => 'Equity', 'net_profit_to_date' => 'Net Profit (to date)',
             'total_assets' => 'Total Assets', 'total_liabilities_equity' => 'Total Liabilities & Equity',
+            'owner' => 'Owner', 'all_owners' => 'All owners', 'amount_in' => 'In', 'amount_out' => 'Out', 'totals' => 'Totals',
+            'report_owner_withdrawals' => 'Owner Statement — Withdrawals', 'report_owner_profit' => 'Owner Statement — Profit Pay',
         ];
 
         if (! $ar) {
@@ -588,6 +665,8 @@ class ReportExportController extends Controller
             'balance_sheet' => 'الميزانية العمومية', 'assets' => 'الأصول', 'liabilities' => 'الخصوم',
             'equity' => 'حقوق الملكية', 'net_profit_to_date' => 'صافي الربح (حتى تاريخه)',
             'total_assets' => 'إجمالي الأصول', 'total_liabilities_equity' => 'إجمالي الخصوم وحقوق الملكية',
+            'owner' => 'المالك', 'all_owners' => 'كل الملاك', 'amount_in' => 'وارد', 'amount_out' => 'صادر', 'totals' => 'الإجماليات',
+            'report_owner_withdrawals' => 'كشف حساب الملاك — كشف السحوبات', 'report_owner_profit' => 'كشف حساب الملاك — كشف توزيع الأرباح',
         ];
     }
 }

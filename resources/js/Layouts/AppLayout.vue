@@ -134,8 +134,11 @@ const settingsOpen    = ref(false);
 // mobile "Settings" bottom-nav button — true while on any of the
 // four pages SettingsSheet links to, even after the sheet itself has
 // been closed (mirrors how the other tabs/buttons stay highlighted).
+// Every screen the Settings sheet opens (SettingsSheet.vue) — Owners
+// was missing, so Settings was not highlighted there (low finding 10).
 const isSettingsRoute = computed(() => route().current('app.customers.*')
     || route().current('app.vendors.*')
+    || route().current('app.owners.*')
     || route().current('app.items.*')
     || route().current('app.opening-balance.*'));
 

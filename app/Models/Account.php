@@ -31,6 +31,10 @@ class Account extends Model
     // it back off. See JournalService::postProductionOrder() /
     // postProductionLaborExpense().
     public const PRODUCTION_LABOR_ACCRUED = '2200';
+    // Money customers paid in advance or over an invoice — owed back
+    // to them (in goods, services or cash) until used against a later
+    // invoice. A liability, never revenue (audit finding 4.6).
+    public const CUSTOMER_CREDITS = '2300';
     public const OWNERS_EQUITY   = '3000';
     // Owner Injection/Withdrawal feature (2026 Sep). Kept apart from
     // OWNERS_EQUITY (3000) above — that account is only ever touched
@@ -59,6 +63,7 @@ class Account extends Model
         self::ACCOUNTS_PAYABLE  => ['Accounts Payable',        'ذمم دائنة (موردون)',   'liability'],
         self::VAT_PAYABLE       => ['VAT Payable (Output)',    'ضريبة مخرجات مستحقة',  'liability'],
         self::PRODUCTION_LABOR_ACCRUED => ['Production Labor Accrued', 'عمالة إنتاج مستحقة', 'liability'],
+        self::CUSTOMER_CREDITS  => ['Customer Credits (Advances)', 'أرصدة دائنة للعملاء (دفعات مقدمة)', 'liability'],
         self::OWNERS_EQUITY     => ["Owner's Equity",          'حقوق الملكية',         'equity'],
         self::OWNER_CONTRIBUTIONS_WITHDRAWALS => ['Owner Contributions & Withdrawals', 'رأس مال وسحوبات الملاك', 'equity'],
         self::OWNER_PROFIT_DISTRIBUTIONS      => ['Owner Profit Distributions',       'أرباح موزعة للملاك',    'equity'],

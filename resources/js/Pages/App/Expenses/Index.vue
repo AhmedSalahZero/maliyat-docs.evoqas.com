@@ -30,12 +30,13 @@ import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
 import { useMoneyFormat } from '@/composables/useMoneyFormat';
-import { todayIso } from '@/Utils/date';
+import { todayIso, addDaysIso } from '@/Utils/date';
 import { useBusinessType } from '@/composables/useBusinessType';
 import { scrollToForm } from '@/composables/useScrollToForm';
 import { usePermissions } from '@/composables/usePermissions';
 
 const props = defineProps({
+    laborAccruedOutstanding: { type: Number, default: 0 },
     vendors:         { type: Array, required: true },
     categories:      { type: Array, required: true },
     paymentChannels: { type: Array, required: true },
@@ -154,14 +155,14 @@ const installmentSchedule = computed(() => {
     const total = Number(form.amount);
     const per = Math.round((total / count) * 100) / 100;
     let allocated = 0;
-    const today = new Date();
+    // Counted from the document's own date, not today — the server
+    // does the same, so the preview matches what is saved (audit M13).
+    const startDate = form.date || todayIso();
     return Array.from({ length: count }, (_, i) => {
         const isLast = i === count - 1;
         const amt = isLast ? Math.round((total - allocated) * 100) / 100 : per;
         allocated += amt;
-        const due = new Date(today);
-        due.setDate(due.getDate() + interval * (i + 1));
-        return { sequence: i + 1, due_date: due.toISOString().slice(0, 10), amount: amt };
+        return { sequence: i + 1, due_date: addDaysIso(startDate, interval * (i + 1)), amount: amt };
     });
 });
 
@@ -341,7 +342,7 @@ function freqLabel(freq) {
                     {{ t('vendorLbl') }}
                     <ComboSelect v-model="form.vendor_id" :options="vendorList" :creating="creatingVendor"
                                  :placeholder="t('selectPlaceholder')" :add-new-label="t('addNewVendor')" @create="createVendor" />
-                    <button v-if="selectedVendor" type="button" class="inline-icon-btn" title="Rename" @click="renameTarget = 'vendor'">
+                    <button v-if="selectedVendor" type="button" class="inline-icon-btn" :title="t('renameTitle')" :aria-label="t('renameTitle')" @click="renameTarget = 'vendor'">
                         <AppIcon name="pencil" />
                     </button>
                 </template>
@@ -350,7 +351,7 @@ function freqLabel(freq) {
                 {{ t('forLbl') }}
                 <ComboSelect v-model="form.category_id" :options="categoryList" :creating="creatingCategory"
                              :placeholder="t('selectPlaceholder')" :add-new-label="t('addNewCategory')" @create="createCategory" />
-                <button v-if="selectedCategory" type="button" class="inline-icon-btn" title="Rename" @click="renameTarget = 'category'">
+                <button v-if="selectedCategory" type="button" class="inline-icon-btn" :title="t('renameTitle')" :aria-label="t('renameTitle')" @click="renameTarget = 'category'">
                     <AppIcon name="pencil" />
                 </button>
             </div>
@@ -360,6 +361,11 @@ function freqLabel(freq) {
                 <span>{{ t('isProductionLaborLbl') }}</span>
             </label>
             <p v-if="isProduction && form.is_production_labor" class="form-hint">{{ t('isProductionLaborHint') }}</p>
+            <!-- Labour estimated on production runs and still waiting
+                 for a payroll entry to clear it (account 2200). -->
+            <p v-if="isProduction && laborAccruedOutstanding > 0" class="form-hint">
+                {{ t('laborAccruedOutstandingHint').replace(':amount', `${currency} ${money(laborAccruedOutstanding)}`) }}
+            </p>
             <div v-if="!isCashExpense && form.errors.vendor_id" class="form-error">{{ form.errors.vendor_id }}</div>
             <div v-if="form.errors.category_id" class="form-error">{{ form.errors.category_id }}</div>
             <div v-if="form.errors.amount" class="form-error">{{ form.errors.amount }}</div>
@@ -539,7 +545,7 @@ function freqLabel(freq) {
 
         <RenameModal
             :open="renameTarget !== null"
-            :title="renameTarget === 'vendor' ? 'Rename vendor/employee' : 'Rename category'"
+            :title="renameTarget === 'vendor' ? t('renameVendorTitle') : t('renameCategoryTitle')"
             :current-name="(renameTarget === 'vendor' ? selectedVendor?.name : selectedCategory?.name) ?? ''"
             :saving="renaming"
             @save="saveRename"

@@ -244,7 +244,7 @@ function categoryLabel(category) {
                 {{ form.direction === 'in' ? t('owner_receiveFromLbl') : t('owner_payToLbl') }}
                 <ComboSelect v-model="form.owner_id" :options="ownerList" :creating="creatingOwner"
                              :placeholder="t('selectPlaceholder')" :add-new-label="t('addNewOwner')" @create="createOwner" />
-                <button v-if="selectedOwner" type="button" class="inline-icon-btn" title="Rename" @click="showRenameOwner = true">
+                <button v-if="selectedOwner" type="button" class="inline-icon-btn" :title="t('renameTitle')" :aria-label="t('renameTitle')" @click="showRenameOwner = true">
                     <AppIcon name="pencil" />
                 </button>
                 <span class="muted-inline">{{ currency }}</span>
@@ -320,7 +320,7 @@ function categoryLabel(category) {
 
         <RenameModal
             :open="showRenameOwner"
-            title="Rename owner"
+            :title="t('renameOwnerTitle')"
             :current-name="selectedOwner?.name ?? ''"
             :saving="renaming"
             @save="saveRenameOwner"

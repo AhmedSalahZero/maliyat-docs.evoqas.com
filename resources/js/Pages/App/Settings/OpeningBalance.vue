@@ -68,6 +68,10 @@ async function quickAdd(kind, name, list, routeName, onDone, extra = {}) {
 }
 
 // ── Form state ─────────────────────────────────────────────────
+// De-duplicated list of whatever the server rejected — see the
+// template note above the submit button.
+const formErrors = computed(() => [...new Set(Object.values(form.errors))]);
+
 const form = useForm({
     opening_date: props.header.opening_date,
     cash_amount: props.header.cash_amount || null,
@@ -75,7 +79,7 @@ const form = useForm({
     customers: [{ customer_id: null, amount: null }],
     suppliers: [{ vendor_id: null, amount: null }],
     inventory: [{ item_id: null, qty: null, unit_price: null }],
-    equipment: [{ name: '', category_id: null, amount: null, date: props.header.opening_date }],
+    equipment: [{ name: '', category_id: null, amount: null, date: props.header.opening_date, accumulated_depreciation: null }],
 });
 
 function addRow(list, blank) {
@@ -297,14 +301,26 @@ function doReset() {
                             </option>
                         </select>
                         <input type="number" step="0.01" min="0" class="form-input inp-money" v-model="row.amount" placeholder="0.00" />
-                        <input type="date" class="form-input inp-date" v-model="row.date" />
+                        <input type="date" class="form-input inp-date" v-model="row.date" :max="form.opening_date" :title="t('ob_equipment_date_title')" />
+                        <!-- Depreciation already taken before the opening
+                             date. Optional — left blank, the app works it
+                             out from the purchase date and useful life. -->
+                        <input type="number" step="0.01" min="0" class="form-input inp-money" v-model="row.accumulated_depreciation"
+                               :placeholder="t('ob_equipment_accum_placeholder')" :title="t('ob_equipment_accum_title')" />
                         <button type="button" class="ob-row-remove" @click="removeRow(form.equipment, idx)" :aria-label="t('ob_remove_row')">
                             <AppIcon name="close" />
                         </button>
                     </div>
-                    <button type="button" class="btn btn-ghost btn-sm" @click="addRow(form.equipment, { name: '', category_id: null, amount: null, date: form.opening_date })">
+                    <button type="button" class="btn btn-ghost btn-sm" @click="addRow(form.equipment, { name: '', category_id: null, amount: null, date: form.opening_date, accumulated_depreciation: null })">
                         + {{ t('ob_add_equipment') }}
                     </button>
+                </div>
+
+                <!-- Every server-side problem with the submission. This
+                     form previously showed none at all, so a refused
+                     save looked like nothing had happened. -->
+                <div v-if="formErrors.length" class="alert warning ob-errors">
+                    <div v-for="message in formErrors" :key="message">{{ message }}</div>
                 </div>
 
                 <div class="ob-submit-row">
@@ -383,6 +399,7 @@ function doReset() {
 
 /* Equipment keeps its original single-line, wrapping layout —
    not part of this request, left as-is. */
+.ob-errors { flex-direction: column; gap: 4px; }
 .ob-row--equipment {
     flex-direction: row;
     flex-wrap: wrap;

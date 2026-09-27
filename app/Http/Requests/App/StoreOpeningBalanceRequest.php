@@ -89,8 +89,34 @@ class StoreOpeningBalanceRequest extends FormRequest
             // Optional: an asset bought before the opening date keeps
             // its real purchase date so depreciation starts from the
             // right month. The service falls back to opening_date.
-            'equipment.*.date'         => ['nullable', ...FinancialRules::date()],
+            'equipment.*.date'         => ['nullable', ...FinancialRules::date(), 'before_or_equal:opening_date'],
+            // Depreciation already taken on this asset BEFORE the
+            // opening date (audit finding 4.2). Optional: left blank,
+            // OpeningBalanceService works it out straight-line from
+            // the purchase date. Never more than the asset's cost —
+            // checked in withValidator() below.
+            'equipment.*.accumulated_depreciation' => ['nullable', ...FinancialRules::amount(0)],
         ];
+    }
+
+    /**
+     * Depreciation already taken can never exceed what the asset cost.
+     */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            foreach ((array) $this->input('equipment', []) as $index => $row) {
+                $accumulated = $row['accumulated_depreciation'] ?? null;
+
+                if ($accumulated === null || $accumulated === '' || ! is_numeric($accumulated) || ! is_numeric($row['amount'] ?? null)) {
+                    continue;
+                }
+
+                if ((float) $accumulated > (float) $row['amount'] + FinancialRules::AMOUNT_TOLERANCE) {
+                    $validator->errors()->add("equipment.{$index}.accumulated_depreciation", __('errors.ob_accumulated_depreciation_too_high'));
+                }
+            }
+        });
     }
 
     /**

@@ -56,9 +56,9 @@ class SaleController extends Controller
     public function index(): Response
     {
         // Self-heal for companies created before Sales Channels
-        // existed — idempotent (firstOrCreate), cheap, and means no
-        // manual backfill step is ever needed. Same pattern as
-        // Category::seedDefaults() elsewhere in this app.
+        // existed — only seeds a company with no channels at all, and
+        // makes sure the default channel is known (see
+        // SalesChannel::seedDefaults()).
         SalesChannel::seedDefaults(auth()->user()->company_id);
 
         $sales = Sale::query()
@@ -114,6 +114,9 @@ class SaleController extends Controller
             'items'          => Item::query()->whereIn('type', ['trading', 'product'])->orderBy('name')->get(['id', 'name', 'uom', 'qty_per_uom', 'base_unit_name']),
             'paymentChannels'=> PaymentChannel::query()->orderBy('name')->get(['id', 'name']),
             'salesChannels'  => SalesChannel::query()->orderBy('id')->get(['id', 'name', 'name_ar']),
+            // The channel a new sale starts on — by id, never by name
+            // (audit finding M11).
+            'defaultSalesChannelId' => SalesChannel::defaultChannel(auth()->user()->company_id)->id,
             'sales'          => $sales,
             // Unfinished sales, shared by the whole team — see
             // SaleDraftController. Newest first.

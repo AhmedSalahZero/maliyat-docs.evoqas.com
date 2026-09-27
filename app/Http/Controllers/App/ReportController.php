@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\App;
 
+use App\Http\Controllers\Concerns\ReadsReportDates;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Item;
@@ -27,6 +28,8 @@ use Inertia\Response;
 // ══════════════════════════════════════════════════════════════════
 class ReportController extends Controller
 {
+    use ReadsReportDates;
+
     public function __construct(private readonly ReportDataService $reports) {}
 
     /**
@@ -45,7 +48,7 @@ class ReportController extends Controller
      */
     public function ledger(Request $request): Response
     {
-        [$from, $to] = $this->reports->monthRange($request->string('from')->value() ?: null, $request->string('to')->value() ?: null);
+        [$from, $to] = $this->reports->monthRange(...$this->reportRange($request));
 
         return Inertia::render('App/Reports/Ledger', [
             'entries' => $this->reports->ledger($from, $to),
@@ -56,7 +59,7 @@ class ReportController extends Controller
 
     public function profitAndLoss(Request $request): Response
     {
-        [$from, $to] = $this->reports->monthRange($request->string('from')->value() ?: null, $request->string('to')->value() ?: null);
+        [$from, $to] = $this->reports->monthRange(...$this->reportRange($request));
 
         return Inertia::render('App/Reports/ProfitAndLoss', $this->reports->profitAndLoss($from, $to));
     }
@@ -94,10 +97,7 @@ class ReportController extends Controller
      */
     private function statementRange(Request $request): array
     {
-        return [
-            $request->string('from')->value() ?: null,
-            $request->string('to')->value() ?: null,
-        ];
+        return $this->reportRange($request);
     }
 
     public function supplierStatement(Request $request, ?Vendor $vendor = null): Response
@@ -141,6 +141,8 @@ class ReportController extends Controller
             'total_in'        => $data['total_in'],
             'total_out'       => $data['total_out'],
             'net'             => $data['net'],
+            'opening_balance' => $data['opening_balance'],
+            'closing_balance' => $data['closing_balance'],
             'running_balance' => $data['running_balance'],
             'from'            => $from,
             'to'              => $to,
@@ -183,7 +185,7 @@ class ReportController extends Controller
 
     public function cashFlow(Request $request): Response
     {
-        [$from, $to] = $this->reports->monthRange($request->string('from')->value() ?: null, $request->string('to')->value() ?: null);
+        [$from, $to] = $this->reports->monthRange(...$this->reportRange($request));
 
         return Inertia::render('App/Reports/CashFlow', $this->reports->cashFlow($from, $to));
     }
@@ -218,15 +220,9 @@ class ReportController extends Controller
             default         => 'trial-balance',
         };
 
-        [$tbFrom, $tbTo] = $this->reports->yearRange(
-            $request->string('tb_from')->value() ?: null,
-            $request->string('tb_to')->value() ?: null,
-        );
-        $bsAsOf = $request->string('bs_as_of')->value() ?: now()->toDateString();
-        [$from, $to] = $this->reports->monthRange(
-            $request->string('from')->value() ?: null,
-            $request->string('to')->value() ?: null,
-        );
+        [$tbFrom, $tbTo] = $this->reports->yearRange(...$this->reportRange($request, 'tb_from', 'tb_to'));
+        $bsAsOf = $this->reportDate($request, 'bs_as_of') ?? now()->toDateString();
+        [$from, $to] = $this->reports->monthRange(...$this->reportRange($request));
 
         return Inertia::render('App/Reports/ExternalAudit', [
             'view'    => $view,

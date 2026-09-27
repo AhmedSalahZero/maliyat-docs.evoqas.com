@@ -29,7 +29,7 @@ import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
 import { useMoneyFormat } from '@/composables/useMoneyFormat';
-import { todayIso } from '@/Utils/date';
+import { todayIso, addDaysIso } from '@/Utils/date';
 import { scrollToForm } from '@/composables/useScrollToForm';
 import { usePermissions } from '@/composables/usePermissions';
 
@@ -98,14 +98,14 @@ const installmentSchedule = computed(() => {
     const interval = Math.max(1, Number(form.installment_interval_days) || 1);
     const per = Math.round((total.value / count) * 100) / 100;
     let allocated = 0;
-    const today = new Date();
+    // Counted from the document's own date, not today — the server
+    // does the same, so the preview matches what is saved (audit M13).
+    const startDate = form.date || todayIso();
     return Array.from({ length: count }, (_, i) => {
         const isLast = i === count - 1;
         const amt = isLast ? Math.round((total.value - allocated) * 100) / 100 : per;
         allocated += amt;
-        const due = new Date(today);
-        due.setDate(due.getDate() + interval * (i + 1));
-        return { sequence: i + 1, due_date: due.toISOString().slice(0, 10), amount: amt };
+        return { sequence: i + 1, due_date: addDaysIso(startDate, interval * (i + 1)), amount: amt };
     });
 });
 
@@ -282,7 +282,7 @@ function onConfirmDialogConfirm() {
                 {{ t('buyFrom') }}
                 <ComboSelect v-model="form.vendor_id" :options="vendorList" :creating="creatingVendor"
                              :placeholder="t('selectPlaceholder')" :add-new-label="t('addNewVendor')" @create="createVendor" />
-                <button v-if="selectedVendor" type="button" class="inline-icon-btn" title="Rename" @click="renameTarget = 'vendor'">
+                <button v-if="selectedVendor" type="button" class="inline-icon-btn" :title="t('renameTitle')" :aria-label="t('renameTitle')" @click="renameTarget = 'vendor'">
                     <AppIcon name="pencil" />
                 </button>
             </div>
@@ -294,7 +294,7 @@ function onConfirmDialogConfirm() {
                     <span style="display: inline-flex; align-items: center; gap: 4px;">
                         <ComboSelect v-model="form.category_id" :options="categoryList" :creating="creatingCategory"
                                      :placeholder="t('selectPlaceholder')" :add-new-label="t('addNewCategory')" :inline="false" @create="createCategory" />
-                        <button v-if="selectedCategory" type="button" class="inline-icon-btn" title="Rename" @click="renameTarget = 'category'">
+                        <button v-if="selectedCategory" type="button" class="inline-icon-btn" :title="t('renameTitle')" :aria-label="t('renameTitle')" @click="renameTarget = 'category'">
                             <AppIcon name="pencil" />
                         </button>
                     </span>
@@ -446,7 +446,7 @@ function onConfirmDialogConfirm() {
 
         <RenameModal
             :open="renameTarget !== null"
-            :title="renameTarget === 'vendor' ? 'Rename vendor/employee' : 'Rename category'"
+            :title="renameTarget === 'vendor' ? t('renameVendorTitle') : t('renameCategoryTitle')"
             :current-name="(renameTarget === 'vendor' ? selectedVendor?.name : selectedCategory?.name) ?? ''"
             :saving="renaming"
             @save="saveRename"

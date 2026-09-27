@@ -62,6 +62,8 @@ const remaining = computed(() => Math.round((props.total - paidTotal.value) * 10
 const methodLabels = {
     cash: 'cashLbl', bank: 'bankLbl', visa: 'visaLbl',
     instapay: 'instapayLbl', wallet: 'walletLbl',
+    // Paid from the customer's existing credit — no money moved.
+    credit: 'customerCreditMethodLbl',
 };
 function methodLabel(method) {
     return methodLabels[method] ? t(methodLabels[method]) : method;
@@ -224,7 +226,11 @@ function applyRemove() {
                 <span class="edit-payments__date">{{ payment.date }}</span>
                 <span class="edit-payments__method">{{ methodLabel(payment.method) }}</span>
                 <span class="edit-payments__amount">{{ props.currency }} {{ money(payment.amount) }}</span>
+                <!-- Credit used on an invoice moved no money, so it
+                     can't be edited into a cash payment — remove it
+                     and record it again instead. -->
                 <button
+                    v-if="payment.method !== 'credit'"
                     type="button"
                     class="btn btn-ghost btn-sm"
                     :disabled="editingId === payment.id"
@@ -265,7 +271,8 @@ function applyRemove() {
                 </div>
 
                 <div class="field field--auto edit-payments__method">
-                    <label>{{ t('methodLbl') }}</label>
+                    <!-- No label of its own: PaymentMethodField already
+                         shows "Method" (it appeared twice — low finding 6). -->
                     <PaymentMethodField
                         v-model="draft.method"
                         v-model:channel-id="draft.payment_channel_id"

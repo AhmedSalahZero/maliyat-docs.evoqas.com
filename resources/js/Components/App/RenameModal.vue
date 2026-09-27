@@ -12,16 +12,23 @@
 //  PATCH endpoint and local list update.
 // ══════════════════════════════════════════════════════════════════
 
-import { ref, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
+import { useAppTranslations } from '@/composables/useAppTranslations';
 
 const props = defineProps({
     open: { type: Boolean, default: false },
-    title: { type: String, default: 'Rename' },
+    // Optional; a translated "Rename" is shown when none is given.
+    title: { type: String, default: '' },
     currentName: { type: String, default: '' },
     saving: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['update:open', 'save']);
+
+// Buttons and title follow the app language (low finding 2 — they
+// were English-only).
+const { t } = useAppTranslations();
+const shownTitle = computed(() => props.title || t('renameTitle'));
 
 const name = ref(props.currentName);
 const inputRef = ref(null);
@@ -49,7 +56,7 @@ function save() {
         <div v-if="props.open" class="modal-backdrop" @click.self="cancel">
             <div class="modal-sheet rename-modal slide-up">
                 <div class="modal-sheet__handle"></div>
-                <h2 class="rename-modal__title">{{ props.title }}</h2>
+                <h2 class="rename-modal__title">{{ shownTitle }}</h2>
                 <div class="form-group">
                     <input
                         ref="inputRef"
@@ -61,9 +68,9 @@ function save() {
                     >
                 </div>
                 <div class="rename-modal__actions">
-                    <button type="button" class="btn btn-ghost" @click="cancel">Cancel</button>
+                    <button type="button" class="btn btn-ghost" @click="cancel">{{ t('cancelBtn') }}</button>
                     <button type="button" class="btn btn-primary" :disabled="props.saving || !name.trim()" @click="save">
-                        {{ props.saving ? 'Saving…' : 'Save' }}
+                        {{ props.saving ? t('renameSavingLbl') : t('renameSaveBtn') }}
                     </button>
                 </div>
             </div>

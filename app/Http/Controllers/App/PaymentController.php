@@ -12,6 +12,7 @@ use App\Models\InventoryPurchase;
 use App\Models\Payment;
 use App\Models\PaymentChannel;
 use App\Models\Sale;
+use App\Services\CustomerCreditService;
 use App\Services\JournalService;
 use App\Support\FinancialRules;
 use Illuminate\Http\JsonResponse;
@@ -107,10 +108,16 @@ class PaymentController extends Controller
 
         [$rows, $hasMore] = $this->splitOverflow($rows);
 
+        // Credit each customer already has (advances / overpayments),
+        // so the settle form can offer to use it (audit finding 4.6).
+        // Two grouped queries for the whole page, never one per row.
+        $credits = app(CustomerCreditService::class)->availableFor($rows->pluck('customer_id'));
+
         return response()->json([
             'data' => $rows->map(fn (Sale $sale) => [
                 'id'       => $sale->id,
                 'customer' => $sale->customer?->name,
+                'customer_credit' => (float) ($credits[(int) $sale->customer_id] ?? 0),
                 'amount'   => (float) $sale->amount,
                 'balance'  => round((float) $sale->amount - (float) $sale->payments_total, 2),
                 'due_date' => $sale->due_date?->toDateString(),
@@ -149,6 +156,14 @@ class PaymentController extends Controller
                 ->whereRaw('COALESCE((select sum(p.amount) from payments p'
                     ." where p.payable_type = ? and p.payable_id = {$table}.id"
                     ." and p.company_id = {$table}.company_id), 0) < {$table}.amount - ".FinancialRules::AMOUNT_TOLERANCE, [$model]);
+
+            // Opening-balance stock and equipment were already owned
+            // (booked against Owner's Equity) — they are not bills and
+            // nobody is owed for them. Opening SUPPLIER balances are
+            // Expense rows and DO stay: that money really is owed.
+            if ($type !== 'expense') {
+                $query->where("{$table}.is_opening_balance", false);
+            }
 
             if ($search !== '') {
                 $query->whereHas('vendor', fn ($q) => $q->where('name', 'like', '%'.$search.'%'));
@@ -217,23 +232,76 @@ class PaymentController extends Controller
         if (! empty($data['sale_id'])) {
             $sale = Sale::findOrFail($data['sale_id']);
 
-            DB::transaction(function () use ($sale, $data) {
-                $payment = $sale->payments()->create([
-                    'company_id' => $sale->company_id,
-                    'date'       => $data['date'],
-                    'amount'     => $data['amount'],
-                    'method'     => $data['method'],
-                    'payment_channel_id' => $data['payment_channel_id'] ?? null,
-                    'direction'  => 'in',
-                ]);
+            // Paid from the customer's existing credit: no money
+            // moves, the credit settles the invoice (audit 4.6).
+            if (! empty($data['use_credit'])) {
+                DB::transaction(function () use ($sale, $data) {
+                    $payment = $sale->payments()->create([
+                        'company_id' => $sale->company_id,
+                        'date'       => $data['date'],
+                        'amount'     => $data['amount'],
+                        'method'     => CustomerCreditService::METHOD,
+                        'direction'  => 'in',
+                        'note'       => 'Paid from customer credit',
+                    ]);
 
-                $this->journal->postSaleReceipt($payment);
+                    $this->journal->postCustomerCreditApplied($payment);
+                });
+
+                return back()->with('success', 'Invoice paid from customer credit.');
+            }
+
+            DB::transaction(function () use ($sale, $data) {
+                // Customer paid more than the invoice: settle the
+                // invoice, keep the rest as their credit — a liability,
+                // never revenue (audit finding 4.6).
+                $owed   = max(0.0, round($sale->balance(), 2));
+                $amount = (float) $data['amount'];
+                $extra  = ! empty($data['keep_extra_as_credit']) ? max(0.0, round($amount - $owed, 2)) : 0.0;
+                $toInvoice = round($amount - $extra, 2);
+
+                if ($toInvoice > 0) {
+                    $payment = $sale->payments()->create([
+                        'company_id' => $sale->company_id,
+                        'date'       => $data['date'],
+                        'amount'     => $toInvoice,
+                        'method'     => $data['method'],
+                        'payment_channel_id' => $data['payment_channel_id'] ?? null,
+                        'direction'  => 'in',
+                    ]);
+
+                    $this->journal->postSaleReceipt($payment);
+                }
+
+                if ($extra > 0) {
+                    $credit = Payment::create([
+                        'company_id'   => $sale->company_id,
+                        'payable_type' => null,
+                        'payable_id'   => null,
+                        'customer_id'  => $sale->customer_id,
+                        'date'         => $data['date'],
+                        'amount'       => $extra,
+                        'method'       => $data['method'],
+                        'payment_channel_id' => $data['payment_channel_id'] ?? null,
+                        'note'         => "Overpayment on Sale #{$sale->id} — kept as customer credit",
+                        'direction'    => 'in',
+                        'is_customer_credit' => true,
+                    ]);
+
+                    $this->journal->postCustomerCreditReceipt($credit);
+                }
             });
 
             return back()->with('success', 'Receipt recorded against invoice.');
         }
 
         DB::transaction(function () use ($data) {
+            // Money from a named customer that settles no invoice is an
+            // ADVANCE — their credit, owed back to them — not revenue
+            // (audit finding 4.6). Only money from nobody in particular
+            // (a tip, a one-off with no paperwork) is revenue.
+            $isCredit = ! empty($data['customer_id']);
+
             $payment = Payment::create([
                 'company_id'   => auth()->user()->company_id,
                 'payable_type' => null,
@@ -245,9 +313,12 @@ class PaymentController extends Controller
                 'payment_channel_id' => $data['payment_channel_id'] ?? null,
                 'note'         => $data['note'] ?? null,
                 'direction'    => 'in',
+                'is_customer_credit' => $isCredit,
             ]);
 
-            $this->journal->postStandaloneReceipt($payment);
+            $isCredit
+                ? $this->journal->postCustomerCreditReceipt($payment)
+                : $this->journal->postStandaloneReceipt($payment);
         });
 
         return back()->with('success', 'Receipt recorded.');
@@ -327,6 +398,28 @@ class PaymentController extends Controller
     {
         $data = $request->validated();
 
+        // Belt and braces: UpdatePaymentRequest already refuses these.
+        if ($blocked = $this->refuseManagedElsewhere($payment)) {
+            return $blocked;
+        }
+
+        // Customer credit (audit finding 4.6). Credit USED against an
+        // invoice moved no money, so it cannot be "corrected" into a
+        // cash payment — remove it and record it again instead. A
+        // credit RECEIVED cannot shrink below what has already been
+        // used, or the customer would owe back credit they spent.
+        if ($payment->method === CustomerCreditService::METHOD) {
+            return back()->with('error', __('errors.credit_payment_not_editable'));
+        }
+
+        if ($payment->is_customer_credit && $payment->customer_id) {
+            $alreadyUsed = round((float) $payment->amount - app(CustomerCreditService::class)->available((int) $payment->customer_id), 2);
+
+            if ((float) $data['amount'] < $alreadyUsed - FinancialRules::AMOUNT_TOLERANCE) {
+                return back()->with('error', __('errors.credit_already_used', ['used' => number_format($alreadyUsed, 2)]));
+            }
+        }
+
         DB::transaction(function () use ($payment, $data) {
             $this->journal->reverseEntriesFor($payment);
 
@@ -356,9 +449,19 @@ class PaymentController extends Controller
             Expense::class, InventoryPurchase::class, EquipmentPurchase::class,
         ], true);
 
+        // Only ordinary payments reach here (see refuseManagedElsewhere());
+        // anything else would be silently re-booked to the wrong
+        // accounts, so stop loudly instead (the transaction rolls back).
+        if ($payment->managedBy()) {
+            throw new \LogicException("Payment #{$payment->id} is managed by the {$payment->managedBy()} screen and cannot be re-posted here.");
+        }
+
         match (true) {
+            $payment->payable_type === Sale::class
+                && $payment->method === CustomerCreditService::METHOD => $this->journal->postCustomerCreditApplied($payment),
             $payment->payable_type === Sale::class => $this->journal->postSaleReceipt($payment),
             $isBill                                => $this->journal->postBillPayment($payment),
+            $payment->direction === 'in' && $payment->is_customer_credit => $this->journal->postCustomerCreditReceipt($payment),
             $payment->direction === 'in'           => $this->journal->postStandaloneReceipt($payment),
             default                                => $this->journal->postStandalonePayment($payment),
         };
@@ -380,6 +483,26 @@ class PaymentController extends Controller
     {
         $this->authorizeDelete();
 
+        // Opening-balance, custody and owner payments are removed from
+        // their own screens, which also undo the rest of that record
+        // (audit M2).
+        if ($blocked = $this->refuseManagedElsewhere($payment)) {
+            return $blocked;
+        }
+
+        // A customer credit that has already been used against their
+        // invoices cannot simply vanish (audit finding 4.6) — remove
+        // the invoice payments that used it first.
+        if ($payment->is_customer_credit && $payment->customer_id) {
+            $available = app(CustomerCreditService::class)->available((int) $payment->customer_id);
+
+            if ((float) $payment->amount > $available + FinancialRules::AMOUNT_TOLERANCE) {
+                return back()->with('error', __('errors.credit_already_used', [
+                    'used' => number_format(round((float) $payment->amount - $available, 2), 2),
+                ]));
+            }
+        }
+
         DB::transaction(function () use ($payment) {
             $this->logDeletion(
                 $payment,
@@ -391,6 +514,17 @@ class PaymentController extends Controller
         });
 
         return back()->with('success', 'Payment removed.');
+    }
+
+    /**
+     * A friendly refusal for a payment another screen owns — see
+     * Payment::managedBy(). Null when the payment is ordinary.
+     */
+    private function refuseManagedElsewhere(Payment $payment): ?RedirectResponse
+    {
+        $owner = $payment->managedBy();
+
+        return $owner ? back()->with('error', $payment->managedElsewhereMessage()) : null;
     }
 
     private function billRow(string $type, int $id, ?string $party, $bill): array

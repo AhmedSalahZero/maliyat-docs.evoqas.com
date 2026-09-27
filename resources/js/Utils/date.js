@@ -27,3 +27,28 @@ export function todayIso() {
 
     return `${year}-${month}-${day}`;
 }
+
+/**
+ * A 'YYYY-MM-DD' date moved forward by a number of days, returned as
+ * 'YYYY-MM-DD' — pure calendar arithmetic, no timezone involved.
+ *
+ * Used by the installment previews (audit finding M13). They used
+ * to count from "now" and then print the result through
+ * .toISOString(), which (a) started from today instead of the
+ * document's own date, and (b) converted to UTC, so for 2-3 hours
+ * after midnight in Cairo every due date came out one day early.
+ * The server counts from the document date the same way
+ * (PaymentRecorderService::buildInstallmentSchedule), so the preview
+ * now shows exactly the dates that get saved.
+ */
+export function addDaysIso(isoDate, days) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate || '');
+    const base = match ? isoDate : todayIso();
+    const [year, month, day] = base.split('-').map(Number);
+
+    // Date.UTC + getUTC* keeps this free of any local-time shift.
+    const d = new Date(Date.UTC(year, month - 1, day));
+    d.setUTCDate(d.getUTCDate() + Number(days || 0));
+
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}

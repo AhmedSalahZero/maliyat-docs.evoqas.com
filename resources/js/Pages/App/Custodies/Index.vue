@@ -264,7 +264,7 @@ function onConfirmDialogConfirm() {
                 {{ t('giveTo') }}
                 <ComboSelect v-model="form.holder_id" :options="vendorList" :creating="creatingVendor"
                              :placeholder="t('selectPlaceholder')" :add-new-label="t('addNewVendor')" @create="createVendor" />
-                <button v-if="selectedHolder" type="button" class="inline-icon-btn" title="Rename" @click="showRenameHolder = true">
+                <button v-if="selectedHolder" type="button" class="inline-icon-btn" :title="t('renameTitle')" :aria-label="t('renameTitle')" @click="showRenameHolder = true">
                     <AppIcon name="pencil" />
                 </button>
                 <span class="muted-inline">{{ currency }}</span>
@@ -407,7 +407,7 @@ function onConfirmDialogConfirm() {
 
         <RenameModal
             :open="showRenameHolder"
-            title="Rename vendor/employee"
+            :title="t('renameVendorTitle')"
             :current-name="selectedHolder?.name ?? ''"
             :saving="renaming"
             @save="saveRenameHolder"

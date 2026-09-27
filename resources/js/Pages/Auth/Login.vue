@@ -515,8 +515,12 @@ onMounted(() => {
 .ip-login__brand-img {
     /* Scales with the window rather than sitting at a fixed 150px.
        The logo was the single largest block in the panel, so on a
-       short screen it alone decided whether anything scrolled. */
-    height: clamp(200px, 15vh, 150px);
+       short screen it alone decided whether anything scrolled.
+       clamp(smallest, preferred, largest): the old value had the
+       smallest (200px) above the largest (150px), so it never scaled
+       and was always 200px (low finding 7). Now it stays about the
+       same size on a normal screen and shrinks on a short one. */
+    height: clamp(120px, 18vh, 200px);
     width: auto;
     object-fit: contain;
     margin-bottom: 0px;

@@ -15,9 +15,16 @@ import { Head, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import AppIcon from '@/Components/App/AppIcon.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
+import { computed } from 'vue';
 import { REPORTS } from '@/constants/reports';
+import { useBusinessType } from '@/composables/useBusinessType';
 
 const { t } = useAppTranslations();
+
+// Same filter the side menu uses (AppLayout): a service-only company
+// has no stock, so the Inventory tile is left out (low finding 4).
+const { visibleFor } = useBusinessType();
+const visibleReports = computed(() => visibleFor(REPORTS));
 </script>
 
 <template>
@@ -31,7 +38,7 @@ const { t } = useAppTranslations();
 
         <div class="reports-grid">
             <Link
-                v-for="report in REPORTS"
+                v-for="report in visibleReports"
                 :key="report.key"
                 :href="route(report.route)"
                 class="card card--interactive report-tile"

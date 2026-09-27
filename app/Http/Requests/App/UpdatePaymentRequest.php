@@ -61,6 +61,14 @@ class UpdatePaymentRequest extends FormRequest
 
             $payment = $this->route('payment');
 
+            // Opening-balance, custody and owner payments belong to
+            // their own screens (audit M2) — see Payment::managedBy().
+            if ($payment && $payment->managedBy()) {
+                $validator->errors()->add('amount', $payment->managedElsewhereMessage());
+
+                return;
+            }
+
             $this->rejectOverpayment(
                 $validator,
                 $payment?->payable,

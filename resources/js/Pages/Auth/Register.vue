@@ -5,7 +5,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { ref, computed, onMounted } from 'vue';
-import { Head, Link, useForm }      from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { useAuthStore }             from '@/stores/useAuthStore';
 import { useAuthTranslations }      from '@/composables/useAuthTranslations';
 import PasswordInput                from '@/Components/PasswordInput.vue';
@@ -37,12 +37,15 @@ function toggleTheme() {
     localStorage.setItem('ip_theme', next);
 }
 
+// Same as the Login page: the choice is saved in the browser AND
+// told to the server, so it is still in place after a refresh, on
+// the next visit, and on the Login page (low finding 8 — it used to
+// be forgotten as soon as the page reloaded).
 function toggleLocale() {
     const next = locale.value === 'en' ? 'ar' : 'en';
-    document.documentElement.setAttribute('lang', next);
-    document.documentElement.setAttribute('dir', next === 'ar' ? 'rtl' : 'ltr');
-    authStore.locale = next;
+    authStore.setLocaleLocal(next);
     form.language = next;
+    router.post(route('guest.locale'), { locale: next }, { preserveState: true, preserveScroll: true });
 }
 
 // The fields this form actually draws an error message under. Any
@@ -86,12 +89,13 @@ function submit() {
 onMounted(() => {
     const savedTheme = localStorage.getItem('ip_theme') ?? 'light';
     authStore.setThemeLocal(savedTheme);
+    authStore.setLocaleLocal(localStorage.getItem('ip_locale') ?? 'en');
     form.language = locale.value;
 });
 </script>
 
 <template>
-    <Head title="Create Account" />
+    <Head :title="locale === 'ar' ? 'إنشاء حساب - ماليات دوكس' : 'Create Account - Maliyat Docs'" />
 
     <div class="ip-login" :data-theme="authStore.theme" :dir="isRtl ? 'rtl' : 'ltr'">
 

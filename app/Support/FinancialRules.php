@@ -139,17 +139,15 @@ class FinancialRules
      * exist in this app; "pay later" is a separate field with its
      * own separate window).
      *
-     * Evaluated explicitly in Cairo time, not the app's configured
-     * default (UTC, see config/app.php) — every user of this app is
-     * an Egyptian business, so "today" has to mean today in Cairo,
-     * not today in Greenwich. Without this, there's a ~2-3 hour
-     * window every night (after midnight in Cairo, before midnight
-     * in UTC) where the server would still think it's yesterday and
-     * would wrongly reject someone correctly entering today's date.
+     * "Today" is the app's own timezone (config/app.php, Africa/Cairo
+     * by default) — the SAME clock every other part of the app uses
+     * (audit finding M6). It used to be forced to Cairo here while the
+     * rest of the app ran on UTC, so between midnight and 2–3 am the
+     * date check and everything else disagreed about what day it was.
      */
     public static function latestAllowedDate(): string
     {
-        return Carbon::today('Africa/Cairo')->toDateString();
+        return Carbon::today()->toDateString();
     }
 
     /**

@@ -22,6 +22,7 @@ import { computed, ref, watch } from 'vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import FormInstructions from '@/Components/App/FormInstructions.vue';
+import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
 import { useBusinessType } from '@/composables/useBusinessType';
 
@@ -72,7 +73,13 @@ const form = useForm({
     phone: '',
 });
 
+// The item's "units per carton" as it was when editing started — a
+// change to it is confirmed before saving (see saveItem below).
+const originalQtyPerUom = ref(1);
+const unitChangeConfirmOpen = ref(false);
+
 function startEdit(row) {
+    originalQtyPerUom.value = Number(row.qty_per_uom ?? 1);
     form.reset();
     form.clearErrors();
     form.name = row.name ?? '';
@@ -97,7 +104,20 @@ const updateRoute = computed(() => ({
     items:     'app.items.update',
 }[props.tab]));
 
+// Changing "units per carton" only affects NEW purchases and sales —
+// what is already recorded keeps its old conversion. Say so and ask
+// before saving (low finding 11); the server insists on this too
+// (UpdateItemRequest) for an item that has already been used.
 function save() {
+    if (props.tab === 'items' && Number(form.qty_per_uom || 1) !== originalQtyPerUom.value) {
+        unitChangeConfirmOpen.value = true;
+        return;
+    }
+
+    sendSave(false);
+}
+
+function sendSave(confirmUnitChange) {
     // Each endpoint validates only its own fields, so send only those
     // — posting an item's uom to the customer endpoint would just be
     // noise in the request.
@@ -109,6 +129,7 @@ function save() {
                 uom: data.uom,
                 qty_per_uom: data.qty_per_uom,
                 base_unit_name: data.base_unit_name,
+                confirm_unit_change: confirmUnitChange,
             };
         }
 
@@ -431,6 +452,7 @@ function paginationLabel(label) {
                                 </div>
 
                                 <p v-if="isItems" class="form-hint lookup-hint">{{ t('lookup_unit_hint') }}</p>
+                                <div v-if="form.errors.qty_per_uom" class="form-error">{{ form.errors.qty_per_uom }}</div>
                                 <div v-if="form.errors.name" class="form-error">{{ form.errors.name }}</div>
                             </td>
                             <td>
@@ -550,6 +572,14 @@ function paginationLabel(label) {
                 </template>
             </div>
         </div>
+        <ConfirmDialog
+            v-model:open="unitChangeConfirmOpen"
+            :title="t('lookup_unit_change_title')"
+            :message="t('lookup_unit_change_confirm', { old: originalQtyPerUom, new: form.qty_per_uom || 1 })"
+            :confirm-label="t('lookup_unit_change_yes')"
+            :cancel-label="t('cancelBtn')"
+            @confirm="sendSave(true)"
+        />
     </AppLayout>
 </template>
 

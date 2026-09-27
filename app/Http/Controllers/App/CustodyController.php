@@ -158,7 +158,25 @@ class CustodyController extends Controller
         // which is the pattern SaleController::store() already moved
         // away from: a failure there left a settled custody with
         // nothing in the general ledger to show for it.
-        DB::transaction(function () use ($custody, $data) {
+        //
+        // A custody is settled ONCE. The Settle button disappearing
+        // on screen was the only thing stopping a second settlement —
+        // a double-click on a slow connection, a second open tab or a
+        // re-sent request settled it again and booked every expense
+        // and the returned cash twice (audit finding 3.2). The row is
+        // now locked and re-checked here, so two requests arriving
+        // together cannot both get through either.
+        $alreadySettled = false;
+
+        DB::transaction(function () use (&$custody, $data, &$alreadySettled) {
+            $custody = Custody::query()->whereKey($custody->id)->lockForUpdate()->firstOrFail();
+
+            if ($custody->settled) {
+                $alreadySettled = true;
+
+                return;
+            }
+
             $custody->settle($data['lines'], $data['settlement_date']);
             $custody->refresh();
 
@@ -184,6 +202,10 @@ class CustodyController extends Controller
 
             $this->journal->postCustodySettlement($custody);
         });
+
+        if ($alreadySettled) {
+            return back()->with('error', __('errors.custody_already_settled'));
+        }
 
         return back()->with('success', 'Custody settled.');
     }

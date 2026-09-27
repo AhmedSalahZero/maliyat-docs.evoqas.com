@@ -16,7 +16,9 @@ export function useAppTranslations() {
             ?? key;
 
         Object.entries(replacements).forEach(([placeholder, replacement]) => {
-            value = value.replace(`:${placeholder}`, String(replacement));
+            // Every occurrence, not just the first — a message may use
+            // the same placeholder twice.
+            value = value.split(`:${placeholder}`).join(String(replacement));
         });
 
         return value;

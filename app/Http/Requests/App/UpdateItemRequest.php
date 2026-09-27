@@ -34,7 +34,39 @@ class UpdateItemRequest extends FormRequest
             'uom'            => ['nullable', 'string', 'max:40'],
             'qty_per_uom'    => ['nullable', ...FinancialRules::qty()],
             'base_unit_name' => ['nullable', 'string', 'max:40'],
+            'confirm_unit_change' => ['nullable', 'boolean'],
         ];
+    }
+
+    /**
+     * Changing "units per carton" on an item that has already been
+     * bought or sold must be confirmed (low finding 11). Lines already
+     * recorded keep the conversion they were entered with, and only
+     * new purchases and sales use the new one — easy to miss, and a
+     * wrong figure here changes every future stock count. The screen
+     * asks first and then sends confirm_unit_change; this refuses a
+     * change that was never confirmed.
+     */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if ($validator->errors()->isNotEmpty() || $this->boolean('confirm_unit_change')) {
+                return;
+            }
+
+            $item = $this->route('item');
+
+            if (! $item) {
+                return;
+            }
+
+            $changed = abs((float) $this->input('qty_per_uom') - (float) ($item->qty_per_uom ?: 1)) > 0.000001;
+            $inUse   = $item->purchaseLines()->exists() || $item->saleLines()->exists();
+
+            if ($changed && $inUse) {
+                $validator->errors()->add('qty_per_uom', __('errors.item_unit_change_needs_confirm'));
+            }
+        });
     }
 
     protected function prepareForValidation(): void

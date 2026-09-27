@@ -242,7 +242,7 @@ class ReportDateRangeTest extends TestCase
         Cache::flush();
 
         $this->post('/app/payments/pay', [
-            'vendor_id' => $this->vendor->id, 'category_id' => $category->id,
+            'payable_type' => 'expense', 'payable_id' => \App\Models\Expense::query()->firstOrFail()->id,
             'date' => '2026-03-15', 'amount' => 1000, 'method' => 'cash',
         ])->assertSessionHasNoErrors();
 

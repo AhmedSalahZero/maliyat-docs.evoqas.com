@@ -4,6 +4,8 @@ namespace App\Http\Requests\App;
 
 use App\Rules\HalfStepQuantity;
 use App\Http\Requests\Concerns\GuardsDocumentTotal;
+use App\Models\InventoryPurchase;
+use App\Services\StockTimeline;
 use App\Support\FinancialRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -60,6 +62,50 @@ class UpdateInventoryPurchaseRequest extends FormRequest
             $vatRate = (float) ($this->input('vat_rate') ?? 0);
             $total   = round($subtotal + round($subtotal * $vatRate / 100, 2), 2);
             $this->rejectAmountNowAboveTotal($validator, $total);
+
+            $this->rejectRemovingStockAlreadySold($validator);
         });
+    }
+
+    /**
+     * Editing a purchase can take stock away from the past — a
+     * smaller quantity, a later date, or an item swapped for
+     * another. If that stock was already sold or used in production,
+     * those sales would be left with nothing to take a cost from and
+     * be costed at zero (see App\Services\StockTimeline). Refuse the
+     * edit and say which item and day would be short.
+     */
+    private function rejectRemovingStockAlreadySold($validator): void
+    {
+        $purchase = $this->route('inventoryPurchase');
+        $newDate  = StockTimeline::normalizeDate($this->input('date'));
+
+        if (! $purchase instanceof InventoryPurchase || $newDate === '') {
+            return;
+        }
+
+        $oldDate = $purchase->date->toDateString();
+
+        // [item id => list of [date, signed base qty]]: the old lines
+        // come OUT on the old date, the new lines go IN on the new one.
+        $changesByItem = [];
+
+        foreach ($purchase->lines()->get() as $line) {
+            $changesByItem[(int) $line->item_id][] = [$oldDate, -((float) $line->qty * ((float) $line->qty_per_uom ?: 1))];
+        }
+
+        foreach ((array) $this->input('lines', []) as $line) {
+            if (empty($line['item_id'])) {
+                continue;
+            }
+
+            $changesByItem[(int) $line['item_id']][] = [$newDate, (float) ($line['qty'] ?? 0) * ((float) ($line['qty_per_uom'] ?? 1) ?: 1)];
+        }
+
+        $problem = app(StockTimeline::class)->removalProblem($changesByItem);
+
+        if ($problem) {
+            $validator->errors()->add('lines', $problem);
+        }
     }
 }

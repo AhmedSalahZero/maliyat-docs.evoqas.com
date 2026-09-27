@@ -60,7 +60,7 @@ class CustodyAccountingTest extends TestCase
         $this->holder = Vendor::create(['company_id' => $this->company->id, 'name' => 'Ahmed']);
     }
 
-    private function expenseCategory(string $name = null): Category
+    private function expenseCategory(?string $name = null): Category
     {
         $query = Category::query()->where('company_id', $this->company->id)->where('kind', 'expense');
 

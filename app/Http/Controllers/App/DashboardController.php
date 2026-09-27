@@ -129,6 +129,9 @@ class DashboardController extends Controller
         // real, all-time amount of cash the company actually has.
         $rows = DB::table('payments')
             ->where('company_id', $companyId)
+            // Customer credit used against an invoice moved no money
+            // (audit finding 4.6) — never part of cash.
+            ->where('method', '!=', \App\Services\CustomerCreditService::METHOD)
             ->selectRaw("
                 COALESCE(SUM(CASE WHEN direction = 'in'  AND date BETWEEN ? AND ? AND is_opening_balance = 0 THEN amount END), 0) AS period_in,
                 COALESCE(SUM(CASE WHEN direction = 'out' AND date BETWEEN ? AND ? AND is_opening_balance = 0 THEN amount END), 0) AS period_out,
@@ -211,6 +214,9 @@ class DashboardController extends Controller
         foreach ($sources as $table => $model) {
             $total += (int) DB::table($table)
                 ->where('company_id', $companyId)
+                // Opening stock/equipment is owned, not owed — see
+                // PaymentController::openBills().
+                ->when($table !== 'expenses', fn ($q) => $q->where('is_opening_balance', false))
                 ->whereRaw($this->unsettledCondition($table, $model), [$companyId])
                 ->count();
         }

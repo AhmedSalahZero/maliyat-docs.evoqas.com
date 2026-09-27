@@ -11,24 +11,17 @@ on the server / by whoever deploys the app.
 From the project's root folder (where `composer.json` lives), run:
 
 ```
-composer require dompdf/dompdf phpoffice/phpspreadsheet
+composer update mpdf/mpdf
 ```
 
-**Update:** an earlier version of this note said to install
-`barryvdh/laravel-dompdf` instead of `dompdf/dompdf`. That package's
-own "Facade" class has changed name across its versions
-(`Barryvdh\DomPDF\Facade` vs `Barryvdh\DomPDF\Facade\Pdf`), which is
-exactly what caused the *"Class ... Facade\Pdf not found"* error — the
-code was written against a version-specific class name. The PDF
-exporter now talks to `dompdf/dompdf` (the actual PDF engine) directly
-instead, so that whole problem goes away. If `barryvdh/laravel-dompdf`
-is already installed from before, that's fine too — it depends on
-`dompdf/dompdf` itself, so nothing conflicts — but it's no longer
-required on its own.
+(On a brand-new server, `composer install` installs everything,
+including this.)
 
 - **`phpoffice/phpspreadsheet`** — builds the colored `.xlsx` files
-  for "Export Excel".
-- **`dompdf/dompdf`** — turns the same report data into a colored,
+  for "Export Excel". Amounts, quantities and percentages are written
+  as real numbers (formatted with the currency and 2 decimals), so
+  totals and formulas work in Excel straight away.
+- **`mpdf/mpdf`** — turns the same report data into a colored,
   downloadable PDF for "Export PDF".
 
 Neither package needs a config file published or any `.env` changes.
@@ -40,23 +33,20 @@ or any existing data.
 
 ## Arabic PDF text
 
-dompdf does not ship a font with Arabic letters built in by default.
-If a company's language is set to Arabic and the exported PDF shows
-boxes or missing letters instead of Arabic text:
+Arabic PDFs now work with no extra setup. The PDF engine was changed
+from dompdf to **mPDF** (audit finding M3): dompdf cannot join Arabic
+letters or lay text out right-to-left, so Arabic reports came out as
+separate letters in the wrong order. mPDF does both, and ships its own
+fonts that contain Arabic letters — nothing to download or register.
 
-1. Download the **Cairo** font (the same font already used in the
-   app) from Google Fonts: https://fonts.google.com/specimen/Cairo
-2. Register it with dompdf's font loader — see dompdf's own
-   documentation: https://github.com/dompdf/dompdf/wiki/Fonts
-   (search "Loading Custom Fonts" — it's a short script you run once).
-3. In `app/Support/Reports/PdfReportExporter.php`, change
-   `$options->set('defaultFont', 'DejaVu Sans');` to
-   `$options->set('defaultFont', 'Cairo');` once the font is
-   registered.
+Until `mpdf/mpdf` is installed on a server, the app keeps using dompdf
+so English PDFs still work, and writes a warning to the log that
+Arabic PDFs need mPDF. `dompdf/dompdf` can be removed from
+`composer.json` once every server has mPDF.
 
-English-language PDFs and Excel files (both languages) work
-immediately with no extra setup — this is only needed for Arabic PDF
-exports specifically.
+mPDF writes small temporary files to `storage/framework/cache/mpdf`;
+that folder is created automatically and only needs the same write
+permission the rest of `storage/` already has.
 
 ## What's involved, in case anything needs adjusting later
 
@@ -66,8 +56,7 @@ exports specifically.
 - `app/Support/Reports/ExcelReportExporter.php` — builds the colored
   `.xlsx` files (uses `phpoffice/phpspreadsheet`).
 - `app/Support/Reports/PdfReportExporter.php` — builds the colored
-  PDFs via `resources/views/reports/pdf.blade.php` (uses
-  `dompdf/dompdf` directly).
-- `app/Http/Controllers/App/ReportExportController.php` — the six
-  export endpoints, one per report, at
+  PDFs via `resources/views/reports/pdf.blade.php` (uses `mpdf/mpdf`).
+- `app/Http/Controllers/App/ReportExportController.php` — the
+  export endpoints, one per report (including the Owner statement), at
   `/app/reports/{report}/export/{excel|pdf}`.

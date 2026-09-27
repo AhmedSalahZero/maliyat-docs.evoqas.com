@@ -9,10 +9,10 @@
     PdfReportExporter (see its doc comment for the array shape:
     title / subtitle / meta / stats / sections).
 
-    Rendered by dompdf (barryvdh/laravel-dompdf). If your printed
-    Arabic reports look wrong (garbled/missing characters), it's
-    almost certainly a missing font — see the note at the bottom of
-    this file and docs/EXPORT_SETUP.md.
+    Rendered by mPDF (see PdfReportExporter), which joins Arabic
+    letters and lays text out right-to-left. Keep the CSS simple
+    (tables, backgrounds, borders) — PDF engines support only part
+    of what a browser does.
 --}}
 <!DOCTYPE html>
 <html dir="{{ $doc['rtl'] ?? false ? 'rtl' : 'ltr' }}" lang="{{ $doc['rtl'] ?? false ? 'ar' : 'en' }}">
@@ -22,7 +22,7 @@
         @page { margin: 26px 28px 34px; }
 
         body {
-            font-family: {{ ($doc['rtl'] ?? false) ? "'Cairo', 'DejaVu Sans', sans-serif" : "'DejaVu Sans', Arial, sans-serif" }};
+            font-family: dejavusans, sans-serif;
             color: #1B2233;
             font-size: 11px;
             direction: {{ ($doc['rtl'] ?? false) ? 'rtl' : 'ltr' }};

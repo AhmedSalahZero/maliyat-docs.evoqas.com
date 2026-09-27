@@ -24,41 +24,60 @@ class SalesChannel extends Model
 
     /**
      * The starter channel list every company gets, so the dropdown
-     * isn't empty on day one. Safe to call more than once — skips
-     * names that already exist for that company (same idempotent
-     * shape as Category::seedDefaults()).
+     * isn't empty on day one.
+     *
+     * Runs only for a company that has NO channels yet. It used to
+     * re-create any starter name it could not find — so a company that
+     * renamed "Direct Sales" (or translated it) got a brand-new
+     * "Direct Sales" back on the next visit to the Sales screen
+     * (audit finding M11). Also makes sure the company's default
+     * channel pointer is set.
      */
     public static function seedDefaults(int $companyId): void
     {
-        $defaults = [
-            ['Direct Sales', 'بيع مباشر'],
-            ['Delivery Sales', 'بيع ديليفري'],
-            ['Online Sales', 'بيع عبر المنصات'],
-            ['WhatsApp Sales', 'جروبات الواتساب'],
-        ];
+        if (! self::query()->where('company_id', $companyId)->exists()) {
+            $defaults = [
+                ['Direct Sales', 'بيع مباشر'],
+                ['Delivery Sales', 'بيع ديليفري'],
+                ['Online Sales', 'بيع عبر المنصات'],
+                ['WhatsApp Sales', 'جروبات الواتساب'],
+            ];
 
-        foreach ($defaults as [$name, $nameAr]) {
-            self::query()->firstOrCreate(
-                ['company_id' => $companyId, 'name' => $name],
-                ['name_ar' => $nameAr],
-            );
+            foreach ($defaults as [$name, $nameAr]) {
+                self::query()->create(['company_id' => $companyId, 'name' => $name, 'name_ar' => $nameAr]);
+            }
         }
+
+        self::defaultChannel($companyId);
     }
 
     /**
-     * "Direct Sales" is the default every new sale is filed under
-     * when nothing else is picked — mirrors Customer::cashCustomer():
-     * the create form always sends one in practice, but a document
-     * still has to land somewhere sensible if it's ever missing
-     * (e.g. an older integration, or a request built by hand).
-     * firstOrCreate so this never fails even if seedDefaults()
-     * somehow hasn't run yet for this company.
+     * The channel every new sale is filed under when nothing else is
+     * picked ("Direct Sales" to begin with). Found through
+     * Company::default_sales_channel_id — the specific row, not its
+     * name — so renaming or translating it changes nothing (audit
+     * finding M11). Same shape as Customer::cashCustomer().
      */
     public static function defaultChannel(int $companyId): self
     {
-        return self::query()->firstOrCreate(
-            ['company_id' => $companyId, 'name' => 'Direct Sales'],
-            ['name_ar' => 'بيع مباشر'],
-        );
+        $company = Company::find($companyId);
+
+        if ($company?->default_sales_channel_id) {
+            $existing = self::query()->where('company_id', $companyId)->find($company->default_sales_channel_id);
+            if ($existing) {
+                return $existing;
+            }
+        }
+
+        // No pointer yet (or its channel was deleted): adopt the
+        // company's "Direct Sales" row, else its oldest channel, else
+        // create one.
+        $channel = self::query()->where('company_id', $companyId)->where('name', 'Direct Sales')->orderBy('id')->first()
+            ?? self::query()->where('company_id', $companyId)->orderBy('id')->first()
+            ?? self::query()->create(['company_id' => $companyId, 'name' => 'Direct Sales', 'name_ar' => 'بيع مباشر']);
+
+        $company?->forceFill(['default_sales_channel_id' => $channel->id])->save();
+
+        return $channel;
     }
 }

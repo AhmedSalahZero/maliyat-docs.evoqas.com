@@ -19,7 +19,17 @@ class CompanyFactory extends Factory
             'name_ar'   => null,
             'currency'  => 'SAR',
             'is_active' => true,
+            // Sells goods AND services, so both item lines and
+            // service (no-item) sale lines are allowed — see
+            // GuardsStockLevels::rejectLinesWithoutItem().
+            'business_types' => ['service', 'trading'],
         ];
+    }
+
+    /** A company that sells goods only — every sale line needs an item. */
+    public function goodsOnly(): static
+    {
+        return $this->state(fn () => ['business_types' => ['trading']]);
     }
 
     /**

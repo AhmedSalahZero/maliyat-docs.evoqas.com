@@ -53,7 +53,29 @@ class StorePaymentOutRequest extends FormRequest
                 return;
             }
 
-            $this->rejectOverpayment($validator, $this->resolveBill(), (float) $this->input('amount'));
+            $bill = $this->resolveBill();
+
+            // A payment to a named supplier must settle one of their
+            // bills (audit M1). With no bill behind it, the ledger
+            // books it as an expense while the supplier statement
+            // would count it as reducing what is owed — two reports of
+            // the same balance disagreeing. The screen no longer offers
+            // this; this stops a hand-crafted request doing it.
+            if (! $bill && $this->filled('vendor_id')) {
+                $validator->errors()->add('payable_id', __('errors.supplier_payment_needs_bill'));
+
+                return;
+            }
+
+            // Opening-balance stock/equipment is not a bill: nothing
+            // is owed for it, so it can never be "paid" (audit 3.3).
+            if ($bill && ! $bill instanceof \App\Models\Expense && $bill->is_opening_balance) {
+                $validator->errors()->add('payable_id', __('errors.opening_balance_not_a_bill'));
+
+                return;
+            }
+
+            $this->rejectOverpayment($validator, $bill, (float) $this->input('amount'));
         });
     }
 }

@@ -289,8 +289,10 @@ class AmountAndDateLimitsTest extends TestCase
     }
 
     /**
-     * A genuine overpayment still has a home — the standalone
-     * receipt, which is revenue rather than a negative debt.
+     * A genuine overpayment still has a home — money from a customer
+     * that settles no invoice is kept as that customer's CREDIT
+     * (Customer Credits, a liability), never revenue. See
+     * AuditRoundTwoFixesTest for the credit being used later.
      */
     public function test_a_standalone_receipt_is_still_unbounded_by_any_invoice(): void
     {
@@ -304,6 +306,7 @@ class AmountAndDateLimitsTest extends TestCase
         ])->assertSessionHasNoErrors();
 
         $this->assertSame(1, Payment::count());
+        $this->assertTrue(Payment::sole()->is_customer_credit, 'Kept as customer credit, not revenue');
     }
 
     public function test_a_payment_cannot_exceed_the_bill_balance(): void

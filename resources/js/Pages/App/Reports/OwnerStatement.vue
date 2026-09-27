@@ -23,6 +23,7 @@
 import { computed, ref } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import ReportToolbar from '@/Components/App/ReportToolbar.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
 import { useMoneyFormat } from '@/composables/useMoneyFormat';
 
@@ -34,6 +35,8 @@ const props = defineProps({
     total_in: { type: Number, default: 0 },
     total_out: { type: Number, default: 0 },
     net: { type: Number, default: 0 },
+    opening_balance: { type: Number, default: 0 },
+    closing_balance: { type: Number, default: 0 },
     running_balance: { type: Boolean, default: false },
     from: { type: [String, null], default: null },
     to: { type: [String, null], default: null },
@@ -77,6 +80,25 @@ function clearRange() {
 }
 
 const hasRange = computed(() => !!(props.from || props.to));
+
+// Brought-forward row: only for ONE owner with a From date — see
+// ReportDataService::ownerStatement() (audit finding M7).
+const showBroughtForward = computed(() => props.running_balance && !!props.from);
+
+// Export the exact view on screen: owner, statement type and range.
+const exportQuery = computed(() => ({
+    ...rangeQuery.value,
+    ...(props.owner ? { owner: props.owner.id } : {}),
+}));
+const excelHref = computed(() => route('app.reports.owner-statement.export', { format: 'excel', ...exportQuery.value }));
+const pdfHref = computed(() => route('app.reports.owner-statement.export', { format: 'pdf', ...exportQuery.value }));
+
+// With one owner chosen, the headline figure is where they actually
+// stand at the end of the range (brought forward included).
+const headlineAmount = computed(() => {
+    if (props.type !== 'withdrawals') return props.total_out;
+    return props.running_balance ? props.closing_balance : props.net;
+});
 </script>
 
 <template>
@@ -86,6 +108,8 @@ const hasRange = computed(() => !!(props.from || props.to));
         <div class="page-header">
             <h1>{{ t('report_owner_statement') }}</h1>
         </div>
+
+        <ReportToolbar :excel-href="excelHref" :pdf-href="pdfHref" />
 
         <div class="direction-toggle no-print" style="margin-bottom: 14px;">
             <button
@@ -133,10 +157,10 @@ const hasRange = computed(() => !!(props.from || props.to));
                 {{ props.type === 'withdrawals' ? t('owner_net_contributed_lbl') : t('owner_total_profit_paid_lbl') }}
                 <template v-if="props.owner"> — {{ props.owner.name }}</template>
             </span>
-            <span class="value">{{ currency }} {{ money(props.type === 'withdrawals' ? props.net : props.total_out) }}</span>
+            <span class="value">{{ currency }} {{ money(headlineAmount) }}</span>
         </div>
 
-        <div v-if="props.entries.length === 0" class="empty">{{ t('report_no_entries') }}</div>
+        <div v-if="props.entries.length === 0 && !showBroughtForward" class="empty">{{ t('report_no_entries') }}</div>
 
         <div v-else class="report-table-wrap card">
             <table class="report-table report-table--stack">
@@ -151,6 +175,13 @@ const hasRange = computed(() => !!(props.from || props.to));
                     </tr>
                 </thead>
                 <tbody>
+                    <tr v-if="showBroughtForward" class="brought-forward">
+                        <td :data-label="t('dateLbl')" class="stack-primary">{{ props.from }}</td>
+                        <td :data-label="t('referenceLbl')">{{ t('broughtForwardLbl') }}</td>
+                        <td class="num" :data-label="t('owner_amountInLbl')">—</td>
+                        <td class="num" :data-label="t('owner_amountOutLbl')">—</td>
+                        <td class="num" :data-label="t('runningBalanceLbl')"><strong>{{ currency }} {{ money(props.opening_balance) }}</strong></td>
+                    </tr>
                     <tr v-for="(entry, idx) in props.entries" :key="idx">
                         <td :data-label="t('dateLbl')" class="stack-primary">{{ entry.date }}</td>
                         <td v-if="!props.owner" :data-label="t('ownerLbl')">{{ entry.owner }}</td>
@@ -165,7 +196,7 @@ const hasRange = computed(() => !!(props.from || props.to));
                         <td :colspan="props.owner ? 2 : 3" class="grandtotal-label">{{ t('totalsLbl') }}</td>
                         <td class="num"><strong>{{ currency }} {{ money(props.total_in) }}</strong></td>
                         <td class="num"><strong>{{ currency }} {{ money(props.total_out) }}</strong></td>
-                        <td v-if="props.running_balance" class="num"><strong>{{ currency }} {{ money(props.net) }}</strong></td>
+                        <td v-if="props.running_balance" class="num"><strong>{{ currency }} {{ money(props.closing_balance) }}</strong></td>
                     </tr>
                 </tfoot>
             </table>
@@ -175,6 +206,7 @@ const hasRange = computed(() => !!(props.from || props.to));
 
 <style scoped>
 .field--action { flex: 0 0 auto; justify-content: flex-end; }
+.brought-forward { color: var(--color-text-muted); font-style: italic; }
 .grandtotal-label { text-align: end; font-weight: 600; color: var(--color-primary-dark); }
 @media (max-width: 640px) { .grandtotal-label { display: none; } }
 

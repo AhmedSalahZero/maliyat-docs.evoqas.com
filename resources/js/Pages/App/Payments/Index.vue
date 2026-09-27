@@ -117,12 +117,39 @@ onMounted(() => {
 // ── Inline settle (one open at a time, per tab) ──────────────────
 const settlingInvoiceId = ref(null);
 const settlingBillKey = ref(null); // `${payable_type}:${id}`
-const settleForm = ref({ date: todayIso(), amount: null, method: 'cash', payment_channel_id: null });
+const settleForm = ref({ date: todayIso(), amount: null, method: 'cash', payment_channel_id: null, use_credit: false, keep_extra_as_credit: false });
+
+// Whatever the server refused on the last settle (e.g. more than the
+// invoice owes). This screen used to show nothing at all when a
+// payment was rejected — the form just sat there.
+const settleErrors = computed(() => [...new Set(Object.values(page.props.errors ?? {}))]);
+
+// ── Customer credit (advances / overpayments) ────────────────────
+// A customer who paid more than an invoice, or paid in advance, has
+// CREDIT: money the business owes back to them in goods, services or
+// cash. It is never revenue. The settle form can use it to pay an
+// invoice, and can keep an overpayment as credit instead of refusing it.
+function overpaidBy(invoice) {
+    if (settleForm.value.use_credit) return 0;
+    const extra = Math.round(((Number(settleForm.value.amount) || 0) - Number(invoice.balance)) * 100) / 100;
+    return extra > 0 ? extra : 0;
+}
+function onUseCreditChange(invoice) {
+    if (settleForm.value.use_credit) {
+        settleForm.value.amount = Math.min(Number(invoice.balance), Number(invoice.customer_credit));
+        settleForm.value.keep_extra_as_credit = false;
+    } else {
+        settleForm.value.amount = invoice.balance;
+    }
+}
+function fmtCredit(template, values) {
+    return Object.entries(values).reduce((text, [key, value]) => text.replace(`:${key}`, value), template);
+}
 const submitting = ref(false);
 
 function openSettleInvoice(invoice) {
     settlingInvoiceId.value = settlingInvoiceId.value === invoice.id ? null : invoice.id;
-    settleForm.value = { date: todayIso(), amount: invoice.balance, method: 'cash', payment_channel_id: null };
+    settleForm.value = { date: todayIso(), amount: invoice.balance, method: 'cash', payment_channel_id: null, use_credit: false, keep_extra_as_credit: false };
 }
 function openSettleBill(bill) {
     const key = `${bill.payable_type}:${bill.id}`;
@@ -133,12 +160,15 @@ function openSettleBill(bill) {
 function confirmSettleInvoice(invoice) {
     if (!settleForm.value.amount || settleForm.value.amount <= 0) return;
     submitting.value = true;
+    const useCredit = settleForm.value.use_credit;
     router.post(route('app.payments.receive'), {
         sale_id: invoice.id,
         date: settleForm.value.date,
         amount: settleForm.value.amount,
-        method: settleForm.value.method,
-        payment_channel_id: settleForm.value.payment_channel_id,
+        method: useCredit ? null : settleForm.value.method,
+        payment_channel_id: useCredit ? null : settleForm.value.payment_channel_id,
+        use_credit: useCredit,
+        keep_extra_as_credit: !useCredit && overpaidBy(invoice) > 0 && settleForm.value.keep_extra_as_credit,
     }, {
         preserveScroll: true,
         onSuccess: () => { settlingInvoiceId.value = null; loadOpenInvoices(); },
@@ -222,13 +252,26 @@ function confirmSettleBill(bill) {
                         </div>
 
                         <div v-if="settlingInvoiceId === invoice.id" class="settle-form">
+                            <!-- The customer already has credit (an advance or an
+                                 earlier overpayment): offer to pay from it. -->
+                            <label v-if="invoice.customer_credit > 0" class="credit-row">
+                                <input v-model="settleForm.use_credit" type="checkbox" @change="onUseCreditChange(invoice)">
+                                <span>{{ fmtCredit(t('useCustomerCreditLbl'), { amount: `${currency} ${money(invoice.customer_credit)}` }) }}</span>
+                            </label>
                             <span>{{ t('dateLbl') }}</span>
                             <input v-model="settleForm.date" type="date" :max="todayIso()" class="inp-date" style="width: 15rem;">
                             <span>{{ t('amountNowLbl') }}</span>
                             <input v-model.number="settleForm.amount" type="number" step="0.01" class="inp-money">
-                            <PaymentMethodField v-model="settleForm.method" v-model:channel-id="settleForm.payment_channel_id"
+                            <PaymentMethodField v-if="!settleForm.use_credit" v-model="settleForm.method" v-model:channel-id="settleForm.payment_channel_id"
                                 :channels="channelList" :creating-channel="creatingChannel" @create-channel="(name) => createChannel(name, settleForm)" />
+                            <!-- Paid more than the invoice: keep the extra as the
+                                 customer's credit (never as a sale / revenue). -->
+                            <label v-if="overpaidBy(invoice) > 0" class="credit-row">
+                                <input v-model="settleForm.keep_extra_as_credit" type="checkbox">
+                                <span>{{ fmtCredit(t('keepExtraAsCreditLbl'), { amount: `${currency} ${money(overpaidBy(invoice))}`, customer: invoice.customer || '' }) }}</span>
+                            </label>
                             <button class="confirm" :disabled="submitting" @click="confirmSettleInvoice(invoice)">{{ t('confirmBtn') }}</button>
+                            <div v-for="message in settleErrors" :key="message" class="form-error settle-error">{{ message }}</div>
                         </div>
                     </div>
                 </div>
@@ -275,6 +318,7 @@ function confirmSettleBill(bill) {
                             <PaymentMethodField v-model="settleForm.method" v-model:channel-id="settleForm.payment_channel_id"
                                 :channels="channelList" :creating-channel="creatingChannel" @create-channel="(name) => createChannel(name, settleForm)" />
                             <button class="confirm" :disabled="submitting" @click="confirmSettleBill(bill)">{{ t('confirmBtn') }}</button>
+                            <div v-for="message in settleErrors" :key="message" class="form-error settle-error">{{ message }}</div>
                         </div>
                     </div>
                 </div>
@@ -284,3 +328,7 @@ function confirmSettleBill(bill) {
         </template>
     </AppLayout>
 </template>
+<style scoped>
+.credit-row { display: flex; align-items: center; gap: 8px; flex-basis: 100%; font-size: 13px; }
+.settle-error { flex-basis: 100%; }
+</style>

@@ -228,6 +228,21 @@ class InventoryPurchaseController extends Controller
     {
         $this->authorizeDelete();
 
+        // Refused if this purchase's stock was already sold or used —
+        // those sales would be left with nothing to take a cost from
+        // (see App\Services\StockTimeline). Delete or change them
+        // first.
+        $date          = $inventoryPurchase->date->toDateString();
+        $changesByItem = [];
+
+        foreach ($inventoryPurchase->lines()->get() as $line) {
+            $changesByItem[(int) $line->item_id][] = [$date, -((float) $line->qty * ((float) $line->qty_per_uom ?: 1))];
+        }
+
+        if ($problem = app(\App\Services\StockTimeline::class)->removalProblem($changesByItem)) {
+            return back()->with('error', $problem);
+        }
+
         DB::transaction(function () use ($inventoryPurchase) {
             $this->logDeletion(
                 $inventoryPurchase,

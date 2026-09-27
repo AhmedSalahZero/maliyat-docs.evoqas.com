@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\Company;
 use App\Services\DepreciationService;
+use App\Services\RecurringExpenseService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -27,6 +28,11 @@ use Symfony\Component\HttpFoundation\Response;
 //  reading its figures, and the instant somebody does, every missed
 //  month is caught up before the page renders.
 //
+//  The same daily catch-up also posts recurring expenses (rent,
+//  salaries...) whose date has arrived — see
+//  RecurringExpenseService::postDueOccurrences(). Each job is
+//  wrapped separately, so one failing never stops the other.
+//
 //  Note it runs AFTER the response is sent (terminate), so the
 //  catch-up never delays the page. The date guard means the whole
 //  thing is skipped on all but the first request of the day.
@@ -35,6 +41,7 @@ class PostDueDepreciation
 {
     public function __construct(
         private readonly DepreciationService $depreciation,
+        private readonly RecurringExpenseService $recurringExpenses,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -66,6 +73,15 @@ class PostDueDepreciation
             // Depreciation is backend bookkeeping. A failure here
             // must never take down the page the user asked for.
             Log::error('Depreciation catch-up failed', [
+                'company_id' => $company->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $this->recurringExpenses->postDueOccurrences((int) $company->id);
+        } catch (\Throwable $e) {
+            Log::error('Recurring expense catch-up failed', [
                 'company_id' => $company->id,
                 'error'      => $e->getMessage(),
             ]);

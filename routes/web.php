@@ -235,6 +235,9 @@ Route::middleware(['auth', 'auth.session', 'verified', 'member', 'no-duplicate']
             ->name('reports.inventory-statement.export');
         Route::get('/reports/cash-flow/export/{format}', [ReportExportController::class, 'cashFlow'])
             ->name('reports.cash-flow.export');
+        // ?owner= (optional — all owners when absent), ?type=, ?from=, ?to=
+        Route::get('/reports/owner-statement-export/{format}', [ReportExportController::class, 'ownerStatement'])
+            ->name('reports.owner-statement.export');
 
         // ── External Audit (for the company's auditor) ──────────────
         //  The Trial Balance, the Balance Sheet, and the Journal

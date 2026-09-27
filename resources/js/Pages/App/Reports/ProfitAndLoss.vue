@@ -103,9 +103,16 @@ const rows = computed(() => {
     // when something was actually paid out, so a company that's
     // never used Owner Injection/Withdrawal sees the P&L exactly as
     // it always looked.
+    //
+    // Shown as its own clearly separate section, with a note saying it
+    // is not an expense (low finding 5): as a plain line straight under
+    // Net Profit it read like one more cost.
     if (props.owners_profit_pay !== 0) {
-        list.push({ kind: 'child', label: t('ownersProfitPayLbl'), amount: -props.owners_profit_pay, percent: props.owners_profit_pay_percent });
-        list.push({ kind: 'result', label: t('netProfitAfterOwnersDrawLbl'), amount: props.net_profit_after_owners_draw, percent: props.net_profit_after_owners_draw_percent });
+        list.push({ kind: 'spacer' });
+        list.push({ kind: 'heading', label: t('plUseOfProfitHeading') });
+        list.push({ kind: 'note', label: t('plUseOfProfitNote') });
+        list.push({ kind: 'child', label: t('ownersProfitPayLbl'), amount: props.owners_profit_pay, percent: props.owners_profit_pay_percent });
+        list.push({ kind: 'total', label: t('netProfitAfterOwnersDrawLbl'), amount: props.net_profit_after_owners_draw, percent: props.net_profit_after_owners_draw_percent });
     }
 
     return list;
@@ -155,7 +162,13 @@ const pdfHref = computed(() => route('app.reports.profit-loss.export', { format:
                 </thead>
                 <tbody>
                     <template v-for="(row, i) in rows" :key="i">
-                        <tr v-if="row.kind === 'heading'" class="pl-row--heading">
+                        <tr v-if="row.kind === 'spacer'" class="pl-row--spacer" aria-hidden="true">
+                            <td colspan="3"></td>
+                        </tr>
+                        <tr v-else-if="row.kind === 'note'" class="pl-row--note">
+                            <td colspan="3">{{ row.label }}</td>
+                        </tr>
+                        <tr v-else-if="row.kind === 'heading'" class="pl-row--heading">
                             <td colspan="3">{{ row.label }}</td>
                         </tr>
                         <tr v-else-if="row.kind === 'child'" class="pl-row--child">
@@ -188,6 +201,8 @@ const pdfHref = computed(() => route('app.reports.profit-loss.export', { format:
 
 .pl-row--heading td { font-weight: 700; color: var(--color-text-secondary); background: var(--color-surface-alt); padding-top: 12px; }
 .pl-row--child td:first-child { padding-inline-start: 22px; }
+.pl-row--spacer td { border: none; padding: 10px 0; background: transparent; }
+.pl-row--note td { font-size: 12px; font-style: italic; color: var(--color-text-muted); border-bottom: none; padding-inline-start: 22px; }
 .pl-row--total td { font-weight: 600; border-top: 1px solid var(--color-border, #d7dce5); }
 .pl-row--result td { font-weight: 700; font-size: 14px; border-top: 2px solid var(--color-accent-blue, #2D6CDF); background: var(--color-surface-alt); }
 .pl-row--positive .pl-table__num:nth-child(2) { color: var(--color-success-dark); }

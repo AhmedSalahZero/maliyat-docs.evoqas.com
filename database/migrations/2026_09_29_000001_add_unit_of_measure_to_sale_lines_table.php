@@ -45,12 +45,20 @@ return new class extends Migration
             $table->string('base_unit_name')->nullable()->after('qty_per_uom');
         });
 
+        // A correlated sub-select rather than an UPDATE ... JOIN: the
+        // join form only works on MySQL. On SQLite (the database in
+        // .env.example, and the one the test suite uses) it failed
+        // with "no such column: items.base_unit_name", so a fresh
+        // install could not even finish migrating. This form gives
+        // the same result on both.
+        $baseUnit = DB::raw("COALESCE((SELECT items.base_unit_name FROM items WHERE items.id = sale_lines.item_id), 'unit')");
+
         DB::table('sale_lines')
-            ->join('items', 'items.id', '=', 'sale_lines.item_id')
+            ->whereNotNull('item_id')
             ->update([
-                'sale_lines.qty_per_uom'    => 1,
-                'sale_lines.base_unit_name' => DB::raw("COALESCE(items.base_unit_name, 'unit')"),
-                'sale_lines.uom'            => DB::raw("COALESCE(items.base_unit_name, 'unit')"),
+                'qty_per_uom'    => 1,
+                'base_unit_name' => $baseUnit,
+                'uom'            => $baseUnit,
             ]);
 
         // Free-text/service lines have no item to read a base unit

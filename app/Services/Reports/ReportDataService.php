@@ -56,6 +56,13 @@ class ReportDataService
         $fromDate = $from ? Carbon::parse($from) : now()->startOfMonth();
         $toDate   = $to ? Carbon::parse($to) : now()->endOfMonth();
 
+        // Only one end given and it lands past the default other end
+        // (e.g. From in December while this month is September):
+        // read the range the right way round rather than showing nothing.
+        if ($fromDate->gt($toDate)) {
+            [$fromDate, $toDate] = [$toDate, $fromDate];
+        }
+
         return [$fromDate->toDateString(), $toDate->toDateString()];
     }
 
@@ -74,6 +81,10 @@ class ReportDataService
     {
         $fromDate = $from ? Carbon::parse($from) : now()->startOfYear();
         $toDate   = $to ? Carbon::parse($to) : now();
+
+        if ($fromDate->gt($toDate)) {
+            [$fromDate, $toDate] = [$toDate, $fromDate];
+        }
 
         return [$fromDate->toDateString(), $toDate->toDateString()];
     }
@@ -365,6 +376,14 @@ class ReportDataService
             ]);
 
             foreach ($sale->payments as $payment) {
+                // Credit USED on an invoice is not new money: the
+                // credit already reduced their balance on the day it
+                // was received (the receipt below). Listing it again
+                // would count the same money twice (audit 4.6).
+                if ($payment->method === \App\Services\CustomerCreditService::METHOD) {
+                    continue;
+                }
+
                 $entries->push([
                     'date' => $payment->date->toDateString(), 'type' => 'payment',
                     'ref' => "Payment #{$payment->id}", 'debit' => 0, 'credit' => (float) $payment->amount,
@@ -372,20 +391,30 @@ class ReportDataService
             }
         });
 
-        // Receipts tagged to this customer that settle no invoice —
-        // a cash sale with no paperwork, a refund going the other
-        // way. They never appear above, because nothing links them
-        // to a Sale; reaching them needs the customer's own relation.
-        // Direction decides the column: money in reduces what they
-        // owe, money out (a refund) increases it.
+        // Payments tagged to this customer that settle no invoice.
+        //
+        // Only a receipt kept as CUSTOMER CREDIT (account 2300) really
+        // changes what this customer owes in the ledger, so only that
+        // moves the balance here (audit M1). Anything else tagged to
+        // them — an older "cash receipt" booked straight to revenue,
+        // or money paid out booked as an expense — was settled on the
+        // spot and never touched their account. It is still listed so
+        // nothing is hidden, but with the same amount in both columns,
+        // so the balance stays exactly what the ledger says.
         $customer->standalonePayments()->orderBy('date')->get()
-            ->each(fn (Payment $payment) => $entries->push([
-                'date'  => $payment->date->toDateString(),
-                'type'  => $payment->direction === 'in' ? 'receipt' : 'refund',
-                'ref'   => $payment->note ?: ($payment->direction === 'in' ? "Receipt #{$payment->id}" : "Refund #{$payment->id}"),
-                'debit' => $payment->direction === 'in' ? 0 : (float) $payment->amount,
-                'credit' => $payment->direction === 'in' ? (float) $payment->amount : 0,
-            ]));
+            ->each(function (Payment $payment) use (&$entries) {
+                $amount = (float) $payment->amount;
+                $isCredit = $payment->direction === 'in' && $payment->is_customer_credit;
+                $settledOnSpot = ! $isCredit;
+
+                $entries->push([
+                    'date'   => $payment->date->toDateString(),
+                    'type'   => $settledOnSpot ? 'settled_on_spot' : 'receipt',
+                    'ref'    => $payment->note ?: ($payment->direction === 'in' ? "Receipt #{$payment->id}" : "Refund #{$payment->id}"),
+                    'debit'  => $settledOnSpot ? $amount : 0,
+                    'credit' => $amount,
+                ]);
+            });
 
         return $this->windowStatement($entries, $from, $to, 'debit', 'credit');
     }
@@ -472,19 +501,26 @@ class ReportDataService
         };
 
         $addBills($vendor->expenses()->with('payments')->orderBy('date')->get(), 'expense');
-        $addBills($vendor->inventoryPurchases()->with('payments')->orderBy('date')->get(), 'inventory_purchase');
-        $addBills($vendor->equipmentPurchases()->with('payments')->orderBy('date')->get(), 'equipment_purchase');
+        // Opening stock/equipment was already owned (booked against
+        // Owner's Equity) — nothing is owed to anyone for it, so it
+        // never belongs on a supplier statement (audit finding 3.3).
+        $addBills($vendor->inventoryPurchases()->where('is_opening_balance', false)->with('payments')->orderBy('date')->get(), 'inventory_purchase');
+        $addBills($vendor->equipmentPurchases()->where('is_opening_balance', false)->with('payments')->orderBy('date')->get(), 'equipment_purchase');
 
-        // Payments tagged to this supplier that settle no bill — see
-        // the same block in customerStatement() for why they cannot
-        // be reached through the bills above.
+        // Payments tagged to this supplier that settle no bill. The
+        // ledger books these as a cash expense — they never touched
+        // Accounts Payable — so they must not change what the
+        // statement says is owed (audit M1). They are listed, with
+        // the same amount in both columns, so nothing is hidden.
+        // (New ones can no longer be created: StorePaymentOutRequest
+        // requires a bill when a supplier is named.)
         $vendor->standalonePayments()->orderBy('date')->get()
             ->each(fn (Payment $payment) => $entries->push([
                 'date'  => $payment->date->toDateString(),
-                'type'  => $payment->direction === 'out' ? 'payment' : 'refund',
+                'type'  => 'settled_on_spot',
                 'ref'   => $payment->note ?: ($payment->direction === 'out' ? "Payment #{$payment->id}" : "Refund #{$payment->id}"),
-                'debit' => $payment->direction === 'out' ? (float) $payment->amount : 0,
-                'credit_owed' => $payment->direction === 'out' ? 0 : (float) $payment->amount,
+                'debit' => (float) $payment->amount,
+                'credit_owed' => (float) $payment->amount,
             ]));
 
         return $this->windowStatement($entries, $from, $to, 'credit_owed', 'debit');
@@ -497,15 +533,12 @@ class ReportDataService
      * profit_distribution rows), for one owner or, with $owner null,
      * every owner at once.
      *
-     * Unlike customerStatement()/supplierStatement(), this has no
-     * "brought forward" collapsing (windowStatement()) — those exist
-     * because a customer/supplier balance is a running debt that
-     * predates any window you might ask for. An owner's contributed
-     * capital is exactly that same kind of running balance too, which
-     * is why a running `balance` column is still computed below when
-     * $owner is given — it just isn't collapsed into an opening
-     * figure when $from is given, since nothing here has asked for
-     * that (yet). With $owner null (every owner combined), a single
+     * Like customerStatement()/supplierStatement(), a range carries a
+     * "brought forward" figure: an owner's contributed capital is a
+     * running balance that predates any window you might ask for, so
+     * everything before $from is summed into opening_balance and the
+     * running `balance` continues from it (audit finding M7). With
+     * $owner null (every owner combined), a single
      * running balance would mix unrelated owners' equity into one
      * meaningless number, so entries carry the owner's name instead
      * and only the period's totals are returned.
@@ -513,6 +546,7 @@ class ReportDataService
      * @return array{
      *     entries: Collection,
      *     total_in: float, total_out: float, net: float,
+     *     opening_balance: float, closing_balance: float,
      *     owner: ?array, running_balance: bool,
      * }
      */
@@ -538,7 +572,25 @@ class ReportDataService
             ->orderBy('date')
             ->orderBy('id');
 
-        $running = 0.0;
+        // Balance brought forward (audit finding M7): everything this
+        // owner put in or took out BEFORE the chosen range, so the
+        // running balance inside the range is their true position,
+        // not one that starts again from zero on the first day shown.
+        $opening = 0.0;
+
+        if ($from) {
+            $before = OwnerTransaction::query()
+                ->whereIn('category', $categories)
+                ->when($owner, fn ($q) => $q->where('owner_id', $owner->id))
+                ->whereDate('date', '<', $from)
+                ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE 0 END), 0) as total_in")
+                ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END), 0) as total_out")
+                ->first();
+
+            $opening = round((float) ($before->total_in ?? 0) - (float) ($before->total_out ?? 0), 2);
+        }
+
+        $running = $opening;
         $totalIn = 0.0;
         $totalOut = 0.0;
 
@@ -567,6 +619,10 @@ class ReportDataService
             'total_in'        => round($totalIn, 2),
             'total_out'       => round($totalOut, 2),
             'net'             => round($totalIn - $totalOut, 2),
+            // Brought forward + the range's own movements = where the
+            // owner actually stands on the last day shown.
+            'opening_balance' => $opening,
+            'closing_balance' => round($opening + $totalIn - $totalOut, 2),
             'owner'           => $owner?->only(['id', 'name']),
             // The frontend only shows the running `balance` column
             // when one specific owner is selected — see this method's
@@ -904,19 +960,26 @@ class ReportDataService
         // Same reasoning as profitAndLoss() — an opening balance is
         // a starting position, not a cash movement that happened
         // during this period, so it's excluded here throughout.
+        // Customer credit used against an invoice (method 'credit')
+        // moved no money — the cash arrived when the credit was
+        // received — so it never appears in cash figures (audit 4.6).
+        $credit = \App\Services\CustomerCreditService::METHOD;
+
         $byMethod = Payment::query()
             ->whereBetween('date', [$from, $to])
             ->where('is_opening_balance', false)
+            ->where('method', '!=', $credit)
             ->selectRaw('method, direction, SUM(amount) as total')
             ->groupBy('method', 'direction')
             ->get();
 
-        $cashIn  = (float) Payment::query()->whereBetween('date', [$from, $to])->where('direction', 'in')->where('is_opening_balance', false)->sum('amount');
-        $cashOut = (float) Payment::query()->whereBetween('date', [$from, $to])->where('direction', 'out')->where('is_opening_balance', false)->sum('amount');
+        $cashIn  = (float) Payment::query()->whereBetween('date', [$from, $to])->where('direction', 'in')->where('is_opening_balance', false)->where('method', '!=', $credit)->sum('amount');
+        $cashOut = (float) Payment::query()->whereBetween('date', [$from, $to])->where('direction', 'out')->where('is_opening_balance', false)->where('method', '!=', $credit)->sum('amount');
 
         $movements = Payment::query()
             ->whereBetween('date', [$from, $to])
             ->where('is_opening_balance', false)
+            ->where('method', '!=', $credit)
             ->with([
                 'customer:id,name',
                 'vendor:id,name',

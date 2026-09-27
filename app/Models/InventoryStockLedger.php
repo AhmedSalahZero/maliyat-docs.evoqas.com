@@ -33,14 +33,14 @@ class InventoryStockLedger extends Model
 
     protected $casts = [
         'date' => 'date',
-        'beginning_qty' => 'decimal:2',
+        'beginning_qty' => 'decimal:4',
         'beginning_value' => 'decimal:2',
-        'qty_in' => 'decimal:2',
+        'qty_in' => 'decimal:4',
         'value_in' => 'decimal:2',
         'average_cost' => 'decimal:4',
-        'qty_out' => 'decimal:2',
+        'qty_out' => 'decimal:4',
         'value_out' => 'decimal:2',
-        'ending_qty' => 'decimal:2',
+        'ending_qty' => 'decimal:4',
         'ending_value' => 'decimal:2',
     ];
 

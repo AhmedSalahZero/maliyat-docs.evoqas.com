@@ -73,7 +73,12 @@ use Illuminate\Support\Str;
 //  occurrence directly (still tagging recurring_id/index/count/
 //  frequency so the "Recurring plans" summary works) and posts
 //  postExpenseInvoice() + a payment for each one, same as a normal
-//  one-off Expense. Worth a look from whoever owns that service.
+//  one-off Expense.
+//
+//  UPDATE (Sep 2026): the gap is fixed — RecurringExpenseService now
+//  posts each occurrence as its date arrives (postDueOccurrences()).
+//  This command still posts its own entries, which is harmless: an
+//  occurrence that already has a journal entry is never posted again.
 //
 //  ── Split across four files (Sep 2026) ──────────────────────────
 //  This file used to be ~1,690 lines. The three seedXCompany()
