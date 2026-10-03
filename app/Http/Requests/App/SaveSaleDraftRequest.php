@@ -24,7 +24,7 @@ class SaveSaleDraftRequest extends FormRequest
     ];
 
     /** Keys kept on each line. */
-    public const LINE_FIELDS = ['item_id', 'qty', 'uom', 'qty_per_uom', 'base_unit_name', 'unit_price'];
+    public const LINE_FIELDS = ['item_id', 'qty', 'uom', 'qty_per_uom', 'base_unit_name', 'unit_price', 'vat_rate', 'withholding_rate'];
 
     public function authorize(): bool
     {

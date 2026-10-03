@@ -11,6 +11,7 @@ use App\Models\PaymentChannel;
 use App\Models\Sale;
 use App\Models\SaleDraft;
 use App\Models\SalesChannel;
+use App\Support\LineTax;
 use App\Services\JournalService;
 use App\Services\MovingAverageCostingService;
 use App\Services\PaymentRecorderService;
@@ -83,8 +84,16 @@ class SaleController extends Controller
                     'qty_per_uom'    => (float) $line->qty_per_uom,
                     'base_unit_name' => $line->base_unit_name,
                     'unit_price'     => (float) $line->unit_price,
+                    // VAT % and Debit Withholding % of THIS line.
+                    'vat_rate'         => (float) $line->vat_rate,
+                    'withholding_rate' => (float) $line->withholding_rate,
                 ]),
                 'vat_rate'      => (float) $sale->vat_rate,
+                'subtotal'      => (float) $sale->subtotal,
+                'vat_amount'    => (float) $sale->vat_amount,
+                'withholding_amount' => (float) $sale->withholding_amount,
+                // `amount` = what the customer actually owes
+                // (subtotal + VAT - withholding).
                 'amount'        => (float) $sale->amount,
                 'paid_amount'   => $sale->paidAmount(),
                 'balance'       => $sale->balance(),
@@ -141,13 +150,16 @@ class SaleController extends Controller
     {
         $data = $request->validated();
 
-        $subtotal = collect($data['lines'])->sum(
-            fn (array $line) => round($line['qty'] * $line['unit_price'], 2)
-        );
+        // VAT and Debit Withholding Tax are worked out per product
+        // line (see LineTax). `total` is what the customer actually
+        // owes: subtotal + VAT - withholding.
+        $tax = LineTax::compute($data['lines'], (float) ($data['vat_rate'] ?? 0));
 
-        $vatRate   = (float) ($data['vat_rate'] ?? 0);
-        $vatAmount = round($subtotal * $vatRate / 100, 2);
-        $total     = round($subtotal + $vatAmount, 2);
+        $subtotal    = $tax['subtotal'];
+        $vatRate     = $tax['effective_vat_rate'];
+        $vatAmount   = $tax['vat_amount'];
+        $withholding = $tax['withholding_amount'];
+        $total       = $tax['total'];
 
         $dueDate  = null;
         $schedule = [];
@@ -166,7 +178,7 @@ class SaleController extends Controller
         // together or not at all. Previously the transaction closed
         // before any of the posting ran, so a failure there left a
         // sale on the books with nothing in the general ledger.
-        DB::transaction(function () use ($data, $subtotal, $vatRate, $vatAmount, $total, $dueDate, $schedule) {
+        DB::transaction(function () use ($data, $tax, $subtotal, $vatRate, $vatAmount, $withholding, $total, $dueDate, $schedule) {
             $sale = Sale::create([
                 // Cash Sales submit no customer_id at all — filed
                 // under the one reusable "Cash Customer" instead of
@@ -182,13 +194,14 @@ class SaleController extends Controller
                 'subtotal'    => $subtotal,
                 'vat_rate'    => $vatRate,
                 'vat_amount'  => $vatAmount,
+                'withholding_amount' => $withholding,
                 'amount'      => $total,
                 'due_date'    => $dueDate,
                 'created_by'  => auth()->id(),
             ]);
 
-            foreach ($data['lines'] as $line) {
-                $sale->lines()->create($this->lineAttributes($line));
+            foreach (array_values($data['lines']) as $i => $line) {
+                $sale->lines()->create($this->lineAttributes($line, $tax['lines'][$i]));
             }
 
             $this->journal->postSaleInvoice($sale);
@@ -227,14 +240,15 @@ class SaleController extends Controller
     {
         $data = $request->validated();
 
-        $subtotal = collect($data['lines'])->sum(
-            fn (array $line) => round($line['qty'] * $line['unit_price'], 2)
-        );
-        $vatRate   = (float) ($data['vat_rate'] ?? 0);
-        $vatAmount = round($subtotal * $vatRate / 100, 2);
-        $total     = round($subtotal + $vatAmount, 2);
+        $tax = LineTax::compute($data['lines'], (float) ($data['vat_rate'] ?? 0));
 
-        DB::transaction(function () use ($sale, $data, $subtotal, $vatRate, $vatAmount, $total) {
+        $subtotal    = $tax['subtotal'];
+        $vatRate     = $tax['effective_vat_rate'];
+        $vatAmount   = $tax['vat_amount'];
+        $withholding = $tax['withholding_amount'];
+        $total       = $tax['total'];
+
+        DB::transaction(function () use ($sale, $data, $tax, $subtotal, $vatRate, $vatAmount, $withholding, $total) {
             // Captured before anything changes, so the moving-average
             // recalculation below knows every item and every date
             // this edit could possibly affect — including an item
@@ -262,14 +276,15 @@ class SaleController extends Controller
                 'subtotal'    => $subtotal,
                 'vat_rate'    => $vatRate,
                 'vat_amount'  => $vatAmount,
+                'withholding_amount' => $withholding,
                 'amount'      => $total,
                 // Correctable now — see the note in the Update*Request.
                 'due_date'    => array_key_exists('due_date', $data) ? $data['due_date'] : $sale->due_date,
             ]);
 
             $sale->lines()->delete();
-            foreach ($data['lines'] as $line) {
-                $sale->lines()->create($this->lineAttributes($line));
+            foreach (array_values($data['lines']) as $i => $line) {
+                $sale->lines()->create($this->lineAttributes($line, $tax['lines'][$i]));
             }
 
             $freshSale = $sale->fresh();
@@ -348,9 +363,14 @@ class SaleController extends Controller
      * qty is then read as already being in base units — the same
      * behavior this app had before unit choice existed.
      *
+     * VAT and Debit Withholding Tax come from LineTax (the amounts
+     * are already rounded there), so the line stored here is exactly
+     * what the invoice total was built from.
+     *
      * @param  array{item_id?:int|null, qty:float, uom?:string|null, qty_per_uom?:float|null, base_unit_name?:string|null, unit_price:float}  $line
+     * @param  array{line_total:float, vat_rate:float, vat_amount:float, withholding_rate:float, withholding_amount:float}  $tax
      */
-    private function lineAttributes(array $line): array
+    private function lineAttributes(array $line, array $tax): array
     {
         return [
             'item_id'        => $line['item_id'] ?? null,
@@ -359,7 +379,11 @@ class SaleController extends Controller
             'qty_per_uom'    => $line['qty_per_uom'] ?? 1,
             'base_unit_name' => $line['base_unit_name'] ?? 'unit',
             'unit_price'     => $line['unit_price'],
-            'line_total'     => round($line['qty'] * $line['unit_price'], 2),
+            'line_total'     => $tax['line_total'],
+            'vat_rate'           => $tax['vat_rate'],
+            'vat_amount'         => $tax['vat_amount'],
+            'withholding_rate'   => $tax['withholding_rate'],
+            'withholding_amount' => $tax['withholding_amount'],
         ];
     }
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\App;
 
 use App\Http\Controllers\Concerns\ReadsReportDates;
 use App\Http\Controllers\Controller;
+use App\Models\Account;
 use App\Models\Customer;
 use App\Models\Owner;
 use App\Models\Vendor;
@@ -309,9 +310,10 @@ class ReportExportController extends Controller
         ]);
 
         $doc['stats'] = [
+            ['label' => $l['beginning_cash'], 'value' => $this->money($data['beginning_cash'], $currency), 'tone' => 'primary'],
             ['label' => $l['cash_in'], 'value' => $this->money($data['cash_in'], $currency), 'tone' => 'income'],
             ['label' => $l['cash_out'], 'value' => $this->money($data['cash_out'], $currency), 'tone' => 'expense'],
-            ['label' => $l['net_flow'], 'value' => $this->money($data['net_flow'], $currency), 'tone' => 'primary'],
+            ['label' => $l['current_cash'], 'value' => $this->money($data['current_cash'], $currency), 'tone' => 'primary'],
         ];
 
         return $this->respond($format, $doc, 'cash-flow-'.$from.'-to-'.$to);
@@ -525,6 +527,73 @@ class ReportExportController extends Controller
         return $this->respond($format, $doc, 'journal-'.$from.'-to-'.$to);
     }
 
+    /**
+     * Account Statement — one account's Opening Balance, every
+     * movement (with the customer / supplier it was about and a
+     * running balance) and End Balance, over the same range the
+     * screen was showing. See ReportDataService::accountStatement().
+     */
+    public function accountStatement(Request $request, string $format): Response
+    {
+        [$from, $to] = $this->reports->yearRange(...$this->reportRange($request, 'st_from', 'st_to'));
+
+        $account = Account::query()->findOrFail($request->integer('account_id'));
+        $data = $this->reports->accountStatement($account, $from, $to);
+        $l = $this->labels();
+        $currency = $this->currency();
+        $ar = app()->getLocale() === 'ar';
+
+        $accountName = ($ar && $account->name_ar) ? $account->name_ar : $account->name;
+
+        // "1,250.00 Dr" / "1,250.00 Cr" — the balance on the side it falls.
+        $balance = fn (float $amount, ?string $side) => $this->money($amount, $currency)
+            .($side === 'debit' ? ' '.$l['dr'] : ($side === 'credit' ? ' '.$l['cr'] : ''));
+
+        $rows = [[
+            $from, $l['balance_brought_forward'], '', '—', '—',
+            $balance($data['opening_amount'], $data['opening_side']),
+        ]];
+
+        foreach ($data['rows'] as $row) {
+            $rows[] = [
+                $row['date'],
+                $row['memo'].($row['is_reversal'] ? ' ('.$l['reversal'].')' : ''),
+                $row['party'] ?? '',
+                $row['debit'] > 0 ? $this->money($row['debit'], $currency) : '—',
+                $row['credit'] > 0 ? $this->money($row['credit'], $currency) : '—',
+                $balance($row['balance_amount'], $row['balance_side']),
+            ];
+        }
+
+        $doc = $this->baseDoc(
+            $l['report_account_statement'].' — '.$account->code.' '.$accountName,
+            $from,
+            $to,
+            [[
+                'columns' => [
+                    ['label' => $l['date']], ['label' => $l['description']], ['label' => $l['customer_supplier']],
+                    ['label' => $l['debit'], 'align' => 'end'], ['label' => $l['credit'], 'align' => 'end'],
+                    ['label' => $l['balance'], 'align' => 'end'],
+                ],
+                'rows'   => $rows,
+                'totals' => [
+                    '', $l['total_balance'], '',
+                    $this->money($data['total_debit'], $currency), $this->money($data['total_credit'], $currency),
+                    $balance($data['closing_amount'], $data['closing_side']),
+                ],
+            ]]
+        );
+
+        $doc['stats'] = [
+            ['label' => $l['opening_balance'], 'value' => $balance($data['opening_amount'], $data['opening_side']), 'tone' => 'primary'],
+            ['label' => $l['debit'], 'value' => $this->money($data['total_debit'], $currency), 'tone' => 'income'],
+            ['label' => $l['credit'], 'value' => $this->money($data['total_credit'], $currency), 'tone' => 'expense'],
+            ['label' => $l['closing_balance'], 'value' => $balance($data['closing_amount'], $data['closing_side']), 'tone' => 'primary'],
+        ];
+
+        return $this->respond($format, $doc, 'account-statement-'.$account->code.'-'.$from.'-to-'.$to);
+    }
+
     // ── Shared helpers ──────────────────────────────────────────
 
     private function respond(string $format, array $doc, string $filename): Response
@@ -627,6 +696,8 @@ class ReportExportController extends Controller
             'balance_sheet' => 'Balance Sheet', 'assets' => 'Assets', 'liabilities' => 'Liabilities',
             'equity' => 'Equity', 'net_profit_to_date' => 'Net Profit (to date)',
             'total_assets' => 'Total Assets', 'total_liabilities_equity' => 'Total Liabilities & Equity',
+            'beginning_cash' => 'Beginning Cash & Banks', 'current_cash' => 'Current Cash & Banks',
+            'report_account_statement' => 'Account Statement', 'customer_supplier' => 'Customer / Supplier', 'dr' => 'Dr', 'cr' => 'Cr',
             'owner' => 'Owner', 'all_owners' => 'All owners', 'amount_in' => 'In', 'amount_out' => 'Out', 'totals' => 'Totals',
             'report_owner_withdrawals' => 'Owner Statement — Withdrawals', 'report_owner_profit' => 'Owner Statement — Profit Pay',
         ];
@@ -665,6 +736,8 @@ class ReportExportController extends Controller
             'balance_sheet' => 'الميزانية العمومية', 'assets' => 'الأصول', 'liabilities' => 'الخصوم',
             'equity' => 'حقوق الملكية', 'net_profit_to_date' => 'صافي الربح (حتى تاريخه)',
             'total_assets' => 'إجمالي الأصول', 'total_liabilities_equity' => 'إجمالي الخصوم وحقوق الملكية',
+            'beginning_cash' => 'النقدية والبنوك أول المدة', 'current_cash' => 'النقدية والبنوك الحالية',
+            'report_account_statement' => 'كشف حساب الأستاذ', 'customer_supplier' => 'العميل / المورد', 'dr' => 'مدين', 'cr' => 'دائن',
             'owner' => 'المالك', 'all_owners' => 'كل الملاك', 'amount_in' => 'وارد', 'amount_out' => 'صادر', 'totals' => 'الإجماليات',
             'report_owner_withdrawals' => 'كشف حساب الملاك — كشف السحوبات', 'report_owner_profit' => 'كشف حساب الملاك — كشف توزيع الأرباح',
         ];

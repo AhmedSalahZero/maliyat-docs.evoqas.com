@@ -260,6 +260,8 @@ Route::middleware(['auth', 'auth.session', 'verified', 'member', 'no-duplicate']
             ->name('reports.balance-sheet.export');
         Route::get('/reports/journal/export/{format}', [ReportExportController::class, 'journal'])
             ->name('reports.journal.export');
+        Route::get('/reports/account-statement/export/{format}', [ReportExportController::class, 'accountStatement'])
+            ->name('reports.account-statement.export');
 
         // ── Opening Balances (one-time setup, company_admin) ────────
         Route::get('/opening-balance', [OpeningBalanceController::class, 'index'])->name('opening-balance.index');

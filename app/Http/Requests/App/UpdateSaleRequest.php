@@ -50,7 +50,14 @@ class UpdateSaleRequest extends FormRequest
             'lines.*.qty_per_uom'    => ['nullable', ...FinancialRules::qty()],
             'lines.*.base_unit_name' => ['nullable', 'string', 'max:40'],
             'lines.*.unit_price'     => ['required', ...FinancialRules::amount(0)],
+            // VAT % and Withholding Tax % of this line. Withholding is
+            // calculated on the line amount BEFORE VAT.
+            'lines.*.vat_rate'         => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'lines.*.withholding_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
 
+            // Invoice-level VAT % — only the fallback for a line that
+            // carries no VAT % of its own (an old draft). The screen
+            // now sends VAT % and Withholding % on every line.
             'vat_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             // A due date entered wrongly at creation could never be
             // corrected — update() simply didn't accept the field.
@@ -71,12 +78,12 @@ class UpdateSaleRequest extends FormRequest
                 return;
             }
 
-            $subtotal = $this->documentLineTotal();
-            $this->rejectTotalAboveCeiling($validator, $subtotal);
-
-            $vatRate = (float) ($this->input('vat_rate') ?? 0);
-            $total   = round($subtotal + round($subtotal * $vatRate / 100, 2), 2);
-            $this->rejectAmountNowAboveTotal($validator, $total);
+            // VAT and Withholding Tax per product line — see LineTax.
+            // "Paid now" is compared with what is actually owed, i.e.
+            // AFTER the withholding is taken off.
+            $tax = $this->documentTaxTotals();
+            $this->rejectGrossAboveCeiling($validator, $tax);
+            $this->rejectAmountNowAboveTotal($validator, $tax['total']);
 
             // Last, so a line already rejected for a bad quantity is
             // not also told it is out of stock.

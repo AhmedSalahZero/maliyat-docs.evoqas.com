@@ -65,9 +65,22 @@ class JournalService
     // ── Sales ─────────────────────────────────────────────────────
 
     /**
-     * A sale is invoiced: the customer now owes the full amount
+     * A sale is invoiced: the customer now owes the amount due
      * (Accounts Receivable), split between revenue earned and VAT
      * collected on the state's behalf.
+     *
+     * Debit Withholding Tax: when the customer withholds part of the
+     * invoice and pays it to the tax authority for us, that part is
+     * NOT owed by the customer any more — it becomes a claim on the
+     * tax authority (Withholding Tax Receivable, an asset). So
+     * Accounts Receivable is debited only for `amount` (which already
+     * has the withholding taken off) and the withholding is debited
+     * to its own account:
+     *
+     *     Dr Accounts Receivable          amount            (net owed)
+     *     Dr Withholding Tax Receivable   withholding
+     *         Cr Sales Revenue            subtotal
+     *         Cr VAT Payable              VAT
      */
     public function postSaleInvoice(Sale $sale): void
     {
@@ -78,6 +91,10 @@ class JournalService
 
         if ((float) $sale->vat_amount > 0) {
             $lines[] = ['account' => Account::VAT_PAYABLE, 'credit' => (float) $sale->vat_amount];
+        }
+
+        if ((float) $sale->withholding_amount > 0) {
+            $lines[] = ['account' => Account::WITHHOLDING_TAX_RECEIVABLE, 'debit' => (float) $sale->withholding_amount];
         }
 
         $this->post($sale->company_id, $sale->date->toDateString(), 'Sale invoiced', $sale, $lines);
@@ -151,6 +168,19 @@ class JournalService
         ]);
     }
 
+    /**
+     * Credit Withholding Tax: when we keep part of the bill back to
+     * pay the tax authority ourselves, that part is NOT owed to the
+     * supplier any more — we owe it to the tax authority instead
+     * (Withholding Tax Payable, a liability). So Accounts Payable is
+     * credited only for `amount` (which already has the withholding
+     * taken off):
+     *
+     *     Dr Inventory                    subtotal
+     *     Dr VAT Receivable               VAT
+     *         Cr Accounts Payable         amount            (net owed)
+     *         Cr Withholding Tax Payable  withholding
+     */
     public function postInventoryPurchaseInvoice(InventoryPurchase $purchase): void
     {
         $lines = [
@@ -160,6 +190,10 @@ class JournalService
 
         if ((float) $purchase->vat_amount > 0) {
             $lines[] = ['account' => Account::VAT_RECEIVABLE, 'debit' => (float) $purchase->vat_amount];
+        }
+
+        if ((float) $purchase->withholding_amount > 0) {
+            $lines[] = ['account' => Account::WITHHOLDING_TAX_PAYABLE, 'credit' => (float) $purchase->withholding_amount];
         }
 
         $this->post($purchase->company_id, $purchase->date->toDateString(), 'Inventory purchase billed', $purchase, $lines);

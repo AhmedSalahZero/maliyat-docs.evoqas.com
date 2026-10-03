@@ -283,7 +283,7 @@ class PaymentController extends Controller
                         'amount'       => $extra,
                         'method'       => $data['method'],
                         'payment_channel_id' => $data['payment_channel_id'] ?? null,
-                        'note'         => "Overpayment on Sale #{$sale->id} — kept as customer credit",
+                        'note'         => 'Overpayment on sale — kept as customer credit',
                         'direction'    => 'in',
                         'is_customer_credit' => true,
                     ]);

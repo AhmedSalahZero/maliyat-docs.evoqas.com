@@ -20,9 +20,11 @@ import { useMoneyFormat } from '@/composables/useMoneyFormat';
 const props = defineProps({
     from: { type: String, required: true },
     to: { type: String, required: true },
+    beginning_cash: { type: Number, default: 0 },
     cash_in: { type: Number, default: 0 },
     cash_out: { type: Number, default: 0 },
     net_flow: { type: Number, default: 0 },
+    current_cash: { type: Number, default: 0 },
     by_method: { type: Array, default: () => [] },
     movements: { type: Array, default: () => [] },
 });
@@ -79,6 +81,12 @@ const pdfHref = computed(() => route('app.reports.cash-flow.export', { format: '
 
         <div class="pl-summary">
             <div class="pl-box">
+                <div class="pl-label">{{ t('beginningCashLbl') }}</div>
+                <div class="pl-value net" :style="{ color: props.beginning_cash >= 0 ? 'var(--color-primary-dark)' : 'var(--color-danger-dark)' }">
+                    {{ currency }} {{ money(props.beginning_cash) }}
+                </div>
+            </div>
+            <div class="pl-box">
                 <div class="pl-label">{{ t('cashInLbl') }}</div>
                 <div class="pl-value income">{{ currency }} {{ money(props.cash_in) }}</div>
             </div>
@@ -87,9 +95,9 @@ const pdfHref = computed(() => route('app.reports.cash-flow.export', { format: '
                 <div class="pl-value expense">{{ currency }} {{ money(props.cash_out) }}</div>
             </div>
             <div class="pl-box">
-                <div class="pl-label">{{ t('netFlowLbl') }}</div>
-                <div class="pl-value net" :style="{ color: props.net_flow >= 0 ? 'var(--color-success-dark)' : 'var(--color-danger-dark)' }">
-                    {{ currency }} {{ money(props.net_flow) }}
+                <div class="pl-label">{{ t('currentCashLbl') }}</div>
+                <div class="pl-value net" :style="{ color: props.current_cash >= 0 ? 'var(--color-success-dark)' : 'var(--color-danger-dark)' }">
+                    {{ currency }} {{ money(props.current_cash) }}
                 </div>
             </div>
         </div>

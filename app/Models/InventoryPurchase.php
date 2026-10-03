@@ -16,7 +16,7 @@ class InventoryPurchase extends Model
 
     protected $fillable = [
         'company_id', 'vendor_id', 'date', 'subtotal',
-        'vat_rate', 'vat_amount', 'amount', 'due_date', 'created_by',
+        'vat_rate', 'vat_amount', 'withholding_amount', 'amount', 'due_date', 'created_by',
         'is_opening_balance',
     ];
 
@@ -29,8 +29,16 @@ class InventoryPurchase extends Model
         'subtotal' => 'decimal:2',
         'vat_rate' => 'decimal:2',
         'vat_amount' => 'decimal:2',
+        'withholding_amount' => 'decimal:2',
         'amount' => 'decimal:2',
     ];
+
+    // IMPORTANT — `amount` is what we actually OWE the supplier:
+    //     subtotal + VAT - withholding_amount.
+    // withholding_amount is the Credit Withholding Tax: the part of
+    // the bill we keep back and pay to the tax authority. Every
+    // balance / payment check reads `amount`, so the withheld part
+    // is already treated as settled with the supplier.
 
     public function vendor(): BelongsTo
     {
@@ -50,6 +58,15 @@ class InventoryPurchase extends Model
     public function installments(): MorphMany
     {
         return $this->morphMany(Installment::class, 'payable')->orderBy('sequence');
+    }
+
+    /**
+     * The bill total BEFORE our withholding is taken off — what the
+     * supplier's invoice says on paper (subtotal + VAT).
+     */
+    public function grossAmount(): float
+    {
+        return round((float) $this->amount + (float) $this->withholding_amount, 2);
     }
 
     public function paidAmount(): float

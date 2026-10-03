@@ -1257,6 +1257,43 @@ table.lines.lines--purchase .line-explain__cost::before { content: "·"; margin-
     }
     table.lines button.rm-line:hover { background: var(--color-danger); color: var(--color-text-on-primary); }
 }
+/* VAT % and Withholding Tax % — one small row under each product line
+   (Sales and Inventory Purchases). Kept as its own row, rather than two
+   more columns, so the existing columns keep their width. */
+table.lines tr.line-tax td { padding: 0 6px 10px; border-bottom: 1px solid var(--color-border); }
+table.lines tr:has(+ tr.line-tax) td { border-bottom: none; }
+table.lines tr.line-tax:has(+ tr.line-explain) td { border-bottom: none; }
+.line-tax__box { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+.line-tax__field { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--color-text-muted); }
+table.lines .line-tax__field input { width: 84px; }
+.line-tax__amounts { font-size: 12.5px; color: var(--color-text-muted); font-family: var(--font-mono); }
+
+/* Inventory Purchase price box with the unit name BESIDE it
+   (e.g. [ 240.00 ] per Carton), so it is never unclear whether the
+   price is per carton or per piece. */
+.price-cell { display: flex; align-items: center; gap: 6px; }
+.price-cell input { flex: 1 1 auto; min-width: 0; }
+.price-cell__unit {
+    flex: 0 1 auto;
+    max-width: 78px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--color-primary-dark);
+}
+table.lines.lines--purchase col.col-price  { width: 196px; }
+table.lines.lines--purchase col.col-equals { width: 214px; }
+
+@media (max-width: 640px) {
+    table.lines tr.line-tax { border: none; padding: 0 4px; margin: -4px 0 12px; }
+    table.lines tr.line-tax td { display: block; padding: 0; border-bottom: none; }
+    table.lines tr.line-tax td::before { content: none; }
+    .line-tax__field { flex: 1 1 140px; justify-content: space-between; }
+    table.lines .line-tax__field input { width: 96px; }
+    .price-cell__unit { max-width: none; }
+}
 .addline-btn {
     margin-top: 10px;
     font-size: 13px;

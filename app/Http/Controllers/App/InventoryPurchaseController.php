@@ -12,6 +12,7 @@ use App\Models\Vendor;
 use App\Services\JournalService;
 use App\Services\MovingAverageCostingService;
 use App\Services\PaymentRecorderService;
+use App\Support\LineTax;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -72,8 +73,16 @@ class InventoryPurchaseController extends Controller
                     'qty_per_uom'    => (float) $line->qty_per_uom,
                     'base_unit_name' => $line->base_unit_name,
                     'unit_price'     => (float) $line->unit_price,
+                    // VAT % and Credit Withholding % of THIS line.
+                    'vat_rate'         => (float) $line->vat_rate,
+                    'withholding_rate' => (float) $line->withholding_rate,
                 ]),
                 'vat_rate'       => (float) $purchase->vat_rate,
+                'subtotal'       => (float) $purchase->subtotal,
+                'vat_amount'     => (float) $purchase->vat_amount,
+                'withholding_amount' => (float) $purchase->withholding_amount,
+                // `amount` = what we actually owe the supplier
+                // (subtotal + VAT - withholding).
                 'amount'         => (float) $purchase->amount,
                 'paid_amount'    => $purchase->paidAmount(),
                 'balance'        => $purchase->balance(),
@@ -106,13 +115,16 @@ class InventoryPurchaseController extends Controller
     {
         $data = $request->validated();
 
-        $subtotal = collect($data['lines'])->sum(
-            fn (array $line) => round($line['qty'] * $line['unit_price'], 2)
-        );
+        // VAT and Credit Withholding Tax are worked out per product
+        // line (see LineTax). `total` is what we actually owe the
+        // supplier: subtotal + VAT - withholding.
+        $tax = LineTax::compute($data['lines'], (float) ($data['vat_rate'] ?? 0));
 
-        $vatRate   = (float) ($data['vat_rate'] ?? 0);
-        $vatAmount = round($subtotal * $vatRate / 100, 2);
-        $total     = round($subtotal + $vatAmount, 2);
+        $subtotal    = $tax['subtotal'];
+        $vatRate     = $tax['effective_vat_rate'];
+        $vatAmount   = $tax['vat_amount'];
+        $withholding = $tax['withholding_amount'];
+        $total       = $tax['total'];
 
         $dueDate  = null;
         $schedule = [];
@@ -128,19 +140,20 @@ class InventoryPurchaseController extends Controller
 
         // Record, lines, ledger entries and opening payment commit
         // as one unit — see the same note in SaleController::store().
-        DB::transaction(function () use ($data, $subtotal, $vatRate, $vatAmount, $total, $dueDate, $schedule) {
+        DB::transaction(function () use ($data, $tax, $subtotal, $vatRate, $vatAmount, $withholding, $total, $dueDate, $schedule) {
             $purchase = InventoryPurchase::create([
                 'vendor_id'  => $data['vendor_id'],
                 'date'       => $data['date'],
                 'subtotal'   => $subtotal,
                 'vat_rate'   => $vatRate,
                 'vat_amount' => $vatAmount,
+                'withholding_amount' => $withholding,
                 'amount'     => $total,
                 'due_date'   => $dueDate,
                 'created_by' => auth()->id(),
             ]);
 
-            $this->createLines($purchase, $data['lines']);
+            $this->createLines($purchase, $data['lines'], $tax['lines']);
 
             $this->journal->postInventoryPurchaseInvoice($purchase);
 
@@ -169,14 +182,15 @@ class InventoryPurchaseController extends Controller
     {
         $data = $request->validated();
 
-        $subtotal = collect($data['lines'])->sum(
-            fn (array $line) => round($line['qty'] * $line['unit_price'], 2)
-        );
-        $vatRate   = (float) ($data['vat_rate'] ?? 0);
-        $vatAmount = round($subtotal * $vatRate / 100, 2);
-        $total     = round($subtotal + $vatAmount, 2);
+        $tax = LineTax::compute($data['lines'], (float) ($data['vat_rate'] ?? 0));
 
-        DB::transaction(function () use ($inventoryPurchase, $data, $subtotal, $vatRate, $vatAmount, $total) {
+        $subtotal    = $tax['subtotal'];
+        $vatRate     = $tax['effective_vat_rate'];
+        $vatAmount   = $tax['vat_amount'];
+        $withholding = $tax['withholding_amount'];
+        $total       = $tax['total'];
+
+        DB::transaction(function () use ($inventoryPurchase, $data, $tax, $subtotal, $vatRate, $vatAmount, $withholding, $total) {
             // Captured before anything changes — see the identical
             // note in SaleController::update().
             $oldItemIds = $inventoryPurchase->lines()->pluck('item_id')->filter()->unique();
@@ -190,13 +204,14 @@ class InventoryPurchaseController extends Controller
                 'subtotal'   => $subtotal,
                 'vat_rate'   => $vatRate,
                 'vat_amount' => $vatAmount,
+                'withholding_amount' => $withholding,
                 'amount'     => $total,
                 // Correctable now — see the note in the Update*Request.
                 'due_date'   => array_key_exists('due_date', $data) ? $data['due_date'] : $inventoryPurchase->due_date,
             ]);
 
             $inventoryPurchase->lines()->delete();
-            $this->createLines($inventoryPurchase, $data['lines']);
+            $this->createLines($inventoryPurchase, $data['lines'], $tax['lines']);
 
             $fresh = $inventoryPurchase->fresh();
             $this->journal->postInventoryPurchaseInvoice($fresh);
@@ -283,10 +298,15 @@ class InventoryPurchaseController extends Controller
 
     /**
      * @param  array<int, array{item_id:int, qty:float, uom?:string|null, qty_per_uom?:float|null, base_unit_name?:string|null, unit_price:float}>  $lines
+     * @param  list<array{line_total:float, vat_rate:float, vat_amount:float, withholding_rate:float, withholding_amount:float}>  $taxLines
+     *         The per-line VAT / Credit Withholding Tax from LineTax,
+     *         in the same order as $lines.
      */
-    private function createLines(InventoryPurchase $purchase, array $lines): void
+    private function createLines(InventoryPurchase $purchase, array $lines, array $taxLines): void
     {
-        foreach ($lines as $line) {
+        foreach (array_values($lines) as $i => $line) {
+            $tax = $taxLines[$i];
+
             $purchase->lines()->create([
                 'item_id'        => $line['item_id'],
                 'qty'            => $line['qty'],
@@ -294,7 +314,11 @@ class InventoryPurchaseController extends Controller
                 'qty_per_uom'    => $line['qty_per_uom'] ?? 1,
                 'base_unit_name' => $line['base_unit_name'] ?? 'unit',
                 'unit_price'     => $line['unit_price'],
-                'line_total'     => round($line['qty'] * $line['unit_price'], 2),
+                'line_total'     => $tax['line_total'],
+                'vat_rate'           => $tax['vat_rate'],
+                'vat_amount'         => $tax['vat_amount'],
+                'withholding_rate'   => $tax['withholding_rate'],
+                'withholding_amount' => $tax['withholding_amount'],
             ]);
 
             // Remember this UOM definition on the item itself, so the

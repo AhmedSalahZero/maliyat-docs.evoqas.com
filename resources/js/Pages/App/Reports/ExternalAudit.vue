@@ -3,7 +3,9 @@
 //  Maliyat Docs — Reports/ExternalAudit.vue
 //  Location: resources/js/Pages/App/Reports/ExternalAudit.vue
 //
-//  The Trial Balance, the Balance Sheet, and the Journal, behind one
+//  The Trial Balance, the Balance Sheet, the Journal and the Account
+//  Statement (one account's movements, with the customer / supplier
+//  each posting was about), behind one
 //  entry point. Trial Balance/Journal replaced the separate
 //  TrialBalance.vue and Journal.vue pages; see
 //  ReportController::externalAudit() for why they were merged, and
@@ -37,11 +39,17 @@ import { computed, ref, watch } from 'vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import ReportToolbar from '@/Components/App/ReportToolbar.vue';
+import ComboSelect from '@/Components/App/ComboSelect.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
 import { useMoneyFormat } from '@/composables/useMoneyFormat';
 
 const props = defineProps({
-    view:         { type: String, required: true },   // 'trial-balance' | 'balance-sheet' | 'journal'
+    view:         { type: String, required: true },   // 'trial-balance' | 'balance-sheet' | 'journal' | 'account-statement'
+    st_from:      { type: String, default: null },    // Account Statement range
+    st_to:        { type: String, default: null },
+    account_id:   { type: [Number, null], default: null },
+    accounts:     { type: Array,  default: null },    // only when view = account-statement: [{id, code, name, name_ar}]
+    accountStatement: { type: Object, default: null }, // only when an account is picked
     tb_from:      { type: String, required: true },
     tb_to:        { type: String, required: true },
     bs_as_of:     { type: String, required: true },
@@ -62,16 +70,22 @@ const tbTo   = ref(props.tb_to);
 const bsAsOf = ref(props.bs_as_of);
 const from   = ref(props.from);
 const to     = ref(props.to);
+const stFrom = ref(props.st_from);
+const stTo   = ref(props.st_to);
+const accountId = ref(props.account_id);
 
 // A redirect from one of the old URLs arrives with the other views'
 // filters still in the query string; keep the local refs in step
 // with whatever the server settled on.
-watch(() => [props.tb_from, props.tb_to, props.bs_as_of, props.from, props.to], ([tf, tt2, bs, f, t2]) => {
+watch(() => [props.tb_from, props.tb_to, props.bs_as_of, props.from, props.to, props.st_from, props.st_to, props.account_id], ([tf, tt2, bs, f, t2, sf, st, acc]) => {
     tbFrom.value = tf;
     tbTo.value   = tt2;
     bsAsOf.value = bs;
     from.value   = f;
     to.value     = t2;
+    stFrom.value = sf;
+    stTo.value   = st;
+    accountId.value = acc;
 });
 
 function go(view) {
@@ -80,23 +94,63 @@ function go(view) {
         ...(view === 'trial-balance' ? { tb_from: tbFrom.value, tb_to: tbTo.value } : {}),
         ...(view === 'balance-sheet' ? { bs_as_of: bsAsOf.value } : {}),
         ...(view === 'journal' ? { from: from.value, to: to.value } : {}),
+        ...(view === 'account-statement'
+            ? { st_from: stFrom.value, st_to: stTo.value, ...(accountId.value ? { account_id: accountId.value } : {}) }
+            : {}),
     }, { preserveState: true, preserveScroll: true, replace: true });
 }
 
 const isTrialBalance = computed(() => props.view === 'trial-balance');
 const isBalanceSheet = computed(() => props.view === 'balance-sheet');
 const isJournal       = computed(() => props.view === 'journal');
+const isAccountStatement = computed(() => props.view === 'account-statement');
+
+// The Account Statement has nothing to print or export until an
+// account has been picked.
+const showToolbar = computed(() => !isAccountStatement.value || !!props.accountStatement);
+
+// Picking an account reloads the statement for it.
+function pickAccount(id) {
+    accountId.value = id;
+    go('account-statement');
+}
+
+// "1100 – Accounts Receivable" in the dropdown. ComboSelect picks
+// name_ar by itself when the screen is in Arabic.
+const accountOptions = computed(() => (props.accounts ?? []).map((a) => ({
+    id: a.id,
+    name: `${a.code} – ${a.name}`,
+    name_ar: a.name_ar ? `${a.code} – ${a.name_ar}` : null,
+})));
+
+const statementAccountName = computed(() => {
+    const a = props.accountStatement?.account;
+    if (!a) return '';
+    return `${a.code} – ${locale.value === 'ar' && a.name_ar ? a.name_ar : a.name}`;
+});
+
+// A balance on the side it really falls: "EGP 1,250.00 Dr" / "Cr".
+function sideText(side) {
+    if (side === 'debit') return t('drShortLbl');
+    if (side === 'credit') return t('crShortLbl');
+    return '';
+}
+function balanceText(amount, side) {
+    return `${currency.value} ${money(amount)} ${sideText(side)}`.trim();
+}
 
 // ── Export links follow whichever view is showing ────────────────
 const excelHref = computed(() => {
     if (isTrialBalance.value) return route('app.reports.trial-balance.export', { tb_from: tbFrom.value, tb_to: tbTo.value, format: 'excel' });
     if (isBalanceSheet.value) return route('app.reports.balance-sheet.export', { bs_as_of: bsAsOf.value, format: 'excel' });
+    if (isAccountStatement.value) return route('app.reports.account-statement.export', { account_id: accountId.value, st_from: stFrom.value, st_to: stTo.value, format: 'excel' });
     return route('app.reports.journal.export', { from: from.value, to: to.value, format: 'excel' });
 });
 
 const pdfHref = computed(() => {
     if (isTrialBalance.value) return route('app.reports.trial-balance.export', { tb_from: tbFrom.value, tb_to: tbTo.value, format: 'pdf' });
     if (isBalanceSheet.value) return route('app.reports.balance-sheet.export', { bs_as_of: bsAsOf.value, format: 'pdf' });
+    if (isAccountStatement.value) return route('app.reports.account-statement.export', { account_id: accountId.value, st_from: stFrom.value, st_to: stTo.value, format: 'pdf' });
     return route('app.reports.journal.export', { from: from.value, to: to.value, format: 'pdf' });
 });
 
@@ -127,9 +181,12 @@ function lineAccountName(line) {
             <button type="button" :class="{ active: isJournal }" @click="go('journal')">
                 {{ t('report_journal') }}
             </button>
+            <button type="button" :class="{ active: isAccountStatement }" @click="go('account-statement')">
+                {{ t('report_account_statement') }}
+            </button>
         </div>
 
-        <ReportToolbar :excel-href="excelHref" :pdf-href="pdfHref" />
+        <ReportToolbar v-if="showToolbar" :excel-href="excelHref" :pdf-href="pdfHref" />
 
         <!-- ══════════════════════ TRIAL BALANCE ══════════════════════ -->
         <template v-if="isTrialBalance && props.trialBalance">
@@ -365,6 +422,103 @@ function lineAccountName(line) {
                 </div>
             </div>
         </template>
+
+        <!-- ═══════════════════════ ACCOUNT STATEMENT ═════════════════ -->
+        <template v-else-if="isAccountStatement">
+            <div class="report-filters no-print">
+                <div class="field field--account">
+                    <label for="ea-st-account">{{ t('accountNameLbl') }}</label>
+                    <ComboSelect
+                        id="ea-st-account"
+                        :model-value="accountId"
+                        :options="accountOptions"
+                        :allow-create="false"
+                        :inline="false"
+                        :placeholder="t('selectAccountPlaceholder')"
+                        @update:model-value="pickAccount"
+                    />
+                </div>
+                <div class="field">
+                    <label for="ea-st-from">{{ t('fromLbl') }}</label>
+                    <input id="ea-st-from" v-model="stFrom" type="date" class="inp-date" @change="go('account-statement')">
+                </div>
+                <div class="field">
+                    <label for="ea-st-to">{{ t('toLbl') }}</label>
+                    <input id="ea-st-to" v-model="stTo" type="date" class="inp-date" @change="go('account-statement')">
+                </div>
+            </div>
+
+            <div v-if="!props.accountStatement" class="empty">{{ t('selectAccountHint') }}</div>
+
+            <template v-else>
+                <h3 class="sub st-title">{{ statementAccountName }}</h3>
+
+                <!-- The four figures the auditor asked for -->
+                <div class="st-summary">
+                    <div class="st-summary__item">
+                        <span>{{ t('tbOpeningBalanceLbl') }}</span>
+                        <strong>{{ balanceText(props.accountStatement.opening_amount, props.accountStatement.opening_side) }}</strong>
+                    </div>
+                    <div class="st-summary__item">
+                        <span>{{ t('accDebitLbl') }}</span>
+                        <strong>{{ currency }} {{ money(props.accountStatement.total_debit) }}</strong>
+                    </div>
+                    <div class="st-summary__item">
+                        <span>{{ t('accCreditLbl') }}</span>
+                        <strong>{{ currency }} {{ money(props.accountStatement.total_credit) }}</strong>
+                    </div>
+                    <div class="st-summary__item st-summary__item--end">
+                        <span>{{ t('tbEndBalanceLbl') }}</span>
+                        <strong>{{ balanceText(props.accountStatement.closing_amount, props.accountStatement.closing_side) }}</strong>
+                    </div>
+                </div>
+
+                <div class="report-table-wrap card">
+                    <table class="report-table report-table--stack">
+                        <thead>
+                            <tr>
+                                <th>{{ t('dateLbl') }}</th>
+                                <th>{{ t('descriptionLbl') }}</th>
+                                <th>{{ t('customerSupplierLbl') }}</th>
+                                <th class="num">{{ t('accDebitLbl') }}</th>
+                                <th class="num">{{ t('accCreditLbl') }}</th>
+                                <th class="num">{{ t('balanceLbl') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="st-brought-forward">
+                                <td :data-label="t('dateLbl')" class="stack-primary">{{ props.accountStatement.from }}</td>
+                                <td :data-label="t('descriptionLbl')">{{ t('broughtForwardLbl') }}</td>
+                                <td :data-label="t('customerSupplierLbl')">—</td>
+                                <td class="num" :data-label="t('accDebitLbl')">—</td>
+                                <td class="num" :data-label="t('accCreditLbl')">—</td>
+                                <td class="num" :data-label="t('balanceLbl')"><strong>{{ balanceText(props.accountStatement.opening_amount, props.accountStatement.opening_side) }}</strong></td>
+                            </tr>
+                            <tr v-for="(row, idx) in props.accountStatement.rows" :key="idx">
+                                <td :data-label="t('dateLbl')" class="stack-primary">{{ row.date }}</td>
+                                <td :data-label="t('descriptionLbl')">
+                                    {{ row.memo }}
+                                    <span v-if="row.is_reversal" class="badge badge--muted">{{ t('reversalLbl') }}</span>
+                                </td>
+                                <td :data-label="t('customerSupplierLbl')">{{ row.party || '—' }}</td>
+                                <td class="num" :data-label="t('accDebitLbl')">{{ row.debit > 0 ? `${currency} ${money(row.debit)}` : '—' }}</td>
+                                <td class="num" :data-label="t('accCreditLbl')">{{ row.credit > 0 ? `${currency} ${money(row.credit)}` : '—' }}</td>
+                                <td class="num" :data-label="t('balanceLbl')"><strong>{{ balanceText(row.balance_amount, row.balance_side) }}</strong></td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="3" class="grandtotal-label">{{ t('totalBalanceLbl') }}</td>
+                                <td class="num"><strong>{{ currency }} {{ money(props.accountStatement.total_debit) }}</strong></td>
+                                <td class="num"><strong>{{ currency }} {{ money(props.accountStatement.total_credit) }}</strong></td>
+                                <td class="num"><strong>{{ balanceText(props.accountStatement.closing_amount, props.accountStatement.closing_side) }}</strong></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <div v-if="props.accountStatement.rows.length === 0" class="empty">{{ t('report_no_entries') }}</div>
+            </template>
+        </template>
     </AppLayout>
 </template>
 
@@ -421,5 +575,28 @@ function lineAccountName(line) {
     margin-inline-start: 6px;
 }
 
+/* Account Statement */
+.field--account { min-width: min(100%, 22rem); flex: 1 1 22rem; }
+.st-title { margin-top: 4px; }
+.st-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+}
+.st-summary__item {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.st-summary__item span { font-size: 11.5px; color: var(--color-text-muted); }
+.st-summary__item strong { font-family: var(--font-mono); font-size: 14.5px; color: var(--color-text-primary); }
+.st-summary__item--end strong { color: var(--color-primary-dark); }
+.st-brought-forward { color: var(--color-text-muted); font-style: italic; }
+@media (max-width: 760px) { .st-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .grandtotal-label { display: none; } }
 </style>

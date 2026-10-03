@@ -135,8 +135,10 @@ class DashboardController extends Controller
             ->selectRaw("
                 COALESCE(SUM(CASE WHEN direction = 'in'  AND date BETWEEN ? AND ? AND is_opening_balance = 0 THEN amount END), 0) AS period_in,
                 COALESCE(SUM(CASE WHEN direction = 'out' AND date BETWEEN ? AND ? AND is_opening_balance = 0 THEN amount END), 0) AS period_out,
-                COALESCE(SUM(CASE WHEN direction = 'in'  THEN amount ELSE -amount END), 0) AS cash_balance
-            ", [$from, $to, $from, $to])
+                COALESCE(SUM(CASE WHEN direction = 'in'  THEN amount ELSE -amount END), 0) AS cash_balance,
+                COALESCE(SUM(CASE WHEN date < ? OR (is_opening_balance = 1 AND date BETWEEN ? AND ?)
+                                  THEN (CASE WHEN direction = 'in' THEN amount ELSE -amount END) END), 0) AS beginning_cash
+            ", [$from, $to, $from, $to, $from, $from, $to])
             ->first();
 
         $in  = (float) ($rows->period_in ?? 0);
@@ -151,6 +153,10 @@ class DashboardController extends Controller
             // moved in/out of the payments table. Naming it "cash
             // in/out" everywhere — prop, blade, translation key —
             // keeps that honest at a glance.
+            // Beginning Cash & Banks: the money held when this period
+            // started (same definition as the Cash Flow report's first
+            // card — see ReportDataService::cashFlow()).
+            'beginning_cash' => round((float) ($rows->beginning_cash ?? 0), 2),
             'total_cash_in'  => round($in, 2),
             'total_cash_out' => round($out, 2),
             'net_cash_flow'  => round($in - $out, 2),

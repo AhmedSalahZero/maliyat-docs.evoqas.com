@@ -3,6 +3,7 @@
 namespace App\Services\Reports;
 
 use App\Models\Account;
+use App\Models\Custody;
 use App\Models\Customer;
 use App\Models\Expense;
 use App\Models\EquipmentPurchase;
@@ -21,6 +22,7 @@ use App\Models\Sale;
 use App\Models\SaleLine;
 use App\Models\Vendor;
 use App\Support\FinancialRules;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -371,9 +373,23 @@ class ReportDataService
             $entries->push([
                 'date' => $sale->date->toDateString(),
                 'type' => $sale->is_opening_balance ? 'opening_balance' : 'sale',
-                'ref' => $sale->is_opening_balance ? 'Opening Balance' : "Sale #{$sale->id}",
-                'debit' => (float) $sale->amount, 'credit' => 0,
+                'ref' => $sale->is_opening_balance ? 'Opening Balance' : 'Sale',
+                // The invoice as it reads on paper (subtotal + VAT) —
+                // the Debit Withholding Tax the customer keeps back
+                // is shown right below as its own credit line, so the
+                // statement tells the whole story and the balance is
+                // still exactly what the customer really owes.
+                'debit' => $sale->grossAmount(), 'credit' => 0,
             ]);
+
+            if ((float) $sale->withholding_amount > 0) {
+                $entries->push([
+                    'date' => $sale->date->toDateString(),
+                    'type' => 'withholding_tax',
+                    'ref'  => 'Withholding Tax — Sale',
+                    'debit' => 0, 'credit' => (float) $sale->withholding_amount,
+                ]);
+            }
 
             foreach ($sale->payments as $payment) {
                 // Credit USED on an invoice is not new money: the
@@ -386,7 +402,7 @@ class ReportDataService
 
                 $entries->push([
                     'date' => $payment->date->toDateString(), 'type' => 'payment',
-                    'ref' => "Payment #{$payment->id}", 'debit' => 0, 'credit' => (float) $payment->amount,
+                    'ref' => 'Payment', 'debit' => 0, 'credit' => (float) $payment->amount,
                 ]);
             }
         });
@@ -410,7 +426,7 @@ class ReportDataService
                 $entries->push([
                     'date'   => $payment->date->toDateString(),
                     'type'   => $settledOnSpot ? 'settled_on_spot' : 'receipt',
-                    'ref'    => $payment->note ?: ($payment->direction === 'in' ? "Receipt #{$payment->id}" : "Refund #{$payment->id}"),
+                    'ref'    => $payment->note ?: ($payment->direction === 'in' ? 'Receipt' : 'Refund'),
                     'debit'  => $settledOnSpot ? $amount : 0,
                     'credit' => $amount,
                 ]);
@@ -471,6 +487,18 @@ class ReportDataService
     }
 
     /**
+     * Plain-words name of a bill type for the supplier statement
+     * ("Inventory purchase", not "Inventory_purchase #8841"). The
+     * internal record number is deliberately NOT shown: it is shared
+     * by every company on the system, so it jumps around and means
+     * nothing to the person reading the statement.
+     */
+    private function billLabel(string $label): string
+    {
+        return ucfirst(str_replace('_', ' ', $label));
+    }
+
+    /**
      * @return array{entries: Collection, balance: float, opening_balance: float}
      */
     public function supplierStatement(?Vendor $vendor, ?string $from = null, ?string $to = null): array
@@ -484,17 +512,34 @@ class ReportDataService
         $addBills = function ($bills, string $label) use (&$entries) {
             foreach ($bills as $bill) {
                 $isOpening = (bool) ($bill->is_opening_balance ?? false);
+                // Only inventory purchases can carry a Credit
+                // Withholding Tax. The bill is shown as it reads on
+                // paper (subtotal + VAT) and the withholding we keep
+                // back is its own line right below, so the balance is
+                // still exactly what we really owe the supplier.
+                $withholding = (float) ($bill->withholding_amount ?? 0);
+                $gross = $withholding > 0 ? $bill->grossAmount() : (float) $bill->amount;
+
                 $entries->push([
                     'date' => $bill->date->toDateString(),
                     'type' => $isOpening ? 'opening_balance' : $label,
-                    'ref' => $isOpening ? 'Opening Balance' : ucfirst($label)." #{$bill->id}",
-                    'debit' => 0, 'credit_owed' => (float) $bill->amount,
+                    'ref' => $isOpening ? 'Opening Balance' : $this->billLabel($label),
+                    'debit' => 0, 'credit_owed' => $gross,
                 ]);
+
+                if ($withholding > 0) {
+                    $entries->push([
+                        'date' => $bill->date->toDateString(),
+                        'type' => 'withholding_tax',
+                        'ref'  => 'Withholding Tax — '.$this->billLabel($label),
+                        'debit' => $withholding, 'credit_owed' => 0,
+                    ]);
+                }
 
                 foreach ($bill->payments as $payment) {
                     $entries->push([
                         'date' => $payment->date->toDateString(), 'type' => 'payment',
-                        'ref' => "Payment #{$payment->id}", 'debit' => (float) $payment->amount, 'credit_owed' => 0,
+                        'ref' => 'Payment', 'debit' => (float) $payment->amount, 'credit_owed' => 0,
                     ]);
                 }
             }
@@ -518,7 +563,7 @@ class ReportDataService
             ->each(fn (Payment $payment) => $entries->push([
                 'date'  => $payment->date->toDateString(),
                 'type'  => 'settled_on_spot',
-                'ref'   => $payment->note ?: ($payment->direction === 'out' ? "Payment #{$payment->id}" : "Refund #{$payment->id}"),
+                'ref'   => $payment->note ?: ($payment->direction === 'out' ? 'Payment' : 'Refund'),
                 'debit' => (float) $payment->amount,
                 'credit_owed' => (float) $payment->amount,
             ]));
@@ -976,6 +1021,26 @@ class ReportDataService
         $cashIn  = (float) Payment::query()->whereBetween('date', [$from, $to])->where('direction', 'in')->where('is_opening_balance', false)->where('method', '!=', $credit)->sum('amount');
         $cashOut = (float) Payment::query()->whereBetween('date', [$from, $to])->where('direction', 'out')->where('is_opening_balance', false)->where('method', '!=', $credit)->sum('amount');
 
+        // Beginning Cash & Banks — all the money the company held on
+        // the From date, before any movement of this period: every
+        // payment dated before $from (in minus out, every method —
+        // cash, bank, cards, wallets — the same basis as Cash in and
+        // Cash out above), INCLUDING the cash and bank balances typed
+        // in as the opening balance.
+        //
+        // An opening balance dated INSIDE the period is a starting
+        // position too, not money earned this period (it is left out
+        // of Cash in above), so it is counted here — otherwise the
+        // equation  Beginning + Cash in - Cash out = Current  would
+        // quietly miss it for a company that started inside the range.
+        $beginningCash = round((float) Payment::query()
+            ->where('method', '!=', $credit)
+            ->where(fn ($q) => $q
+                ->where('date', '<', $from)
+                ->orWhere(fn ($q2) => $q2->where('is_opening_balance', true)->whereBetween('date', [$from, $to])))
+            ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) AS net")
+            ->value('net'), 2);
+
         $movements = Payment::query()
             ->whereBetween('date', [$from, $to])
             ->where('is_opening_balance', false)
@@ -1018,9 +1083,13 @@ class ReportDataService
 
         return [
             'from' => $from, 'to' => $to,
+            // Beginning Cash & Banks + Cash in - Cash out = Current
+            // Cash & Banks (the money held on the To date).
+            'beginning_cash' => $beginningCash,
             'cash_in'   => $cashIn,
             'cash_out'  => $cashOut,
             'net_flow'  => round($cashIn - $cashOut, 2),
+            'current_cash' => round($beginningCash + $cashIn - $cashOut, 2),
             'by_method' => $byMethod,
             'movements' => $movements,
         ];
@@ -1288,6 +1357,189 @@ class ReportDataService
                     'credit' => (float) $line->credit,
                 ])->values(),
             ]);
+    }
+
+    /**
+     * Account Statement — one account's movements in a date range:
+     * Opening Balance, every posting (Debit / Credit, with a running
+     * balance and the customer / supplier it was about), and End
+     * Balance. Meant for the company's auditor (External Audit tab).
+     *
+     * It reads the same posted journal lines as trialBalance(), with
+     * the same rules (opening = everything strictly before $from,
+     * netted; end = opening + debits - credits), so for any account
+     * the four figures here equal that account's row on the Trial
+     * Balance. ExternalAuditAccountStatementTest asserts exactly that.
+     *
+     * Balances are shown on the side they really fall on (Debit or
+     * Credit), never forced onto the account's "textbook" side.
+     *
+     * @return array{
+     *     account: array<string, mixed>, from: string, to: string,
+     *     opening_debit: float, opening_credit: float,
+     *     total_debit: float, total_credit: float,
+     *     closing_debit: float, closing_credit: float,
+     *     opening_amount: float, opening_side: ?string,
+     *     closing_amount: float, closing_side: ?string,
+     *     rows: list<array<string, mixed>>
+     * }
+     */
+    public function accountStatement(Account $account, string $from, string $to): array
+    {
+        $lines = fn () => JournalLine::query()
+            ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
+            ->where('journal_lines.account_id', $account->id);
+
+        $before = $lines()
+            ->where('journal_entries.date', '<', $from)
+            ->selectRaw('COALESCE(SUM(journal_lines.debit), 0) as total_debit, COALESCE(SUM(journal_lines.credit), 0) as total_credit')
+            ->first();
+
+        $openingNet = round((float) $before->total_debit - (float) $before->total_credit, 2);
+
+        $movements = $lines()
+            ->whereBetween('journal_entries.date', [$from, $to])
+            ->orderBy('journal_entries.date')
+            ->orderBy('journal_entries.id')
+            ->orderBy('journal_lines.id')
+            ->get([
+                'journal_lines.id as line_id', 'journal_lines.debit', 'journal_lines.credit',
+                'journal_entries.date', 'journal_entries.memo', 'journal_entries.reverses_id',
+                'journal_entries.source_type', 'journal_entries.source_id',
+            ]);
+
+        $parties = $this->journalParties($movements);
+
+        $side = fn (float $net): ?string => $net > 0 ? 'debit' : ($net < 0 ? 'credit' : null);
+
+        $running = $openingNet;
+        $totalDebit = 0.0;
+        $totalCredit = 0.0;
+
+        $rows = $movements->map(function ($m) use (&$running, &$totalDebit, &$totalCredit, $parties, $side) {
+            $debit  = round((float) $m->debit, 2);
+            $credit = round((float) $m->credit, 2);
+
+            $running = round($running + $debit - $credit, 2);
+            $totalDebit += $debit;
+            $totalCredit += $credit;
+
+            return [
+                'date'          => substr((string) $m->date, 0, 10),
+                'memo'          => $m->memo,
+                'party'         => $parties["{$m->source_type}:{$m->source_id}"] ?? null,
+                'is_reversal'   => (bool) $m->reverses_id,
+                'debit'         => $debit,
+                'credit'        => $credit,
+                'balance_amount' => abs($running),
+                'balance_side'  => $side($running),
+            ];
+        })->values()->all();
+
+        $totalDebit  = round($totalDebit, 2);
+        $totalCredit = round($totalCredit, 2);
+        $closingNet  = round($openingNet + $totalDebit - $totalCredit, 2);
+
+        return [
+            'account' => [
+                'id' => $account->id, 'code' => $account->code,
+                'name' => $account->name, 'name_ar' => $account->name_ar, 'type' => $account->type,
+            ],
+            'from' => $from,
+            'to'   => $to,
+
+            'opening_debit'  => $openingNet > 0 ? $openingNet : 0.0,
+            'opening_credit' => $openingNet < 0 ? -$openingNet : 0.0,
+            'opening_amount' => abs($openingNet),
+            'opening_side'   => $side($openingNet),
+
+            'total_debit'  => $totalDebit,
+            'total_credit' => $totalCredit,
+
+            'closing_debit'  => $closingNet > 0 ? $closingNet : 0.0,
+            'closing_credit' => $closingNet < 0 ? -$closingNet : 0.0,
+            'closing_amount' => abs($closingNet),
+            'closing_side'   => $side($closingNet),
+
+            'rows' => $rows,
+        ];
+    }
+
+    /**
+     * Who each posting was about — the customer or supplier behind
+     * the document (sale, bill, payment, ...) that produced a journal
+     * entry. Loaded one query per document type for the whole list,
+     * never one per row.
+     *
+     * @param  Collection<int, object>  $movements  rows with source_type / source_id
+     * @return array<string, string>  "SourceClass:id" => name; absent when there is nobody to name
+     */
+    private function journalParties(Collection $movements): array
+    {
+        $byType = $movements
+            ->filter(fn ($m) => $m->source_type && $m->source_id)
+            ->groupBy('source_type')
+            ->map(fn ($group) => $group->pluck('source_id')->unique()->values()->all());
+
+        $names = [];
+        $put = function (string $type, int $id, ?string $name) use (&$names) {
+            if ($name !== null && $name !== '') {
+                $names["{$type}:{$id}"] = $name;
+            }
+        };
+
+        foreach ($byType as $type => $ids) {
+            switch ($type) {
+                case Sale::class:
+                    Sale::with('customer:id,name')->whereIn('id', $ids)->get()
+                        ->each(fn (Sale $s) => $put($type, $s->id, $s->customer?->name));
+                    break;
+
+                case Expense::class:
+                case InventoryPurchase::class:
+                case EquipmentPurchase::class:
+                    $type::with('vendor:id,name')->whereIn('id', $ids)->get()
+                        ->each(fn ($b) => $put($type, $b->id, $b->vendor?->name));
+                    break;
+
+                case Payment::class:
+                    Payment::with([
+                        'customer:id,name',
+                        'vendor:id,name',
+                        'payable' => fn (MorphTo $morph) => $morph->morphWith([
+                            Sale::class              => ['customer:id,name'],
+                            Expense::class           => ['vendor:id,name'],
+                            InventoryPurchase::class => ['vendor:id,name'],
+                            EquipmentPurchase::class => ['vendor:id,name'],
+                        ]),
+                    ])->whereIn('id', $ids)->get()->each(function (Payment $p) use ($put, $type) {
+                        $payable = $p->payable;
+
+                        $name = match (true) {
+                            $payable instanceof Sale => $payable->customer?->name,
+                            $payable !== null        => $payable->vendor?->name,
+                            default                  => null,
+                        };
+
+                        // A receipt / payment with no document behind
+                        // it is tagged straight to the party.
+                        $put($type, $p->id, $name ?? $p->customer?->name ?? $p->vendor?->name);
+                    });
+                    break;
+
+                case OwnerTransaction::class:
+                    OwnerTransaction::with('owner:id,name')->whereIn('id', $ids)->get()
+                        ->each(fn ($tx) => $put($type, $tx->id, $tx->owner?->name));
+                    break;
+
+                case Custody::class:
+                    Custody::with('holder:id,name')->whereIn('id', $ids)->get()
+                        ->each(fn ($c) => $put($type, $c->id, $c->holder?->name));
+                    break;
+            }
+        }
+
+        return $names;
     }
 
     /**

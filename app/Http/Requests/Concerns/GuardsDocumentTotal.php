@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Concerns;
 
 use App\Support\FinancialRules;
+use App\Support\LineTax;
 use Illuminate\Contracts\Validation\Validator;
 
 // ══════════════════════════════════════════════════════════════════
@@ -38,6 +39,40 @@ trait GuardsDocumentTotal
             ->sum(fn ($line) => round(
                 (float) ($line['qty'] ?? 0) * (float) ($line['unit_price'] ?? 0), 2
             )), 2);
+    }
+
+    /**
+     * VAT and Withholding Tax worked out per product line exactly the
+     * way the controller will (see LineTax), so validation and the
+     * saved invoice can never disagree. A line with no VAT % of its
+     * own uses the invoice-level `vat_rate`, if one was sent.
+     *
+     * @return array{subtotal: float, vat_amount: float, withholding_amount: float, total: float}
+     */
+    protected function documentTaxTotals(string $key = 'lines'): array
+    {
+        return LineTax::compute(
+            array_values((array) $this->input($key, [])),
+            (float) ($this->input('vat_rate') ?? 0)
+        );
+    }
+
+    /**
+     * Reject an invoice whose total (subtotal + VAT, before any
+     * withholding is taken off) is past what any money column in
+     * this schema can hold.
+     *
+     * @param  array{subtotal: float, vat_amount: float}  $tax  from documentTaxTotals()
+     */
+    protected function rejectGrossAboveCeiling(Validator $validator, array $tax, string $field = 'lines'): void
+    {
+        $gross = round($tax['subtotal'] + $tax['vat_amount'], 2);
+
+        if ($gross > FinancialRules::MAX_AMOUNT) {
+            $validator->errors()->add($field, __('errors.total_too_large', [
+                'max' => number_format(FinancialRules::MAX_AMOUNT, 2),
+            ]));
+        }
     }
 
     /**

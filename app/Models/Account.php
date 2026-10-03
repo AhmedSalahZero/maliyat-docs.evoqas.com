@@ -19,12 +19,20 @@ class Account extends Model
     public const BANK            = '1010';
     public const ACCOUNTS_RECEIVABLE = '1100';
     public const VAT_RECEIVABLE  = '1150';
+    // Withholding Tax on SALES (a "debit" withholding): the customer
+    // keeps part of the invoice and pays it to the tax authority on
+    // our behalf — we hold a claim for it. See JournalService::postSaleInvoice().
+    public const WITHHOLDING_TAX_RECEIVABLE = '1160';
     public const INVENTORY_ASSET = '1200';
     public const EQUIPMENT_ASSET = '1300';
     public const ACCUMULATED_DEPRECIATION = '1310';
     public const CUSTODY_ADVANCES = '1400';
     public const ACCOUNTS_PAYABLE = '2000';
     public const VAT_PAYABLE     = '2100';
+    // Withholding Tax on PURCHASES (a "credit" withholding): we keep
+    // part of what we owe the supplier and must pay it to the tax
+    // authority. See JournalService::postInventoryPurchaseInvoice().
+    public const WITHHOLDING_TAX_PAYABLE = '2150';
     // Production Labor Accrued — a clearing account. Production
     // Orders credit it (labor cost applied to inventory value);
     // the real payroll Expense (checked "Production Labor") debits
@@ -56,12 +64,14 @@ class Account extends Model
         self::BANK              => ['Bank Account',            'حساب بنكي',            'asset'],
         self::ACCOUNTS_RECEIVABLE => ['Accounts Receivable',   'ذمم مدينة (عملاء)',    'asset'],
         self::VAT_RECEIVABLE    => ['VAT Receivable (Input)',  'ضريبة مدخلات مستحقة',  'asset'],
+        self::WITHHOLDING_TAX_RECEIVABLE => ['Withholding Tax Receivable (Debit)', 'ضريبة خصم من المنبع مستحقة (مدينة)', 'asset'],
         self::INVENTORY_ASSET   => ['Inventory (Stock)',       'مخزون البضاعة',        'asset'],
         self::EQUIPMENT_ASSET   => ['Equipment & Vehicles',    'معدات ومركبات',        'asset'],
         self::ACCUMULATED_DEPRECIATION => ['Accumulated Depreciation', 'مجمع الإهلاك', 'asset'],
         self::CUSTODY_ADVANCES  => ['Custody Advances',        'عهد نقدية',            'asset'],
         self::ACCOUNTS_PAYABLE  => ['Accounts Payable',        'ذمم دائنة (موردون)',   'liability'],
         self::VAT_PAYABLE       => ['VAT Payable (Output)',    'ضريبة مخرجات مستحقة',  'liability'],
+        self::WITHHOLDING_TAX_PAYABLE => ['Withholding Tax Payable (Credit)', 'ضريبة خصم من المنبع مستحقة الدفع (دائنة)', 'liability'],
         self::PRODUCTION_LABOR_ACCRUED => ['Production Labor Accrued', 'عمالة إنتاج مستحقة', 'liability'],
         self::CUSTOMER_CREDITS  => ['Customer Credits (Advances)', 'أرصدة دائنة للعملاء (دفعات مقدمة)', 'liability'],
         self::OWNERS_EQUITY     => ["Owner's Equity",          'حقوق الملكية',         'equity'],

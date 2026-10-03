@@ -52,6 +52,7 @@ const props = defineProps({
     // Row 2 — Cash position. All five come from the payments ledger
     // / open-balance counts — a different, cash-basis source, kept
     // in its own row so it's never mistaken for the P&L row above.
+    beginning_cash:      { type: Number, default: 0 },
     total_cash_in:       { type: Number, default: 0 },
     total_cash_out:      { type: Number, default: 0 },
     cash_balance:        { type: Number, default: 0 },
@@ -246,6 +247,10 @@ const panels = computed(() => [
 
         <!-- ── 2. Cash position — one row, one source (the payments ledger) ── -->
         <div class="stats-row">
+            <div class="stat-box">
+                <div class="stat-box__label">{{ t('home_beginning_cash') }}</div>
+                <div class="stat-box__value">{{ money(props.beginning_cash) }}</div>
+            </div>
             <div class="stat-box">
                 <div class="stat-box__label">{{ t('home_cash_in') }}</div>
                 <div class="stat-box__value text-success">{{ money(props.total_cash_in) }}</div>

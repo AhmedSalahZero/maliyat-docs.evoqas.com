@@ -16,7 +16,7 @@ class Sale extends Model
 
     protected $fillable = [
         'company_id', 'customer_id', 'sales_channel_id', 'date', 'subtotal',
-        'vat_rate', 'vat_amount', 'amount', 'due_date', 'created_by',
+        'vat_rate', 'vat_amount', 'withholding_amount', 'amount', 'due_date', 'created_by',
         'is_opening_balance',
     ];
 
@@ -35,8 +35,17 @@ class Sale extends Model
         'subtotal' => 'decimal:2',
         'vat_rate' => 'decimal:2',
         'vat_amount' => 'decimal:2',
+        'withholding_amount' => 'decimal:2',
         'amount' => 'decimal:2',
     ];
+
+    // IMPORTANT — `amount` is what the customer actually OWES:
+    //     subtotal + VAT - withholding_amount.
+    // withholding_amount is the Debit Withholding Tax: the part of
+    // the invoice the customer keeps back and pays to the tax
+    // authority for us. Every balance / payment / open-invoice check
+    // in the app reads `amount`, so they all already treat that
+    // withheld part as settled. See App\Support\LineTax.
 
     public function customer(): BelongsTo
     {
@@ -61,6 +70,17 @@ class Sale extends Model
     public function installments(): MorphMany
     {
         return $this->morphMany(Installment::class, 'payable')->orderBy('sequence');
+    }
+
+    /**
+     * The invoice total BEFORE the customer's withholding is taken
+     * off — what the invoice says on paper (subtotal + VAT). The
+     * customer statement shows this as the invoice, then the
+     * withholding as its own credit line.
+     */
+    public function grossAmount(): float
+    {
+        return round((float) $this->amount + (float) $this->withholding_amount, 2);
     }
 
     public function paidAmount(): float

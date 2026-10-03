@@ -4,6 +4,7 @@ namespace App\Http\Controllers\App;
 
 use App\Http\Controllers\Concerns\ReadsReportDates;
 use App\Http\Controllers\Controller;
+use App\Models\Account;
 use App\Models\Customer;
 use App\Models\Item;
 use App\Models\Owner;
@@ -209,7 +210,9 @@ class ReportController extends Controller
      * (?tb_from=&tb_to=, "this year to date" by default), the
      * Balance Sheet is a single date (?bs_as_of=, today by default —
      * it's a snapshot, not a period), and the Journal is its own
-     * range (?from=&to=, "this month" by default). Sharing filters
+     * range (?from=&to=, "this month" by default), and the Account
+     * Statement is an account plus a range (?account_id=&st_from=&st_to=,
+     * "this year to date" by default). Sharing filters
      * between them would misrepresent whichever ones weren't showing.
      */
     public function externalAudit(Request $request): Response
@@ -217,6 +220,7 @@ class ReportController extends Controller
         $view = match ($request->string('view')->value()) {
             'balance-sheet' => 'balance-sheet',
             'journal'       => 'journal',
+            'account-statement' => 'account-statement',
             default         => 'trial-balance',
         };
 
@@ -224,8 +228,27 @@ class ReportController extends Controller
         $bsAsOf = $this->reportDate($request, 'bs_as_of') ?? now()->toDateString();
         [$from, $to] = $this->reports->monthRange(...$this->reportRange($request));
 
+        // Account Statement — one account over a range, "this year to
+        // date" by default like the Trial Balance it reconciles to.
+        // The account comes from ?account_id=; one that does not exist
+        // in this company (Account is company-scoped) is simply not
+        // selected.
+        [$stFrom, $stTo] = $this->reports->yearRange(...$this->reportRange($request, 'st_from', 'st_to'));
+        $statementAccount = $view === 'account-statement' && $request->filled('account_id')
+            ? Account::query()->find($request->integer('account_id'))
+            : null;
+
         return Inertia::render('App/Reports/ExternalAudit', [
             'view'    => $view,
+            'st_from' => $stFrom,
+            'st_to'   => $stTo,
+            'account_id' => $statementAccount?->id,
+            'accounts' => $view === 'account-statement'
+                ? Account::query()->orderBy('code')->get(['id', 'code', 'name', 'name_ar'])
+                : null,
+            'accountStatement' => $statementAccount
+                ? $this->reports->accountStatement($statementAccount, $stFrom, $stTo)
+                : null,
             'tb_from' => $tbFrom,
             'tb_to'   => $tbTo,
             'bs_as_of' => $bsAsOf,

@@ -179,7 +179,11 @@ const editingSale = ref(null); // the full sale row being edited, or null when c
 // ever picked) behaves: qty is simply read as-is, same as before
 // this feature existed.
 function newSaleLine() {
-    return { item_id: null, qty: null, uom: 'unit', qty_per_uom: 1, base_unit_name: 'unit', unit_price: null };
+    return {
+        item_id: null, qty: null, uom: 'unit', qty_per_uom: 1, base_unit_name: 'unit', unit_price: null,
+        // VAT % and Debit Withholding Tax % of THIS line.
+        vat_rate: 0, withholding_rate: 0,
+    };
 }
 
 const defaultFormState = () => ({
@@ -187,7 +191,6 @@ const defaultFormState = () => ({
     sales_channel_id: defaultSalesChannelId(),
     date: todayIso(),
     lines: [newSaleLine()],
-    vat_rate: 0,
     mode: 'now',
     method: 'cash',
     payment_channel_id: null,
@@ -199,11 +202,32 @@ const defaultFormState = () => ({
 
 const form = useForm(defaultFormState());
 
-const subtotal = computed(() =>
-    form.lines.reduce((sum, line) => sum + (Number(line.qty) || 0) * (Number(line.unit_price) || 0), 0)
-);
-const vatAmount = computed(() => subtotal.value * (Number(form.vat_rate) || 0) / 100);
-const total = computed(() => subtotal.value + vatAmount.value);
+// ── VAT and Debit Withholding Tax — per product line ─────────────
+// Same rules as the server (App\Support\LineTax):
+//   line net         = qty x unit price
+//   line VAT         = line net x VAT %
+//   line withholding = line net x Withholding %   (before VAT)
+// Each line is rounded on its own, and the invoice is the sum of the
+// rounded lines. `total` is what the customer actually owes:
+// subtotal + VAT - withholding.
+const r2 = (n) => Math.round((Number(n) + 1e-9) * 100) / 100;
+const lineNet = (line) => r2((Number(line.qty) || 0) * (Number(line.unit_price) || 0));
+const lineVat = (line) => r2(lineNet(line) * (Number(line.vat_rate) || 0) / 100);
+const lineWithholding = (line) => r2(lineNet(line) * (Number(line.withholding_rate) || 0) / 100);
+
+const subtotal = computed(() => r2(form.lines.reduce((sum, line) => sum + lineNet(line), 0)));
+const vatAmount = computed(() => r2(form.lines.reduce((sum, line) => sum + lineVat(line), 0)));
+const withholdingAmount = computed(() => r2(form.lines.reduce((sum, line) => sum + lineWithholding(line), 0)));
+const grossTotal = computed(() => r2(subtotal.value + vatAmount.value));
+const total = computed(() => r2(grossTotal.value - withholdingAmount.value));
+
+// The small line under each product: what its VAT and withholding come to.
+function lineTaxText(line) {
+    const parts = [];
+    if (lineVat(line) > 0) parts.push(`${t('vatAmountLbl')} ${currency.value} ${money(lineVat(line))}`);
+    if (lineWithholding(line) > 0) parts.push(`${t('lineWhtAmtLbl')} ${currency.value} ${money(lineWithholding(line))}`);
+    return parts.join(' · ');
+}
 
 const installmentSchedule = computed(() => {
     if (form.mode !== 'installment' || total.value <= 0) return [];
@@ -223,7 +247,12 @@ const installmentSchedule = computed(() => {
 });
 
 function addLine() {
-    form.lines.push(newSaleLine());
+    // A new line starts with the same VAT % as the line above it
+    // (most invoices use one rate); Withholding % always starts at 0.
+    const previous = form.lines[form.lines.length - 1];
+    const line = newSaleLine();
+    if (previous) line.vat_rate = Number(previous.vat_rate) || 0;
+    form.lines.push(line);
 }
 
 function removeLine(index) {
@@ -335,9 +364,10 @@ function startEdit(sale) {
             qty_per_uom: Number(l.qty_per_uom) || 1,
             base_unit_name: l.base_unit_name ?? 'unit',
             unit_price: l.unit_price,
+            vat_rate: Number(l.vat_rate) || 0,
+            withholding_rate: Number(l.withholding_rate) || 0,
         }))
         : [newSaleLine()];
-    form.vat_rate = sale.vat_rate;
     form.due_date = editingSale.value?.due_date ?? null;
     form.clearErrors();
     scrollToForm(formCard);
@@ -397,7 +427,6 @@ function doSubmitEdit(saleId) {
         customer_id: data.customer_id,
         sales_channel_id: data.sales_channel_id,
         date: data.date,
-        vat_rate: data.vat_rate,
         lines: data.lines.filter((line) => Number(line.qty) > 0 && line.unit_price !== null && line.unit_price !== ''),
             due_date: data.due_date || null,
     })).put(route('app.sales.update', saleId), {
@@ -449,8 +478,8 @@ function draftSnapshot() {
         lines: form.lines.map((l) => ({
             item_id: l.item_id, qty: l.qty, uom: l.uom, qty_per_uom: l.qty_per_uom,
             base_unit_name: l.base_unit_name, unit_price: l.unit_price,
+            vat_rate: l.vat_rate, withholding_rate: l.withholding_rate,
         })),
-        vat_rate: form.vat_rate,
         mode: form.mode,
         method: form.method,
         payment_channel_id: form.payment_channel_id,
@@ -503,7 +532,13 @@ function loadDraft(draft) {
         ...fresh,
         ...picked,
         lines: (data.lines && data.lines.length)
-            ? data.lines.map((l) => ({ ...newSaleLine(), ...l }))
+            // A draft saved before VAT became per line has one VAT %
+            // for the whole sale (data.vat_rate) — give it to each line.
+            ? data.lines.map((l) => ({
+                ...newSaleLine(),
+                ...(data.vat_rate && l.vat_rate === undefined ? { vat_rate: Number(data.vat_rate) || 0 } : {}),
+                ...l,
+            }))
             : [newSaleLine()],
     });
     form.clearErrors();
@@ -565,8 +600,12 @@ function draftItemsLabel(draft) {
 
 function draftTotal(draft) {
     const data = draft.data || {};
-    const sub = (data.lines || []).reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.unit_price) || 0), 0);
-    return sub + sub * (Number(data.vat_rate) || 0) / 100;
+    // What the customer would owe: subtotal + VAT - withholding, per
+    // line. Old drafts have one VAT % for the whole sale.
+    return r2((data.lines || []).reduce((s, l) => {
+        const line = { ...l, vat_rate: l.vat_rate ?? data.vat_rate };
+        return s + lineNet(line) + lineVat(line) - lineWithholding(line);
+    }, 0));
 }
 
 function draftSavedLabel(draft) {
@@ -725,7 +764,8 @@ function saleItemsLabel(sale) {
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="(line, index) in form.lines" :key="index">
+                    <template v-for="(line, index) in form.lines" :key="index">
+                    <tr>
                         <td :data-label="t('itemLbl')">
                             <ComboSelect
                                 :model-value="line.item_id"
@@ -766,28 +806,49 @@ function saleItemsLabel(sale) {
                         <td class="linetotal" :data-label="t('lineTotalLbl')">{{ currency }} {{ money((line.qty || 0) * (line.unit_price || 0)) }}</td>
                         <td class="rm-cell"><button type="button" class="rm-line" @click="removeLine(index)">✕</button></td>
                     </tr>
+                    <!-- VAT % and Debit Withholding Tax % of this product line -->
+                    <tr class="line-tax">
+                        <td colspan="6">
+                            <div class="line-tax__box">
+                                <label class="line-tax__field">
+                                    <span>{{ t('lineVatPctLbl') }}</span>
+                                    <input v-model.number="line.vat_rate" type="number" min="0" max="100" step="0.5" placeholder="0">
+                                </label>
+                                <label class="line-tax__field">
+                                    <span>{{ t('lineWhtPctSaleLbl') }}</span>
+                                    <input v-model.number="line.withholding_rate" type="number" min="0" max="100" step="0.5" placeholder="0">
+                                </label>
+                                <span v-if="lineTaxText(line)" class="line-tax__amounts">{{ lineTaxText(line) }}</span>
+                            </div>
+                        </td>
+                    </tr>
+                    </template>
                 </tbody>
             </table>
             <button type="button" class="addline-btn" @click="addLine">{{ t('addLineBtn') }}</button>
             <div v-if="form.errors.lines" class="form-error">{{ form.errors.lines }}</div>
             <div v-for="message in lineQtyErrors" :key="message" class="form-error">{{ message }}</div>
 
-            <div class="field-row" style="margin-top: 16px;">
-                <div class="field field--narrow">
-                    <label>{{ t('vatRateLbl') }}</label>
-                    <input v-model.number="form.vat_rate" type="number" step="0.5" min="0">
-                </div>
-            </div>
+            <div class="form-hint" style="margin-top: 10px;">{{ t('lineTaxHintSale') }}</div>
 
             <div style="margin-top: 6px;">
                 <div style="display: flex; justify-content: space-between; padding: 4px 0; color: var(--color-text-muted); font-size: 13.5px;">
                     <span>{{ t('subtotalLbl') }}</span><span class="mono">{{ currency }} {{ money(subtotal) }}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; padding: 4px 0; color: var(--color-text-muted); font-size: 13.5px;">
-                    <span>{{ t('vatAmountLbl') }} ({{ form.vat_rate || 0 }}%)</span><span class="mono">{{ currency }} {{ money(vatAmount) }}</span>
+                    <span>{{ t('vatAmountLbl') }}</span><span class="mono">{{ currency }} {{ money(vatAmount) }}</span>
                 </div>
+                <!-- Debit Withholding Tax: only shown when some line has one -->
+                <template v-if="withholdingAmount > 0">
+                    <div style="display: flex; justify-content: space-between; padding: 4px 0; color: var(--color-text-muted); font-size: 13.5px;">
+                        <span>{{ t('totalInclVatLbl') }}</span><span class="mono">{{ currency }} {{ money(grossTotal) }}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 4px 0; color: var(--color-text-muted); font-size: 13.5px;">
+                        <span>{{ t('lessWhtSaleLbl') }}</span><span class="mono">− {{ currency }} {{ money(withholdingAmount) }}</span>
+                    </div>
+                </template>
                 <div style="display: flex; justify-content: space-between; padding: 6px 0 0; font-weight: 600; font-size: 17px; color: var(--color-primary-dark);">
-                    <span>{{ t('totalInclVatLbl') }}</span><span class="mono">{{ currency }} {{ money(total) }}</span>
+                    <span>{{ withholdingAmount > 0 ? t('netDueFromCustomerLbl') : t('totalInclVatLbl') }}</span><span class="mono">{{ currency }} {{ money(total) }}</span>
                 </div>
             </div>
 
@@ -937,6 +998,7 @@ function saleItemsLabel(sale) {
                             <span :class="sale.is_paid ? 'text-success' : 'text-warning'">
                                 {{ t('paidLbl') }} {{ currency }} {{ money(sale.paid_amount) }} / {{ currency }} {{ money(sale.amount) }}
                             </span>
+                            <span v-if="sale.withholding_amount > 0"> · {{ t('lineWhtAmtLbl') }} {{ currency }} {{ money(sale.withholding_amount) }}</span>
                         </div>
                     </div>
                     <div>
