@@ -58,7 +58,7 @@ const VISIBLE_FIELDS = [
     'password', 'password_confirmation',
 ];
 
-function toggleBusinessType(type) {
+function toggleBusinessType(type, event) {
     const set = new Set(form.business_types);
     if (set.has(type)) {
         set.delete(type);
@@ -69,6 +69,11 @@ function toggleBusinessType(type) {
     // rather than letting the picker go empty and confusing the
     // submit error.
     form.business_types = set.size > 0 ? Array.from(set) : ['trading'];
+
+    // When the fallback puts the same box back, Vue sees no change and
+    // leaves the box looking empty while the form still holds Trading.
+    // Re-sync the tick the user sees with what will really be sent.
+    if (event?.target) event.target.checked = form.business_types.includes(type);
 }
 
 // A catch-all rather than a list of the two known offenders: a rule
@@ -272,15 +277,15 @@ onMounted(() => {
                         </label>
                         <div style="display: flex; flex-wrap: wrap; gap: 14px; margin-top: 4px;">
                             <label style="display: flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer;">
-                                <input type="checkbox" :checked="form.business_types.includes('service')" @change="toggleBusinessType('service')">
+                                <input type="checkbox" :checked="form.business_types.includes('service')" @change="toggleBusinessType('service', $event)">
                                 {{ locale === 'ar' ? 'خدمات' : 'Service' }}
                             </label>
                             <label style="display: flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer;">
-                                <input type="checkbox" :checked="form.business_types.includes('trading')" @change="toggleBusinessType('trading')">
+                                <input type="checkbox" :checked="form.business_types.includes('trading')" @change="toggleBusinessType('trading', $event)">
                                 {{ locale === 'ar' ? 'تجارة' : 'Trading' }}
                             </label>
                             <label style="display: flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer;">
-                                <input type="checkbox" :checked="form.business_types.includes('production')" @change="toggleBusinessType('production')">
+                                <input type="checkbox" :checked="form.business_types.includes('production')" @change="toggleBusinessType('production', $event)">
                                 {{ locale === 'ar' ? 'تصنيع' : 'Production / manufacturing' }}
                             </label>
                         </div>

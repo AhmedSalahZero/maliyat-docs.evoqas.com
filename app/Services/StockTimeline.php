@@ -6,7 +6,9 @@ use App\Models\InventoryPurchaseLine;
 use App\Models\Item;
 use App\Models\ProductionOrder;
 use App\Models\ProductionOrderMaterialLine;
+use App\Models\PurchaseReturnLine;
 use App\Models\SaleLine;
+use App\Models\SaleReturnLine;
 use App\Support\FinancialRules;
 use Illuminate\Support\Carbon;
 
@@ -91,6 +93,29 @@ class StockTimeline
             ->each(fn (ProductionOrderMaterialLine $line) => $add(
                 $line->productionOrder->date->toDateString(),
                 -(float) $line->qty
+            ));
+
+        // Goods a customer sent back are stock IN on the return date;
+        // goods sent back to a supplier are stock OUT on the return
+        // date (the same dating the costing engine uses).
+        SaleReturnLine::query()
+            ->where('item_id', $itemId)
+            ->whereHas('saleReturn')
+            ->with('saleReturn:id,date')
+            ->get()
+            ->each(fn (SaleReturnLine $line) => $add(
+                $line->saleReturn->date->toDateString(),
+                $line->baseQty()
+            ));
+
+        PurchaseReturnLine::query()
+            ->where('item_id', $itemId)
+            ->whereHas('purchaseReturn')
+            ->with('purchaseReturn:id,date')
+            ->get()
+            ->each(fn (PurchaseReturnLine $line) => $add(
+                $line->purchaseReturn->date->toDateString(),
+                -$line->baseQty()
             ));
 
         return $net;

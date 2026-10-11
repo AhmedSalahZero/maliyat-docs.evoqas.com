@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests\App;
 
+use App\Http\Requests\Concerns\NormalizesName;
+use App\Models\User;
+use App\Rules\UniqueNameInCompany;
 use App\Support\PasswordRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -19,6 +22,8 @@ use Illuminate\Validation\Rule;
 // ══════════════════════════════════════════════════════════════════
 class UpdateEmployeeRequest extends FormRequest
 {
+    use NormalizesName;
+
     public function authorize(): bool
     {
         $target = $this->route('user');
@@ -35,7 +40,10 @@ class UpdateEmployeeRequest extends FormRequest
         $target = $this->route('user');
 
         return [
-            'name'  => ['required', 'string', 'min:2', 'max:100'],
+            'name'  => [
+                'required', 'string', 'min:2', 'max:100',
+                new UniqueNameInCompany(User::class, $this->user()?->company_id, 'errors.duplicate_employee', $target?->id),
+            ],
             'email' => [
                 'required', 'string', 'email', 'max:255',
                 Rule::unique('users', 'email')->ignore($target?->id),

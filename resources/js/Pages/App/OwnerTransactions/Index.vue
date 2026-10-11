@@ -153,7 +153,13 @@ function cancelEdit() {
     form.clearErrors();
 }
 
+// What the "… recorded." line says. Captured when Save is pressed,
+// because the form is emptied the moment the save succeeds (the line
+// used to print a blank name and "EGP 0.00").
+const recordedLine = ref('');
+
 function submit() {
+    recordedLine.value = `${selectedOwner.value?.name ?? ''} — ${currency.value} ${money(form.amount)}`;
     if (editingTransaction.value) {
         form.put(route('app.owner-transactions.update', editingTransaction.value.id), {
             preserveScroll: true,
@@ -266,9 +272,10 @@ function categoryLabel(category) {
             <div class="field-row" style="margin-top: 14px;">
                 <div class="field" style="flex: 1 1 100%;">
                     <label>{{ t('noteLbl') }}</label>
-                    <input v-model="form.note" type="text" :placeholder="t('ownerNotePlaceholder')">
+                    <input v-model="form.note" type="text" maxlength="255" :placeholder="t('ownerNotePlaceholder')">
                 </div>
             </div>
+            <div v-if="form.errors.note" class="form-error">{{ form.errors.note }}</div>
 
             <div class="submit-row" style="display: flex; gap: 10px;">
                 <button type="button" class="btn btn-ghost" v-if="editingTransaction" @click="cancelEdit">{{ t('cancelEditBtn') }}</button>
@@ -276,8 +283,8 @@ function categoryLabel(category) {
                     {{ editingTransaction ? t('saveChangesBtn') : t('recordOwnerTxBtn') }}
                 </button>
             </div>
-            <div v-if="form.recentlySuccessful" class="status-line">
-                {{ selectedOwner?.name }} — {{ currency }} {{ money(form.amount) }} {{ t('recordedNote') }}
+            <div v-if="form.recentlySuccessful && recordedLine" class="status-line">
+                {{ recordedLine }} {{ t('recordedNote') }}
             </div>
         </div>
 

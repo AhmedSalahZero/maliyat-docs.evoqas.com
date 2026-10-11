@@ -24,6 +24,11 @@ const props = defineProps({
 
 const showAddSheet = ref(false);
 
+// A text selection that starts inside a sheet and ends on the dark background
+// must not count as a click on the background (it would close the sheet and
+// throw away what was typed).
+const pressedOnBackdrop = ref(false);
+
 // ── Delete company ───────────────────────────────────────────────
 // A plain confirm() isn't enough for something this destructive
 // (wipes the company's entire financial history, with no undo), so
@@ -52,7 +57,9 @@ function closeDeleteSheet() {
 }
 
 function confirmDelete() {
-    if (!deleteTarget.value || deleteConfirmText.value !== deleteTarget.value.name) return;
+    // Enter can be pressed again while the first request is still running;
+    // a second delete of the same company would come back as a 404 page.
+    if (!deleteTarget.value || deleteForm.processing || deleteConfirmText.value !== deleteTarget.value.name) return;
 
     deleteForm.delete(route('admin.companies.destroy', deleteTarget.value.id), {
         preserveScroll: true,
@@ -162,7 +169,7 @@ function toggleActive(company) {
 
         <!-- ── Add company sheet ────────────────────────────────── -->
         <transition name="fade-in">
-            <div v-if="showAddSheet" class="modal-backdrop" @click.self="showAddSheet = false">
+            <div v-if="showAddSheet" class="modal-backdrop" @mousedown="pressedOnBackdrop = $event.target === $event.currentTarget" @click.self="pressedOnBackdrop && (showAddSheet = false)">
                 <div class="modal-sheet slide-up adm-companies__sheet">
                     <div class="modal-sheet__handle"></div>
                     <h2 class="adm-companies__sheet-title">Add company</h2>
@@ -224,7 +231,7 @@ function toggleActive(company) {
 
         <!-- ── Delete company sheet ─────────────────────────────── -->
         <transition name="fade-in">
-            <div v-if="deleteTarget" class="modal-backdrop" @click.self="closeDeleteSheet">
+            <div v-if="deleteTarget" class="modal-backdrop" @mousedown="pressedOnBackdrop = $event.target === $event.currentTarget" @click.self="pressedOnBackdrop && closeDeleteSheet()">
                 <div class="modal-sheet slide-up adm-companies__sheet">
                     <div class="modal-sheet__handle"></div>
                     <h2 class="adm-companies__sheet-title" style="color: var(--color-danger);">

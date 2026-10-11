@@ -137,7 +137,13 @@ function cancelEdit() {
     form.clearErrors();
 }
 
+// What the "… recorded." line says. Captured when Save is pressed,
+// because the form is emptied the moment the save succeeds (the line
+// used to print a blank name and "EGP 0.00").
+const recordedLine = ref('');
+
 function submit() {
+    recordedLine.value = `${selectedHolder.value?.name ?? ''} — ${currency.value} ${money(form.amount)}`;
     if (editingCustody.value) {
         form.put(route('app.custodies.update', editingCustody.value.id), {
             preserveScroll: true,
@@ -161,6 +167,10 @@ const settleLines = ref([{ description: '', category_id: null, amount: null }]);
 const settleErrors = ref({});
 const creatingSettleCategoryForRow = ref(null);
 const settling = ref(false);
+
+const settleOtherErrors = computed(() =>
+    [...new Set(Object.entries(settleErrors.value).filter(([key]) => key !== 'settlement_date').map(([, message]) => message))]
+);
 
 function openSettle(custody) {
     settlingId.value = settlingId.value === custody.id ? null : custody.id;
@@ -197,9 +207,14 @@ function settleDiff(custody) {
 }
 
 function submitSettle(custody) {
-    const lines = settleLines.value.filter((l) => Number(l.amount) > 0);
+    // Keep negative amounts too, so the server refuses them with a
+    // message. They used to be dropped silently while the on-screen
+    // "Total spent" still counted them.
+    const lines = settleLines.value.filter((l) => Number(l.amount) !== 0);
     if (lines.length === 0) {
-        alert(t('settlementIncompleteError'));
+        // Shown on the form itself (a pop-up alert can be blocked on
+        // some phones and in the installed app).
+        settleErrors.value = { lines: t('settlementIncompleteError') };
         return;
     }
 
@@ -284,8 +299,8 @@ function onConfirmDialogConfirm() {
                     {{ editingCustody ? t('saveChangesBtn') : t('giveCustodyBtn') }}
                 </button>
             </div>
-            <div v-if="form.recentlySuccessful" class="status-line">
-                {{ selectedHolder?.name }} — {{ currency }} {{ money(form.amount) }} {{ t('recordedNote') }}
+            <div v-if="form.recentlySuccessful && recordedLine" class="status-line">
+                {{ recordedLine }} {{ t('recordedNote') }}
             </div>
         </div>
 
@@ -364,6 +379,10 @@ function onConfirmDialogConfirm() {
                             </tr>
                         </tbody>
                     </table>
+                    <!-- Every other problem with the settlement (an amount
+                         that is too big or negative, a missing line…).
+                         Previously only the date's problem was shown. -->
+                    <div v-for="message in settleOtherErrors" :key="message" class="form-error">{{ message }}</div>
                     <button type="button" class="addline-btn" style="align-self: flex-start;" @click="addSettleLine">{{ t('addExpenseLineBtn') }}</button>
 
                     <div style="margin-top: 10px;">

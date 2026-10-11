@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class InventoryPurchaseLine extends Model
 {
@@ -30,6 +31,12 @@ class InventoryPurchaseLine extends Model
     public function inventoryPurchase(): BelongsTo
     {
         return $this->belongsTo(InventoryPurchase::class);
+    }
+
+    /** Quantities of this line already sent back (see PurchaseReturn). */
+    public function returnLines(): HasMany
+    {
+        return $this->hasMany(PurchaseReturnLine::class);
     }
 
     public function item(): BelongsTo

@@ -29,10 +29,16 @@ class StoreSaleRequest extends FormRequest
         $companyId = $this->user()->company_id;
 
         return [
+            // 'invoice' (a Sales Invoice) or 'cash' (a Cash Sale). The
+            // screen always sends it. Left out, the request is read as
+            // before (no customer needed), so older callers keep working.
+            'sale_kind' => ['nullable', Rule::in(['invoice', 'cash'])],
+
             'customer_id' => [
-                // Nullable so a Cash Sale can be submitted with no
-                // customer chosen — SaleController::store() fills in
-                // Customer::cashCustomer() when this is left blank.
+                // A Sales Invoice MUST name its customer; only a Cash
+                // Sale may leave it blank — SaleController::store()
+                // then fills in Customer::cashCustomer().
+                Rule::requiredIf(fn () => $this->input('sale_kind') === 'invoice'),
                 'nullable',
                 Rule::exists('customers', 'id')->where('company_id', $companyId),
             ],
@@ -123,6 +129,7 @@ class StoreSaleRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'customer_id.required' => __('validation.sale_customer_required'),
             'date.before_or_equal' => __('validation.sale_date_not_future'),
         ];
     }

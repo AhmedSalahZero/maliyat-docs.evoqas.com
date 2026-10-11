@@ -12,6 +12,7 @@ use App\Http\Controllers\App\DashboardController;
 use App\Http\Controllers\App\EquipmentPurchaseController;
 use App\Http\Controllers\App\ExpenseController;
 use App\Http\Controllers\App\InventoryPurchaseController;
+use App\Http\Controllers\App\PurchaseReturnController;
 use App\Http\Controllers\App\ItemController;
 use App\Http\Controllers\App\OpeningBalanceController;
 use App\Http\Controllers\App\OwnerController;
@@ -22,6 +23,7 @@ use App\Http\Controllers\App\ProfileController;
 use App\Http\Controllers\App\ReportController;
 use App\Http\Controllers\App\ReportExportController;
 use App\Http\Controllers\App\SaleController;
+use App\Http\Controllers\App\SaleReturnController;
 use App\Http\Controllers\App\SalesChannelController;
 use App\Http\Controllers\App\UserController as AppUserController;
 use App\Http\Controllers\App\VendorController;
@@ -132,6 +134,10 @@ Route::middleware(['auth', 'auth.session', 'verified', 'member', 'no-duplicate']
         Route::put('/sales/{sale}', [SaleController::class, 'update'])->name('sales.update');
         Route::delete('/sales/{sale}', [SaleController::class, 'destroy'])->name('sales.destroy');
 
+        // Goods a customer sent back — "Apply quantity return" on a sale.
+        Route::post('/sales/{sale}/returns', [SaleReturnController::class, 'store'])->name('sales.returns.store');
+        Route::delete('/sale-returns/{saleReturn}', [SaleReturnController::class, 'destroy'])->name('sale-returns.destroy');
+
         // Unfinished sales ("drafts") — no accounting effect, see
         // SaleDraftController. Exempt from the duplicate guard:
         // pressing "Save as draft" twice with nothing changed is
@@ -159,6 +165,10 @@ Route::middleware(['auth', 'auth.session', 'verified', 'member', 'no-duplicate']
         Route::post('/inventory-purchases', [InventoryPurchaseController::class, 'store'])->name('inventory-purchases.store');
         Route::put('/inventory-purchases/{inventoryPurchase}', [InventoryPurchaseController::class, 'update'])->name('inventory-purchases.update');
         Route::delete('/inventory-purchases/{inventoryPurchase}', [InventoryPurchaseController::class, 'destroy'])->name('inventory-purchases.destroy');
+
+        // Goods sent back to a supplier — "Apply quantity return" on a purchase.
+        Route::post('/inventory-purchases/{inventoryPurchase}/returns', [PurchaseReturnController::class, 'store'])->name('inventory-purchases.returns.store');
+        Route::delete('/purchase-returns/{purchaseReturn}', [PurchaseReturnController::class, 'destroy'])->name('purchase-returns.destroy');
 
         // ── Production Orders ("Day Production") ─────────────────────
         //

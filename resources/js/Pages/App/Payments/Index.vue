@@ -68,28 +68,37 @@ const billSearch = ref('');
 let invoiceSearchTimer = null;
 let billSearchTimer = null;
 
+// Only the newest search may fill the list: a slow answer to an older
+// search used to arrive last and overwrite the newer results.
+let invoiceSeq = 0;
+let billSeq = 0;
+
 async function loadOpenInvoices() {
+    const seq = ++invoiceSeq;
     loadingInvoices.value = true;
     try {
         const { data } = await axios.get(route('app.payments.open-invoices'), {
             params: invoiceSearch.value ? { q: invoiceSearch.value } : {},
         });
+        if (seq !== invoiceSeq) return;
         openInvoices.value = data.data ?? [];
         invoicesHasMore.value = Boolean(data.has_more);
     } finally {
-        loadingInvoices.value = false;
+        if (seq === invoiceSeq) loadingInvoices.value = false;
     }
 }
 async function loadOpenBills() {
+    const seq = ++billSeq;
     loadingBills.value = true;
     try {
         const { data } = await axios.get(route('app.payments.open-bills'), {
             params: billSearch.value ? { q: billSearch.value } : {},
         });
+        if (seq !== billSeq) return;
         openBills.value = data.data ?? [];
         billsHasMore.value = Boolean(data.has_more);
     } finally {
-        loadingBills.value = false;
+        if (seq === billSeq) loadingBills.value = false;
     }
 }
 
@@ -122,7 +131,10 @@ const settleForm = ref({ date: todayIso(), amount: null, method: 'cash', payment
 // Whatever the server refused on the last settle (e.g. more than the
 // invoice owes). This screen used to show nothing at all when a
 // payment was rejected — the form just sat there.
-const settleErrors = computed(() => [...new Set(Object.values(page.props.errors ?? {}))]);
+// Problems from the last confirm attempt only. This used to read the
+// page-wide error list, which kept an old refusal on screen when a
+// different invoice/bill was opened or the tab was switched.
+const settleErrors = ref([]);
 
 // ── Customer credit (advances / overpayments) ────────────────────
 // A customer who paid more than an invoice, or paid in advance, has
@@ -147,18 +159,35 @@ function fmtCredit(template, values) {
 }
 const submitting = ref(false);
 
+// One shared form serves both tabs, so switching tabs closes any open
+// settle row and clears its old message and typed amount.
+function switchTab(tab) {
+    if (activeTab.value === tab) return;
+    activeTab.value = tab;
+    settlingInvoiceId.value = null;
+    settlingBillKey.value = null;
+    settleErrors.value = [];
+}
+
 function openSettleInvoice(invoice) {
+    settleErrors.value = [];
     settlingInvoiceId.value = settlingInvoiceId.value === invoice.id ? null : invoice.id;
     settleForm.value = { date: todayIso(), amount: invoice.balance, method: 'cash', payment_channel_id: null, use_credit: false, keep_extra_as_credit: false };
 }
 function openSettleBill(bill) {
+    settleErrors.value = [];
     const key = `${bill.payable_type}:${bill.id}`;
     settlingBillKey.value = settlingBillKey.value === key ? null : key;
     settleForm.value = { date: todayIso(), amount: bill.balance, method: 'cash', payment_channel_id: null };
 }
 
 function confirmSettleInvoice(invoice) {
-    if (!settleForm.value.amount || settleForm.value.amount <= 0) return;
+    if (submitting.value) return;
+    if (!settleForm.value.amount || settleForm.value.amount <= 0) {
+        settleErrors.value = [t('amountMustBePositive')];
+        return;
+    }
+    settleErrors.value = [];
     submitting.value = true;
     const useCredit = settleForm.value.use_credit;
     router.post(route('app.payments.receive'), {
@@ -171,13 +200,19 @@ function confirmSettleInvoice(invoice) {
         keep_extra_as_credit: !useCredit && overpaidBy(invoice) > 0 && settleForm.value.keep_extra_as_credit,
     }, {
         preserveScroll: true,
+        onError: (errors) => { settleErrors.value = [...new Set(Object.values(errors ?? {}))]; },
         onSuccess: () => { settlingInvoiceId.value = null; loadOpenInvoices(); },
         onFinish: () => { submitting.value = false; },
     });
 }
 
 function confirmSettleBill(bill) {
-    if (!settleForm.value.amount || settleForm.value.amount <= 0) return;
+    if (submitting.value) return;
+    if (!settleForm.value.amount || settleForm.value.amount <= 0) {
+        settleErrors.value = [t('amountMustBePositive')];
+        return;
+    }
+    settleErrors.value = [];
     submitting.value = true;
     router.post(route('app.payments.pay'), {
         payable_type: bill.payable_type,
@@ -188,6 +223,7 @@ function confirmSettleBill(bill) {
         payment_channel_id: settleForm.value.payment_channel_id,
     }, {
         preserveScroll: true,
+        onError: (errors) => { settleErrors.value = [...new Set(Object.values(errors ?? {}))]; },
         onSuccess: () => { settlingBillKey.value = null; loadOpenBills(); },
         onFinish: () => { submitting.value = false; },
     });
@@ -217,8 +253,8 @@ function confirmSettleBill(bill) {
         />
 
         <div class="toggle-btns" style="margin-bottom: 18px;">
-            <button type="button" :class="{ active: activeTab === 'receive' }" @click="activeTab = 'receive'">{{ t('receiveMoneyTab') }}</button>
-            <button type="button" :class="{ active: activeTab === 'pay' }" @click="activeTab = 'pay'">{{ t('payMoneyTab') }}</button>
+            <button type="button" :class="{ active: activeTab === 'receive' }" @click="switchTab('receive')">{{ t('receiveMoneyTab') }}</button>
+            <button type="button" :class="{ active: activeTab === 'pay' }" @click="switchTab('pay')">{{ t('payMoneyTab') }}</button>
         </div>
 
         <!-- ══════════════════════════ RECEIVE ══════════════════════════ -->

@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests\App;
 
+use App\Http\Requests\Concerns\NormalizesName;
+use App\Models\User;
+use App\Rules\UniqueNameInCompany;
 use App\Support\PasswordRules;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -15,6 +18,8 @@ use Illuminate\Foundation\Http\FormRequest;
 // ══════════════════════════════════════════════════════════════════
 class StoreEmployeeRequest extends FormRequest
 {
+    use NormalizesName;
+
     public function authorize(): bool
     {
         return (bool) $this->user()?->isCompanyAdmin();
@@ -23,7 +28,10 @@ class StoreEmployeeRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name'     => ['required', 'string', 'min:2', 'max:100'],
+            'name'     => [
+                'required', 'string', 'min:2', 'max:100',
+                new UniqueNameInCompany(User::class, $this->user()?->company_id, 'errors.duplicate_employee'),
+            ],
             'email'    => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'confirmed', PasswordRules::defaults()],
         ];

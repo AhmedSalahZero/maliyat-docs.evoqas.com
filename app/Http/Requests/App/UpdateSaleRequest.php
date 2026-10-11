@@ -102,6 +102,7 @@ class UpdateSaleRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'customer_id.required' => __('validation.sale_customer_required'),
             'date.before_or_equal' => __('validation.sale_date_not_future'),
         ];
     }

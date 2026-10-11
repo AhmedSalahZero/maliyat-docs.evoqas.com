@@ -43,12 +43,15 @@ const TYPE_KEYS = {
     expense: 'typeExpenseLbl',
     inventory_purchase: 'typeInventoryPurchaseLbl',
     equipment_purchase: 'typeEquipmentPurchaseLbl',
+    sale_return: 'typeSaleReturnLbl',
+    purchase_return: 'typePurchaseReturnLbl',
 };
 
 const STATUS_BADGE = {
     paid: 'ok',
     partial: 'partial',
     unpaid: 'warn',
+    returned: 'ok',
 };
 
 const excelHref = computed(() => route('app.reports.ledger.export', { format: 'excel', from: props.from, to: props.to }));

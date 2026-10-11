@@ -13,7 +13,9 @@ use App\Models\JournalEntry;
 use App\Models\OwnerTransaction;
 use App\Models\Payment;
 use App\Models\ProductionOrder;
+use App\Models\PurchaseReturn;
 use App\Models\Sale;
+use App\Models\SaleReturn;
 use App\Support\FinancialRules;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -154,6 +156,120 @@ class JournalService
             ['account' => Account::CUSTOMER_CREDITS, 'debit' => (float) $payment->amount],
             ['account' => Account::ACCOUNTS_RECEIVABLE, 'credit' => (float) $payment->amount],
         ]);
+    }
+
+    // ── Returns ───────────────────────────────────────────────────
+
+    /**
+     * Goods a customer sent back. The exact opposite of
+     * postSaleInvoice() for the returned share of the sale, DATED ON
+     * THE RETURN DATE (earlier months are never rewritten):
+     *
+     *     Dr Sales Revenue           subtotal
+     *     Dr VAT Payable            VAT
+     *         Cr Withholding Tax Receivable   withholding
+     *         Cr Accounts Receivable          amount   (net)
+     *
+     * What the customer had ALREADY PAID on the returned goods is then
+     * given back — the part of the return that is more than they still
+     * owed on the invoice (`refund_amount`):
+     *
+     *     money     Dr Accounts Receivable  refund   Cr Cash / Bank  refund
+     *     credit    Dr Accounts Receivable  refund   Cr Customer Credits (2300)  refund
+     *
+     * so Accounts Receivable ends up reduced only by what was really
+     * still owed (`applied_amount`). The cost side (stock back in,
+     * Cost of Goods Sold reversed) is a separate entry,
+     * postSaleReturnCostReversal(), because the costing engine may
+     * need to reprice it later on its own.
+     */
+    public function postSaleReturn(SaleReturn $return): void
+    {
+        $lines = [
+            ['account' => Account::SALES_REVENUE, 'debit' => (float) $return->subtotal],
+            ['account' => Account::ACCOUNTS_RECEIVABLE, 'credit' => (float) $return->amount],
+        ];
+
+        if ((float) $return->vat_amount > 0) {
+            $lines[] = ['account' => Account::VAT_PAYABLE, 'debit' => (float) $return->vat_amount];
+        }
+
+        if ((float) $return->withholding_amount > 0) {
+            $lines[] = ['account' => Account::WITHHOLDING_TAX_RECEIVABLE, 'credit' => (float) $return->withholding_amount];
+        }
+
+        $refund = (float) $return->refund_amount;
+
+        if ($refund > 0) {
+            $lines[] = ['account' => Account::ACCOUNTS_RECEIVABLE, 'debit' => $refund];
+            $lines[] = [
+                'account' => $return->isCreditRefund() ? Account::CUSTOMER_CREDITS : $this->cashAccountFor($return->refund_method),
+                'credit'  => $refund,
+            ];
+        }
+
+        $this->post($return->company_id, $return->date->toDateString(), 'Sales return', $return, $lines);
+    }
+
+    /**
+     * The goods from a sales return go back into stock: Inventory up,
+     * Cost of Goods Sold down, at the cost the original sale took them
+     * out at (see MovingAverageCostingService).
+     */
+    public function postSaleReturnCostReversal(SaleReturn $return, float $amount): void
+    {
+        if ($amount <= 0) {
+            return;
+        }
+
+        $this->post($return->company_id, $return->date->toDateString(), 'Cost of goods sold reversed (sales return)', $return, [
+            ['account' => Account::INVENTORY_ASSET, 'debit' => $amount],
+            ['account' => Account::COST_OF_GOODS_SOLD, 'credit' => $amount],
+        ]);
+    }
+
+    /**
+     * Goods we sent back to a supplier. The opposite of
+     * postInventoryPurchaseInvoice() for the returned share, dated on
+     * the return date:
+     *
+     *     Dr Accounts Payable            amount   (net)
+     *     Dr Withholding Tax Payable     withholding
+     *         Cr Inventory               subtotal
+     *         Cr VAT Receivable          VAT
+     *
+     * When we had ALREADY PAID for those goods and the supplier gives
+     * the money back (cash/bank), `refund_amount` comes in:
+     *
+     *     Dr Cash / Bank  refund        Cr Accounts Payable  refund
+     *
+     * When the supplier instead keeps it as credit, nothing more is
+     * posted: Accounts Payable simply holds a debit balance — the
+     * supplier owes us that much.
+     */
+    public function postPurchaseReturn(PurchaseReturn $return): void
+    {
+        $lines = [
+            ['account' => Account::ACCOUNTS_PAYABLE, 'debit' => (float) $return->amount],
+            ['account' => Account::INVENTORY_ASSET, 'credit' => (float) $return->subtotal],
+        ];
+
+        if ((float) $return->vat_amount > 0) {
+            $lines[] = ['account' => Account::VAT_RECEIVABLE, 'credit' => (float) $return->vat_amount];
+        }
+
+        if ((float) $return->withholding_amount > 0) {
+            $lines[] = ['account' => Account::WITHHOLDING_TAX_PAYABLE, 'debit' => (float) $return->withholding_amount];
+        }
+
+        $refund = (float) $return->refund_amount;
+
+        if ($refund > 0 && ! $return->isCreditRefund()) {
+            $lines[] = ['account' => $this->cashAccountFor($return->refund_method), 'debit' => $refund];
+            $lines[] = ['account' => Account::ACCOUNTS_PAYABLE, 'credit' => $refund];
+        }
+
+        $this->post($return->company_id, $return->date->toDateString(), 'Purchase return', $return, $lines);
     }
 
     // ── Bills (Expense / InventoryPurchase / EquipmentPurchase) ────

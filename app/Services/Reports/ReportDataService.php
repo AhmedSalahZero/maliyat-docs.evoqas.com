@@ -19,7 +19,11 @@ use App\Models\Payment;
 use App\Models\ProductionOrder;
 use App\Models\ProductionOrderMaterialLine;
 use App\Models\Sale;
+use App\Models\PurchaseReturn;
+use App\Models\PurchaseReturnLine;
 use App\Models\SaleLine;
+use App\Models\SaleReturn;
+use App\Models\SaleReturnLine;
 use App\Models\Vendor;
 use App\Support\FinancialRules;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -129,6 +133,24 @@ class ReportDataService
                 'id' => $p->id, 'date' => $p->date->toDateString(),
                 'party' => $p->vendor?->name, 'amount' => (float) $p->amount,
                 'balance' => $p->balance(), 'status' => $this->status($p),
+            ]));
+
+        // Goods sent back — each is its own dated row (a return a
+        // month after the sale is listed in the month it happened).
+        SaleReturn::query()->whereBetween('date', [$from, $to])->with('customer:id,name')->get()
+            ->each(fn (SaleReturn $r) => $rows->push([
+                'type' => 'sale_return',
+                'id' => $r->id, 'date' => $r->date->toDateString(),
+                'party' => $r->customer?->name, 'amount' => (float) $r->amount,
+                'balance' => 0.0, 'status' => 'returned',
+            ]));
+
+        PurchaseReturn::query()->whereBetween('date', [$from, $to])->with('vendor:id,name')->get()
+            ->each(fn (PurchaseReturn $r) => $rows->push([
+                'type' => 'purchase_return',
+                'id' => $r->id, 'date' => $r->date->toDateString(),
+                'party' => $r->vendor?->name, 'amount' => (float) $r->amount,
+                'balance' => 0.0, 'status' => 'returned',
             ]));
 
         return $rows->sortByDesc('date')->values();
@@ -265,8 +287,26 @@ class ReportDataService
             ->leftJoin('items', 'items.id', '=', 'sale_lines.item_id')
             ->selectRaw("COALESCE(items.name, 'Other') as item, SUM(sale_lines.line_total) as total")
             ->groupBy('item')
-            ->orderByDesc('total')
             ->get();
+
+        // Goods sent back in the period come off the item they belong
+        // to (dated by the RETURN, like the ledger's Sales Revenue), so
+        // this breakdown still adds up to the revenue headline.
+        $returnedByItem = SaleReturn::query()
+            ->whereBetween('sale_returns.date', [$from, $to])
+            ->join('sale_return_lines', 'sale_return_lines.sale_return_id', '=', 'sale_returns.id')
+            ->leftJoin('items', 'items.id', '=', 'sale_return_lines.item_id')
+            ->selectRaw("COALESCE(items.name, 'Other') as item, SUM(sale_return_lines.line_total) as total")
+            ->groupBy('item')
+            ->pluck('total', 'item');
+
+        $incomeByItem = $incomeByItem
+            ->keyBy('item')
+            ->map(fn ($row) => (object) ['item' => $row->item, 'total' => (float) $row->total - (float) ($returnedByItem[$row->item] ?? 0)])
+            ->union($returnedByItem->reject(fn ($t, $item) => $incomeByItem->contains('item', $item))
+                ->map(fn ($t, $item) => (object) ['item' => $item, 'total' => -(float) $t]))
+            ->sortByDesc('total')
+            ->values();
 
         // % of total revenue on both breakdowns — read as a standard
         // common-size income statement, revenue = 100%. $revenue == 0
@@ -315,13 +355,29 @@ class ReportDataService
                 // units it actually cost, same as repriceSaleCogs().
                 ->selectRaw("COALESCE(items.name, 'Other') as item, SUM(sale_lines.qty * sale_lines.qty_per_uom * sale_lines.unit_cost) as total")
                 ->groupBy('item')
-                ->orderByDesc('total')
-                ->get()
-                ->map(fn ($row) => (object) [
-                    'item'  => $row->item,
-                    'total' => round((float) $row->total, 2),
-                    'percent_of_revenue' => $percentOf((float) $row->total),
-                ]);
+                ->get();
+
+            // The cost of goods that came back is taken off too.
+            $returnedCostByItem = SaleReturn::query()
+                ->whereBetween('sale_returns.date', [$from, $to])
+                ->join('sale_return_lines', 'sale_return_lines.sale_return_id', '=', 'sale_returns.id')
+                ->leftJoin('items', 'items.id', '=', 'sale_return_lines.item_id')
+                ->whereNotNull('sale_return_lines.unit_cost')
+                ->selectRaw("COALESCE(items.name, 'Other') as item, SUM(sale_return_lines.qty * sale_return_lines.qty_per_uom * sale_return_lines.unit_cost) as total")
+                ->groupBy('item')
+                ->pluck('total', 'item');
+
+            $costOfGoodsSoldByItem = $costOfGoodsSoldByItem
+                ->keyBy('item')
+                ->map(fn ($row) => (float) $row->total - (float) ($returnedCostByItem[$row->item] ?? 0))
+                ->union($returnedCostByItem->reject(fn ($t, $item) => $costOfGoodsSoldByItem->contains('item', $item))->map(fn ($t) => -(float) $t))
+                ->map(fn ($total, $item) => (object) [
+                    'item'  => $item,
+                    'total' => round((float) $total, 2),
+                    'percent_of_revenue' => $percentOf((float) $total),
+                ])
+                ->sortByDesc('total')
+                ->values();
         }
 
         return [
@@ -403,6 +459,36 @@ class ReportDataService
                 $entries->push([
                     'date' => $payment->date->toDateString(), 'type' => 'payment',
                     'ref' => 'Payment', 'debit' => 0, 'credit' => (float) $payment->amount,
+                ]);
+            }
+        });
+
+        // Goods sent back. A return reduces what the customer owes by
+        // its value (shown like an invoice: subtotal + VAT, with the
+        // withholding it reverses on its own line). If they had already
+        // paid, money handed back is a debit; credit kept on their
+        // account needs no extra line — the balance simply stays in
+        // their favour.
+        $customer->saleReturns()->orderBy('date')->get()->each(function (SaleReturn $return) use (&$entries) {
+            $gross = round((float) $return->amount + (float) $return->withholding_amount, 2);
+
+            $entries->push([
+                'date' => $return->date->toDateString(), 'type' => 'sale_return',
+                'ref' => 'Sales return', 'debit' => 0, 'credit' => $gross,
+            ]);
+
+            if ((float) $return->withholding_amount > 0) {
+                $entries->push([
+                    'date' => $return->date->toDateString(), 'type' => 'withholding_tax',
+                    'ref'  => 'Withholding Tax — Sales return',
+                    'debit' => (float) $return->withholding_amount, 'credit' => 0,
+                ]);
+            }
+
+            if ((float) $return->refund_amount > 0 && ! $return->isCreditRefund()) {
+                $entries->push([
+                    'date' => $return->date->toDateString(), 'type' => 'refund',
+                    'ref' => 'Refund', 'debit' => (float) $return->refund_amount, 'credit' => 0,
                 ]);
             }
         });
@@ -551,6 +637,35 @@ class ReportDataService
         // never belongs on a supplier statement (audit finding 3.3).
         $addBills($vendor->inventoryPurchases()->where('is_opening_balance', false)->with('payments')->orderBy('date')->get(), 'inventory_purchase');
         $addBills($vendor->equipmentPurchases()->where('is_opening_balance', false)->with('payments')->orderBy('date')->get(), 'equipment_purchase');
+
+        // Goods sent back to this supplier: a return reduces what we
+        // owe by its value (its withholding on its own line), and money
+        // the supplier gives back is shown as a refund. Credit kept
+        // with the supplier needs no extra line — the balance simply
+        // stays in our favour.
+        $vendor->purchaseReturns()->orderBy('date')->get()->each(function (PurchaseReturn $return) use (&$entries) {
+            $gross = round((float) $return->amount + (float) $return->withholding_amount, 2);
+
+            $entries->push([
+                'date' => $return->date->toDateString(), 'type' => 'purchase_return',
+                'ref' => 'Purchase return', 'debit' => $gross, 'credit_owed' => 0,
+            ]);
+
+            if ((float) $return->withholding_amount > 0) {
+                $entries->push([
+                    'date' => $return->date->toDateString(), 'type' => 'withholding_tax',
+                    'ref'  => 'Withholding Tax — Purchase return',
+                    'debit' => 0, 'credit_owed' => (float) $return->withholding_amount,
+                ]);
+            }
+
+            if ((float) $return->refund_amount > 0 && ! $return->isCreditRefund()) {
+                $entries->push([
+                    'date' => $return->date->toDateString(), 'type' => 'refund',
+                    'ref' => 'Refund', 'debit' => 0, 'credit_owed' => (float) $return->refund_amount,
+                ]);
+            }
+        });
 
         // Payments tagged to this supplier that settle no bill. The
         // ledger books these as a cash expense — they never touched
@@ -720,8 +835,10 @@ class ReportDataService
             ->map(function (Item $item) use ($asOf, $before, $from, $ledger) {
                 $t = $asOf->get($item->id);
 
-                $stockIn  = round($t->purchased + $t->produced, 2);
-                $stockOut = round($t->sold + $t->consumed, 2);
+                // Goods a customer sent back are stock in; goods sent back
+                // to a supplier are stock out.
+                $stockIn  = round($t->purchased + $t->produced + $t->sale_returned, 2);
+                $stockOut = round($t->sold + $t->consumed + $t->purchase_returned, 2);
                 $stock    = round($stockIn - $stockOut, 2);
 
                 // Null when the item has no ledger row yet (never
@@ -738,9 +855,9 @@ class ReportDataService
 
                 if ($from) {
                     $b = $before->get($item->id);
-                    $openingStock = round(($b->purchased + $b->produced) - ($b->sold + $b->consumed), 2);
-                    $periodIn     = round($stockIn - round($b->purchased + $b->produced, 2), 2);
-                    $periodOut    = round($stockOut - round($b->sold + $b->consumed, 2), 2);
+                    $openingStock = round(($b->purchased + $b->produced + $b->sale_returned) - ($b->sold + $b->consumed + $b->purchase_returned), 2);
+                    $periodIn     = round($stockIn - round($b->purchased + $b->produced + $b->sale_returned, 2), 2);
+                    $periodOut    = round($stockOut - round($b->sold + $b->consumed + $b->purchase_returned, 2), 2);
                 }
 
                 return [
@@ -830,7 +947,25 @@ class ReportDataService
             ->selectRaw('production_order_material_lines.item_id as item_id, SUM(production_order_material_lines.qty) as base')
             ->get()->keyBy('item_id');
 
+        $saleReturned = SaleReturnLine::query()
+            ->whereIn('sale_return_lines.item_id', $itemIds)
+            ->join('sale_returns', 'sale_returns.id', '=', 'sale_return_lines.sale_return_id')
+            ->when($asOf, fn ($q) => $q->where('sale_returns.date', '<=', $asOf))
+            ->groupBy('sale_return_lines.item_id')
+            ->selectRaw('sale_return_lines.item_id as item_id, SUM(sale_return_lines.qty * sale_return_lines.qty_per_uom) as base')
+            ->get()->keyBy('item_id');
+
+        $purchaseReturned = PurchaseReturnLine::query()
+            ->whereIn('purchase_return_lines.item_id', $itemIds)
+            ->join('purchase_returns', 'purchase_returns.id', '=', 'purchase_return_lines.purchase_return_id')
+            ->when($asOf, fn ($q) => $q->where('purchase_returns.date', '<=', $asOf))
+            ->groupBy('purchase_return_lines.item_id')
+            ->selectRaw('purchase_return_lines.item_id as item_id, SUM(purchase_return_lines.qty * purchase_return_lines.qty_per_uom) as base')
+            ->get()->keyBy('item_id');
+
         return $itemIds->mapWithKeys(fn ($id) => [$id => (object) [
+            'sale_returned'     => (float) ($saleReturned->get($id)->base ?? 0),
+            'purchase_returned' => (float) ($purchaseReturned->get($id)->base ?? 0),
             'purchased'     => (float) ($purchased->get($id)->base ?? 0),
             'purchase_cost' => (float) ($purchased->get($id)->cost ?? 0),
             'produced'      => (float) ($produced->get($id)->base ?? 0),
@@ -974,7 +1109,48 @@ class ReportDataService
                 'unit_price' => (float) $row->unit_price,
             ]);
 
-        $rows = $purchases->concat($sales)->concat($produced)->concat($consumed)->sortBy('date')->values();
+        // Goods sent back: a customer's return puts stock back (at the
+        // price they paid), a return to a supplier takes it out (at the
+        // price we paid). Dated by the return.
+        $saleReturns = SaleReturnLine::query()
+            ->where('sale_return_lines.item_id', $itemId)
+            ->join('sale_returns', 'sale_returns.id', '=', 'sale_return_lines.sale_return_id')
+            ->select(['sale_returns.id as doc_id', 'sale_returns.date as date', 'sale_return_lines.qty as qty',
+                'sale_return_lines.qty_per_uom as qty_per_uom', 'sale_return_lines.unit_price as unit_price'])
+            ->get()
+            ->map(function ($row) {
+                $qtyPerUom = (float) $row->qty_per_uom ?: 1.0;
+
+                return [
+                    'date'       => Carbon::parse($row->date)->toDateString(),
+                    'type'       => 'sale_return',
+                    'ref'        => "Sales return #{$row->doc_id}",
+                    'qty'        => (float) $row->qty * $qtyPerUom,
+                    'unit_price' => (float) $row->unit_price / $qtyPerUom,
+                ];
+            });
+
+        $purchaseReturns = PurchaseReturnLine::query()
+            ->where('purchase_return_lines.item_id', $itemId)
+            ->join('purchase_returns', 'purchase_returns.id', '=', 'purchase_return_lines.purchase_return_id')
+            ->select(['purchase_returns.id as doc_id', 'purchase_returns.date as date', 'purchase_return_lines.qty as qty',
+                'purchase_return_lines.qty_per_uom as qty_per_uom', 'purchase_return_lines.unit_price as unit_price'])
+            ->get()
+            ->map(function ($row) {
+                $qtyPerUom = (float) $row->qty_per_uom ?: 1.0;
+
+                return [
+                    'date'       => Carbon::parse($row->date)->toDateString(),
+                    'type'       => 'purchase_return',
+                    'ref'        => "Purchase return #{$row->doc_id}",
+                    'qty'        => -1 * (float) $row->qty * $qtyPerUom,
+                    'unit_price' => (float) $row->unit_price / $qtyPerUom,
+                ];
+            });
+
+        $rows = $purchases->concat($sales)->concat($produced)->concat($consumed)
+            ->concat($saleReturns)->concat($purchaseReturns)
+            ->sortBy('date')->values();
 
         // The running stock has to start from what was already on the
         // shelf when the window opened, not from zero — otherwise a
@@ -1063,6 +1239,8 @@ class ReportDataService
                     InventoryPurchase::class => ['vendor:id,name'],
                     EquipmentPurchase::class => ['vendor:id,name'],
                     OwnerTransaction::class  => ['owner:id,name'],
+                    SaleReturn::class        => ['customer:id,name'],
+                    PurchaseReturn::class    => ['vendor:id,name'],
                 ]),
             ])
             ->orderByDesc('date')
@@ -1495,6 +1673,16 @@ class ReportDataService
                         ->each(fn (Sale $s) => $put($type, $s->id, $s->customer?->name));
                     break;
 
+                case SaleReturn::class:
+                    SaleReturn::with('customer:id,name')->whereIn('id', $ids)->get()
+                        ->each(fn (SaleReturn $r) => $put($type, $r->id, $r->customer?->name));
+                    break;
+
+                case PurchaseReturn::class:
+                    PurchaseReturn::with('vendor:id,name')->whereIn('id', $ids)->get()
+                        ->each(fn (PurchaseReturn $r) => $put($type, $r->id, $r->vendor?->name));
+                    break;
+
                 case Expense::class:
                 case InventoryPurchase::class:
                 case EquipmentPurchase::class:
@@ -1511,12 +1699,14 @@ class ReportDataService
                             Expense::class           => ['vendor:id,name'],
                             InventoryPurchase::class => ['vendor:id,name'],
                             EquipmentPurchase::class => ['vendor:id,name'],
+                            SaleReturn::class        => ['customer:id,name'],
+                            PurchaseReturn::class    => ['vendor:id,name'],
                         ]),
                     ])->whereIn('id', $ids)->get()->each(function (Payment $p) use ($put, $type) {
                         $payable = $p->payable;
 
                         $name = match (true) {
-                            $payable instanceof Sale => $payable->customer?->name,
+                            $payable instanceof Sale, $payable instanceof SaleReturn => $payable->customer?->name,
                             $payable !== null        => $payable->vendor?->name,
                             default                  => null,
                         };

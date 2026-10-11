@@ -16,7 +16,8 @@ use Illuminate\Support\Facades\DB;
 //  invoice was worth (audit finding 4.6).
 //
 //    created by  a receipt marked is_customer_credit (posted to
-//                Customer Credits, account 2300 — a liability);
+//                Customer Credits, account 2300 — a liability), or a
+//                sales return whose refund was kept as credit;
 //    used by     a payment against one of their invoices with
 //                method 'credit' (no money moves: 2300 → Receivable).
 //
@@ -65,6 +66,15 @@ class CustomerCreditService
             ->select('customer_id', DB::raw('SUM(amount) as total'))
             ->pluck('total', 'customer_id');
 
+        // Credit kept on the account when a customer returned goods they
+        // had already paid for (see SaleReturn): refund_method 'credit'.
+        $fromReturns = \App\Models\SaleReturn::query()
+            ->whereIn('customer_id', $ids)
+            ->where('refund_method', \App\Models\SaleReturn::CREDIT)
+            ->groupBy('customer_id')
+            ->select('customer_id', DB::raw('SUM(refund_amount) as total'))
+            ->pluck('total', 'customer_id');
+
         $used = Payment::query()
             ->join('sales', function ($join) {
                 $join->on('sales.id', '=', 'payments.payable_id')
@@ -79,7 +89,7 @@ class CustomerCreditService
             ->pluck('total', 'customer_id');
 
         return $ids->mapWithKeys(fn (int $id) => [
-            $id => max(0.0, round((float) ($received[$id] ?? 0) - (float) ($used[$id] ?? 0), 2)),
+            $id => max(0.0, round((float) ($received[$id] ?? 0) + (float) ($fromReturns[$id] ?? 0) - (float) ($used[$id] ?? 0), 2)),
         ]);
     }
 }

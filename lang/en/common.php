@@ -132,4 +132,10 @@ return [
     'sale_draft_saved'   => 'Draft saved. You can continue it any time from the Drafts list.',
     'sale_draft_deleted' => 'Draft deleted.',
 
+    // ── Quantity returns ──────────────────────────────────────
+    'sale_return_recorded'     => 'Sales return recorded.',
+    'sale_return_deleted'      => 'Sales return deleted.',
+    'purchase_return_recorded' => 'Purchase return recorded.',
+    'purchase_return_deleted'  => 'Purchase return deleted.',
+
 ];

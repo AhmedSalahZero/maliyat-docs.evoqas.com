@@ -219,6 +219,8 @@ class ReportExportController extends Controller
                 'sale'     => $l['type_sale'],
                 'produced' => $l['type_produced'],
                 'consumed' => $l['type_consumed'],
+                'sale_return'     => $l['type_sale_return'],
+                'purchase_return' => $l['type_purchase_return'],
             ];
 
             $rows = $data['history']->map(fn ($h) => [
@@ -685,9 +687,10 @@ class ReportExportController extends Controller
             'movements' => 'Movements', 'method' => 'Method', 'direction' => 'Direction',
             'balance_brought_forward' => 'Balance brought forward',
             'method_cash' => 'Cash', 'method_bank' => 'Bank', 'method_visa' => 'Visa', 'method_instapay' => 'InstaPay', 'method_wallet' => 'Electronic wallet',
-            'status_paid' => 'Paid', 'status_partial' => 'Partial', 'status_unpaid' => 'Unpaid',
+            'status_paid' => 'Paid', 'status_partial' => 'Partial', 'status_unpaid' => 'Unpaid', 'status_returned' => 'Returned',
             'type_sale' => 'Sale', 'type_expense' => 'Expense', 'type_inventory_purchase' => 'Inventory purchase', 'type_equipment_purchase' => 'Equipment purchase',
             'type_produced' => 'Produced', 'type_consumed' => 'Consumed',
+            'type_sale_return' => 'Sales return', 'type_purchase_return' => 'Purchase return',
             'report_ledger' => 'All Entries', 'report_pl' => 'Profit & Loss', 'report_customer_statement' => 'Customer Statement',
             'report_supplier_statement' => 'Supplier Statement', 'report_inventory_statement' => 'Inventory Statement', 'report_cashflow' => 'Cash Flow',
             'report_trial_balance' => 'Trial Balance', 'report_journal' => 'Journal',
@@ -725,9 +728,10 @@ class ReportExportController extends Controller
             'movements' => 'الحركات', 'method' => 'الطريقة', 'direction' => 'الاتجاه',
             'balance_brought_forward' => 'رصيد مُرحَّل',
             'method_cash' => 'نقدي', 'method_bank' => 'بنك', 'method_visa' => 'فيزا', 'method_instapay' => 'إنستاباي', 'method_wallet' => 'محفظة إلكترونية',
-            'status_paid' => 'مدفوع', 'status_partial' => 'مدفوع جزئياً', 'status_unpaid' => 'غير مدفوع',
+            'status_paid' => 'مدفوع', 'status_partial' => 'مدفوع جزئياً', 'status_unpaid' => 'غير مدفوع', 'status_returned' => 'مرتجع',
             'type_sale' => 'بيع', 'type_expense' => 'مصروف', 'type_inventory_purchase' => 'شراء مخزون', 'type_equipment_purchase' => 'شراء معدات',
             'type_produced' => 'إنتاج', 'type_consumed' => 'استهلاك',
+            'type_sale_return' => 'مرتجع مبيعات', 'type_purchase_return' => 'مرتجع مشتريات',
             'report_ledger' => 'كل القيود', 'report_pl' => 'الأرباح والخسائر', 'report_customer_statement' => 'كشف حساب عميل',
             'report_supplier_statement' => 'كشف حساب مورد', 'report_inventory_statement' => 'كشف حساب المخزون', 'report_cashflow' => 'التدفق النقدي',
             'report_trial_balance' => 'ميزان المراجعة', 'report_journal' => 'دفتر اليومية',

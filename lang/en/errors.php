@@ -87,4 +87,23 @@ return [
     ],
     // Low finding 11.
     'item_unit_change_needs_confirm' => 'This item has already been bought or sold, so changing its units per pack must be confirmed. Records already entered keep their old conversion; only new ones use the new figure.',
+
+    // A name that is already used in the SAME company — see
+    // App\Rules\UniqueNameInCompany. Spaces at the start/end and
+    // capital letters do not make a name different.
+    'duplicate_customer' => 'A customer named ":name" already exists. Add something to tell them apart, e.g. a city or a number.',
+    'duplicate_vendor'   => 'A supplier or employee named ":name" already exists. Add something to tell them apart, e.g. a city or a number.',
+    'duplicate_employee' => 'A team member named ":name" already exists. Add something to tell them apart, e.g. a second name or a number.',
+
+    // ── Quantity returns (sales return / purchase return) ─────────
+    'return_nothing'            => 'Enter the quantity returned on at least one line.',
+    'return_more_than_sold'     => 'You cannot return more of ":item" than was sold and not yet returned.',
+    'return_more_than_bought'   => 'You cannot return more of ":item" than was bought and not yet returned.',
+    'return_refund_method_needed' => 'The customer or supplier had already paid for these goods, so :amount must be given back. Choose how: cash, bank, or kept as credit.',
+    'return_refund_channel_needed' => ':amount must be given back by bank, Visa, InstaPay or wallet. Please choose which bank or operator.',
+    'return_opening_balance'    => 'Opening balances cannot have returns. Correct the opening balance instead.',
+    'return_before_original'     => 'The return date cannot be earlier than the date of the original sale or purchase.',
+    'sale_has_returns'          => 'This sale has returns recorded against it, so it can no longer be edited or deleted. Delete its returns first if it was entered wrongly.',
+    'purchase_has_returns'      => 'This purchase has returns recorded against it, so it can no longer be edited or deleted. Delete its returns first if it was entered wrongly.',
+
 ];

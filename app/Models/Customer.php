@@ -56,4 +56,10 @@ class Customer extends Model
     {
         return $this->hasMany(Payment::class)->whereNull('payable_type');
     }
+
+    /** Goods this customer sent back (see SaleReturn). */
+    public function saleReturns(): HasMany
+    {
+        return $this->hasMany(SaleReturn::class);
+    }
 }

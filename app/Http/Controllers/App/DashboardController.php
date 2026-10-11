@@ -244,7 +244,7 @@ class DashboardController extends Controller
             WHERE p.payable_type = ".DB::getPdo()->quote($model)."
               AND p.payable_id = {$table}.id
               AND p.company_id = ?
-        ), 0) < {$table}.amount - ".FinancialRules::AMOUNT_TOLERANCE;
+        ), 0) < {$table}.amount".(in_array($table, ['sales', 'inventory_purchases'], true) ? " - {$table}.returns_applied" : '')." - ".FinancialRules::AMOUNT_TOLERANCE;
     }
 
     /**

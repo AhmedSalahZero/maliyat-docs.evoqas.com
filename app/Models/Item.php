@@ -65,6 +65,18 @@ class Item extends Model
         return $this->hasMany(ProductionOrderMaterialLine::class);
     }
 
+    /** Goods customers sent back (stock IN) — see SaleReturn. */
+    public function saleReturnLines(): HasMany
+    {
+        return $this->hasMany(SaleReturnLine::class);
+    }
+
+    /** Goods sent back to suppliers (stock OUT) — see PurchaseReturn. */
+    public function purchaseReturnLines(): HasMany
+    {
+        return $this->hasMany(PurchaseReturnLine::class);
+    }
+
     public function scopeTrading($query)
     {
         return $query->where('type', 'trading');
@@ -149,6 +161,34 @@ class Item extends Model
     }
 
     /**
+     * Base units customers sent back, optionally only on or before
+     * $asOf (dated by the return).
+     */
+    public function totalSaleReturnedBase(?string $asOf = null): float
+    {
+        return (float) $this->saleReturnLines()
+            ->when($asOf, fn ($q) => $q->whereHas(
+                'saleReturn', fn ($q2) => $q2->where('date', '<=', $asOf)
+            ))
+            ->selectRaw('SUM(qty * qty_per_uom) as total')
+            ->value('total') ?: 0;
+    }
+
+    /**
+     * Base units sent back to suppliers, optionally only on or before
+     * $asOf (dated by the return).
+     */
+    public function totalPurchaseReturnedBase(?string $asOf = null): float
+    {
+        return (float) $this->purchaseReturnLines()
+            ->when($asOf, fn ($q) => $q->whereHas(
+                'purchaseReturn', fn ($q2) => $q2->where('date', '<=', $asOf)
+            ))
+            ->selectRaw('SUM(qty * qty_per_uom) as total')
+            ->value('total') ?: 0;
+    }
+
+    /**
      * Stock on hand. With no argument, this is "right now" — what
      * GuardsRawMaterialStock and every other live caller has always
      * asked for, unchanged. Pass $asOf to ask the same question about
@@ -159,7 +199,7 @@ class Item extends Model
      */
     public function currentStock(?string $asOf = null): float
     {
-        return $this->totalPurchasedBase($asOf) + $this->totalProducedBase($asOf)
-            - $this->totalSoldBase($asOf) - $this->totalConsumedInProductionBase($asOf);
+        return $this->totalPurchasedBase($asOf) + $this->totalProducedBase($asOf) + $this->totalSaleReturnedBase($asOf)
+            - $this->totalSoldBase($asOf) - $this->totalConsumedInProductionBase($asOf) - $this->totalPurchaseReturnedBase($asOf);
     }
 }

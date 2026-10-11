@@ -140,27 +140,42 @@ const defaultFormState = () => ({
     installment_count: 3,
     installment_interval_days: 30,
     is_production_labor: false,
+    // Listed so an edit save sends the saved due date instead of wiping it.
+    due_date: null,
 });
 
 const form = useForm(defaultFormState());
 
+// Fields that have their own message under them. Any OTHER problem
+// the server reports is still shown above the Save button, so a
+// refused save is never silent.
+const shownErrorKeys = ['date', 'vendor_id', 'category_id', 'amount', 'amount_now', 'due_date'];
+const otherErrors = computed(() =>
+    [...new Set(Object.entries(form.errors)
+        .filter(([key]) => !shownErrorKeys.includes(key))
+        .map(([, message]) => message))]
+);
+
 watch(expenseKind, (kind) => {
     if (kind === 'cash') form.mode = 'now';
 });
+
+// Same rounding as the server (PHP round: 1.005 -> 1.01).
+const r2 = (n) => Math.round((Number(n) + 1e-9) * 100) / 100;
 
 const installmentSchedule = computed(() => {
     if (isRecurring.value || form.mode !== 'installment' || !form.amount) return [];
     const count = Math.max(2, Number(form.installment_count) || 2);
     const interval = Math.max(1, Number(form.installment_interval_days) || 1);
     const total = Number(form.amount);
-    const per = Math.round((total / count) * 100) / 100;
+    const per = r2(total / count);
     let allocated = 0;
     // Counted from the document's own date, not today — the server
     // does the same, so the preview matches what is saved (audit M13).
     const startDate = form.date || todayIso();
     return Array.from({ length: count }, (_, i) => {
         const isLast = i === count - 1;
-        const amt = isLast ? Math.round((total - allocated) * 100) / 100 : per;
+        const amt = isLast ? r2(total - allocated) : per;
         allocated += amt;
         return { sequence: i + 1, due_date: addDaysIso(startDate, interval * (i + 1)), amount: amt };
     });
@@ -188,6 +203,15 @@ async function createCategory(name) {
     }
 }
 
+// After a payment is added/corrected/removed inside the edit form the
+// page data is refreshed, but the record held here was an old copy, so
+// the payment list and balance kept showing the old figures.
+watch(() => props.expenses.data, (rows) => {
+    if (!editingExpense.value) return;
+    const fresh = rows.find((row) => row.id === editingExpense.value.id);
+    if (editingExpense.value && fresh) editingExpense.value = fresh;
+});
+
 function startEdit(expense) {
     editingExpense.value = expense;
     expenseKind.value = 'oneTime';
@@ -207,7 +231,13 @@ function cancelEdit() {
     form.clearErrors();
 }
 
+// What the "… recorded." line says. Captured when Save is pressed,
+// because the form is emptied the moment the save succeeds (the line
+// used to print a blank name and "EGP 0.00").
+const recordedLine = ref('');
+
 function submit() {
+    recordedLine.value = `${selectedVendor.value?.name ?? t('cashExpenseLbl')} — ${currency.value} ${money(form.amount)}`;
     if (editingExpense.value) {
         prepareEditSubmit();
     } else if (isRecurring.value) {
@@ -218,7 +248,12 @@ function submit() {
 }
 
 function submitCreate() {
-    form.post(route('app.expenses.store'), {
+    // A cash expense has no supplier: ignore one picked before the
+    // user switched to "Cash expense".
+    form.transform((data) => ({
+        ...data,
+        vendor_id: isCashExpense.value ? null : data.vendor_id,
+    })).post(route('app.expenses.store'), {
         preserveScroll: true,
         onSuccess: () => Object.assign(form, defaultFormState()),
     });
@@ -466,14 +501,21 @@ function freqLabel(freq) {
                 @create-channel="createChannel"
             />
 
+            <!-- Any server problem that has no message of its own above
+                 (e.g. instalment count, payment method) — so a refused
+                 save is never silent. -->
+            <div v-if="otherErrors.length" class="alert warning" style="margin-top: 12px;">
+                <div v-for="message in otherErrors" :key="message">{{ message }}</div>
+            </div>
+
             <div class="submit-row" style="display: flex; gap: 10px;">
                 <button type="button" class="btn btn-ghost" v-if="editingExpense" @click="cancelEdit">{{ t('cancelEditBtn') }}</button>
                 <button type="button" :disabled="form.processing" @click="submit">
                     {{ editingExpense ? t('saveChangesBtn') : (isRecurring ? t('setupRecurringBtn') : (isCashExpense ? t('recordCashExpenseBtn') : t('recordExpenseBtn'))) }}
                 </button>
             </div>
-            <div v-if="form.recentlySuccessful" class="status-line">
-                {{ selectedVendor?.name ?? t('cashExpenseLbl') }} — {{ currency }} {{ money(form.amount) }} {{ t('recordedNote') }}
+            <div v-if="form.recentlySuccessful && recordedLine" class="status-line">
+                {{ recordedLine }} {{ t('recordedNote') }}
             </div>
         </div>
 

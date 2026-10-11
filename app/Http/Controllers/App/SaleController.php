@@ -63,7 +63,7 @@ class SaleController extends Controller
         SalesChannel::seedDefaults(auth()->user()->company_id);
 
         $sales = Sale::query()
-            ->with(['customer:id,name', 'salesChannel:id,name,name_ar', 'lines.item:id,name', 'payments'])
+            ->with(['customer:id,name', 'salesChannel:id,name,name_ar', 'lines.item:id,name', 'lines.returnLines:id,sale_line_id,qty', 'returns:id,sale_id,date,amount,refund_amount,refund_method', 'payments'])
             ->latest('date')
             ->latest('id')
             ->paginate(20)
@@ -77,6 +77,10 @@ class SaleController extends Controller
                 'sales_channel'    => $sale->salesChannel?->name,
                 'sales_channel_ar' => $sale->salesChannel?->name_ar,
                 'lines'       => $sale->lines->map(fn ($line) => [
+                    // Needed by the "Apply quantity return" pop-up: which
+                    // line, and how much of it can still come back.
+                    'id'             => $line->id,
+                    'returned_qty'   => round((float) $line->returnLines->sum('qty'), 2),
                     'item_id'        => $line->item_id,
                     'item'           => $line->item?->name,
                     'qty'            => (float) $line->qty,
@@ -88,6 +92,16 @@ class SaleController extends Controller
                     'vat_rate'         => (float) $line->vat_rate,
                     'withholding_rate' => (float) $line->withholding_rate,
                 ]),
+                // Goods sent back after this sale — shown under it, and
+                // they lock the sale against edit/delete.
+                'is_opening_balance' => (bool) $sale->is_opening_balance,
+                'returns'       => $sale->returns->map(fn ($r) => [
+                    'id'            => $r->id,
+                    'date'          => $r->date->toDateString(),
+                    'amount'        => (float) $r->amount,
+                    'refund_amount' => (float) $r->refund_amount,
+                    'refund_method' => $r->refund_method,
+                ])->values(),
                 'vat_rate'      => (float) $sale->vat_rate,
                 'subtotal'      => (float) $sale->subtotal,
                 'vat_amount'    => (float) $sale->vat_amount,
@@ -238,6 +252,13 @@ class SaleController extends Controller
      */
     public function update(UpdateSaleRequest $request, Sale $sale): RedirectResponse
     {
+        // A sale with returns on it is part of those returns' history
+        // (their quantities, values and cost) — it can no longer be
+        // changed. Delete the returns first if it was entered wrongly.
+        if ($sale->returns()->exists()) {
+            return back()->with('error', __('errors.sale_has_returns'));
+        }
+
         $data = $request->validated();
 
         $tax = LineTax::compute($data['lines'], (float) ($data['vat_rate'] ?? 0));
@@ -318,6 +339,10 @@ class SaleController extends Controller
     public function destroy(Sale $sale): RedirectResponse
     {
         $this->authorizeDelete();
+
+        if ($sale->returns()->exists()) {
+            return back()->with('error', __('errors.sale_has_returns'));
+        }
 
         DB::transaction(function () use ($sale) {
             // Captured before anything is touched, so the snapshot

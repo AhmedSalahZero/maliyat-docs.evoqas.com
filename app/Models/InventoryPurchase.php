@@ -16,7 +16,7 @@ class InventoryPurchase extends Model
 
     protected $fillable = [
         'company_id', 'vendor_id', 'date', 'subtotal',
-        'vat_rate', 'vat_amount', 'withholding_amount', 'amount', 'due_date', 'created_by',
+        'vat_rate', 'vat_amount', 'withholding_amount', 'amount', 'returns_applied', 'due_date', 'created_by',
         'is_opening_balance',
     ];
 
@@ -31,6 +31,7 @@ class InventoryPurchase extends Model
         'vat_amount' => 'decimal:2',
         'withholding_amount' => 'decimal:2',
         'amount' => 'decimal:2',
+        'returns_applied' => 'decimal:2',
     ];
 
     // IMPORTANT — `amount` is what we actually OWE the supplier:
@@ -53,6 +54,24 @@ class InventoryPurchase extends Model
     public function payments(): MorphMany
     {
         return $this->morphMany(Payment::class, 'payable');
+    }
+
+    public function returns(): HasMany
+    {
+        return $this->hasMany(PurchaseReturn::class);
+    }
+
+    /**
+     * Keeps `returns_applied` — the part of all this purchase's
+     * returns that simply reduced what we still owed the supplier —
+     * equal to the returns on file. Call after a return is recorded
+     * or deleted.
+     */
+    public function refreshReturnsApplied(): void
+    {
+        $this->forceFill([
+            'returns_applied' => round((float) $this->returns()->sum('applied_amount'), 2),
+        ])->save();
     }
 
     public function installments(): MorphMany
@@ -95,7 +114,7 @@ class InventoryPurchase extends Model
             return 0.0;
         }
 
-        return (float) $this->amount - $this->paidAmount();
+        return (float) $this->amount - (float) $this->returns_applied - $this->paidAmount();
     }
 
     public function isPaid(): bool

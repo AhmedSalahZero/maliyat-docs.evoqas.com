@@ -8,8 +8,11 @@ use App\Models\InventoryStockLedger;
 use App\Models\Item;
 use App\Models\ProductionOrder;
 use App\Models\ProductionOrderMaterialLine;
+use App\Models\PurchaseReturnLine;
 use App\Models\Sale;
 use App\Models\SaleLine;
+use App\Models\SaleReturn;
+use App\Models\SaleReturnLine;
 use Illuminate\Support\Facades\DB;
 
 // ══════════════════════════════════════════════════════════════════
@@ -32,6 +35,25 @@ use Illuminate\Support\Facades\DB;
 //      forward from that date to today, and cascades into anything
 //      downstream (production consuming that item, and the
 //      finished product that production feeds) automatically.
+//
+//  RETURNS (added Oct 2026):
+//    - A SALES RETURN is inbound stock on the RETURN date, valued at
+//      the cost the original sale took those goods out at (the sale
+//      line's unit_cost) — never at the day's average. That cancels
+//      exactly the profit the sale showed, leaves earlier months
+//      untouched, and keeps stock value = quantity x cost. If the
+//      sale line is later repriced, the return follows it (its
+//      stored unit_cost and its Cost-of-Goods-Sold reversal are
+//      corrected the same way a sale's COGS is).
+//      A return on the SAME day as its sale is valued at the day's
+//      average cost without the return — adding stock at exactly the
+//      average cannot change the average, which is also the cost the
+//      sale line gets that day.
+//    - A PURCHASE RETURN is outbound stock on the return date,
+//      valued at the original purchase price (fixed, stored on the
+//      return line, as its line total — the same figure the ledger
+//      credits to Inventory). The pool's average is then recomputed from what
+//      is left.
 //
 //  Entry point for every caller: onItemMovementChanged(). Everything
 //  else here is a private step of that one operation.
@@ -91,6 +113,10 @@ class MovingAverageCostingService
                 $this->repriceSaleCogs($companyId, $saleId);
             }
 
+            foreach ($result['affected_sale_return_ids'] as $returnId) {
+                $this->repriceSaleReturnCogs($companyId, $returnId);
+            }
+
             foreach ($result['affected_production_order_ids'] as $orderId) {
                 $this->repriceProductionOrder($companyId, $orderId, $depth);
             }
@@ -103,7 +129,7 @@ class MovingAverageCostingService
      * material line for this item dated on/after $fromDate gets its
      * stored cost rewritten to match.
      *
-     * @return array{affected_sale_ids: int[], affected_production_order_ids: int[]}
+     * @return array{affected_sale_ids: int[], affected_sale_return_ids: int[], affected_production_order_ids: int[]}
      */
     private function recalculateItem(int $companyId, int $itemId, string $fromDate): array
     {
@@ -165,16 +191,37 @@ class MovingAverageCostingService
             ->with('productionOrder:id,date')
             ->get();
 
+        // Sales returns put goods back (inbound, on the return date);
+        // purchase returns send goods back to the supplier (outbound,
+        // on the return date). Both are dated by the RETURN, never by
+        // the original document.
+        /** @var \Illuminate\Support\Collection<int, SaleReturnLine> $saleReturnLines */
+        $saleReturnLines = SaleReturnLine::query()
+            ->where('item_id', $itemId)
+            ->whereHas('saleReturn', fn ($q) => $q->where('company_id', $companyId)->where('date', '>=', $fromDate))
+            ->with(['saleReturn:id,date,sale_id', 'saleReturn.sale:id,date', 'saleLine:id,sale_id,unit_cost'])
+            ->get();
+
+        /** @var \Illuminate\Support\Collection<int, PurchaseReturnLine> $purchaseReturnLines */
+        $purchaseReturnLines = PurchaseReturnLine::query()
+            ->where('item_id', $itemId)
+            ->whereHas('purchaseReturn', fn ($q) => $q->where('company_id', $companyId)->where('date', '>=', $fromDate))
+            ->with('purchaseReturn:id,date')
+            ->get();
+
         $outboundDates = $outboundSaleLines->map(fn (SaleLine $l) => $l->sale->date->toDateString())
-            ->concat($outboundMaterialLines->map(fn (ProductionOrderMaterialLine $l) => $l->productionOrder->date->toDateString()));
+            ->concat($outboundMaterialLines->map(fn (ProductionOrderMaterialLine $l) => $l->productionOrder->date->toDateString()))
+            ->concat($purchaseReturnLines->map(fn (PurchaseReturnLine $l) => $l->purchaseReturn->date->toDateString()));
 
         $dates = $inboundByDate->keys()
+            ->concat($saleReturnLines->map(fn (SaleReturnLine $l) => $l->saleReturn->date->toDateString()))
             ->concat($outboundDates)
             ->unique()
             ->sort()
             ->values();
 
         $affectedSaleIds = collect();
+        $affectedSaleReturnIds = collect();
         $affectedProductionOrderIds = collect();
 
         $runningQty   = $beginningQty;
@@ -187,14 +234,49 @@ class MovingAverageCostingService
             $qtyIn   = (float) ($inboundByDate[$date]['qty'] ?? 0);
             $valueIn = (float) ($inboundByDate[$date]['value'] ?? 0);
 
+            // ── Sales returns coming back today ──────────────────
+            // Returns of a sale made on an EARLIER day go back at the
+            // cost that sale took them out at (read live from the sale
+            // line, which this same pass may just have repriced).
+            $dayReturnLines = $saleReturnLines->filter(fn (SaleReturnLine $l) => $l->saleReturn->date->toDateString() === $date);
+            $sameDayReturnLines = $dayReturnLines->filter(fn (SaleReturnLine $l) => $l->saleReturn->sale?->date?->toDateString() === $date);
+            $earlierSaleReturnLines = $dayReturnLines->diff($sameDayReturnLines);
+
+            foreach ($earlierSaleReturnLines as $line) {
+                $cost = $this->originalSaleCost($line, $outboundSaleLines);
+                $this->stampReturnCost($line, $cost, $affectedSaleReturnIds);
+                $qtyIn   += $line->baseQty();
+                $valueIn += self::lineCost($line->baseQty(), $cost);
+            }
+
             $availableQty   = round($dayBeginningQty + $qtyIn, self::QTY_DECIMALS);
             $availableValue = round($dayBeginningValue + $valueIn, 2);
+
+            // Returns of a sale made TODAY: valued at today's average
+            // as it stands without them. Putting stock back at exactly
+            // the average leaves the average unchanged — and that is
+            // the cost today's sale line gets, so the two cancel.
+            if ($sameDayReturnLines->isNotEmpty()) {
+                $baseAverage = $availableQty > 0 ? max(0.0, round($availableValue / $availableQty, 4)) : null;
+
+                foreach ($sameDayReturnLines as $line) {
+                    $cost = $baseAverage ?? $this->originalSaleCost($line, $outboundSaleLines);
+                    $this->stampReturnCost($line, $cost, $affectedSaleReturnIds);
+                    $qtyIn   += $line->baseQty();
+                    $valueIn += self::lineCost($line->baseQty(), $cost);
+                    $availableQty   = round($availableQty + $line->baseQty(), self::QTY_DECIMALS);
+                    $availableValue = round($availableValue + self::lineCost($line->baseQty(), $cost), 2);
+                }
+            }
 
             // No stock available to average — an item never bought/
             // produced yet still shouldn't block a sale (same
             // "treated as free" fallback the app already used
-            // before this engine existed).
-            $averageCost = $availableQty > 0 ? round($availableValue / $availableQty, 4) : 0.0;
+            // before this engine existed). Never negative: a pool
+            // left with stock but no value (a purchase return taken
+            // out at a price above the remaining average) costs
+            // nothing rather than a negative amount.
+            $averageCost = $availableQty > 0 ? max(0.0, round($availableValue / $availableQty, 4)) : 0.0;
 
             $daySaleLines = $outboundSaleLines->filter(fn (SaleLine $l) => $l->sale->date->toDateString() === $date);
             $dayMaterialLines = $outboundMaterialLines->filter(fn (ProductionOrderMaterialLine $l) => $l->productionOrder->date->toDateString() === $date);
@@ -203,7 +285,14 @@ class MovingAverageCostingService
             // invoiced in (e.g. Carton) — baseQty() converts it to
             // base units before it can be weighed against the pool,
             // same as an inbound purchase line already does.
-            $qtyOut = round((float) $daySaleLines->sum(fn (SaleLine $l) => $l->baseQty()) + (float) $dayMaterialLines->sum('qty'), self::QTY_DECIMALS);
+            $dayPurchaseReturnLines = $purchaseReturnLines->filter(fn (PurchaseReturnLine $l) => $l->purchaseReturn->date->toDateString() === $date);
+
+            $qtyOut = round(
+                (float) $daySaleLines->sum(fn (SaleLine $l) => $l->baseQty())
+                + (float) $dayMaterialLines->sum('qty')
+                + (float) $dayPurchaseReturnLines->sum(fn (PurchaseReturnLine $l) => $l->baseQty()),
+                self::QTY_DECIMALS
+            );
 
             // What leaves stock today is valued LINE BY LINE, each line
             // rounded to the cent exactly as it is posted to Cost of
@@ -234,6 +323,15 @@ class MovingAverageCostingService
                 $valueOut += $lineTotal;
             }
 
+            // Goods sent back to a supplier leave at the price they were
+            // bought at (stored on the return line), not at the average.
+            foreach ($dayPurchaseReturnLines as $line) {
+                // The line's own value (the same figure credited to
+                // Inventory in the ledger), so stock value and ledger agree
+                // to the cent whatever the quantity.
+                $valueOut += (float) $line->line_total;
+            }
+
             $valueOut = round($valueOut, 2);
 
             $endingQty   = round($availableQty - $qtyOut, self::QTY_DECIMALS);
@@ -260,6 +358,7 @@ class MovingAverageCostingService
 
         return [
             'affected_sale_ids' => $affectedSaleIds->unique()->values()->all(),
+            'affected_sale_return_ids' => $affectedSaleReturnIds->unique()->values()->all(),
             'affected_production_order_ids' => $affectedProductionOrderIds->unique()->values()->all(),
         ];
     }
@@ -325,6 +424,78 @@ class MovingAverageCostingService
 
         if ($newTotal > 0) {
             $this->journal->postCostOfGoodsSold($sale, $newTotal);
+        }
+    }
+
+    /**
+     * The cost per base unit the ORIGINAL SALE took this returned
+     * line's goods out of stock at. A sale line dated on/after the
+     * recalculation start was (or is about to be) repriced in this
+     * very pass, so its in-memory copy is read; an older one still
+     * holds its stored cost. Falls back to the cost already stamped
+     * on the return line, then to zero.
+     *
+     * @param  \Illuminate\Support\Collection<int, SaleLine>  $outboundSaleLines
+     */
+    private function originalSaleCost(SaleReturnLine $line, \Illuminate\Support\Collection $outboundSaleLines): float
+    {
+        $live = $outboundSaleLines->firstWhere('id', $line->sale_line_id);
+        $cost = $live?->unit_cost ?? $line->saleLine?->unit_cost ?? $line->unit_cost;
+
+        return (float) ($cost ?? 0);
+    }
+
+    /**
+     * Store the cost a returned line went back into stock at, and
+     * remember the return if that changed (so its Cost of Goods Sold
+     * reversal is reposted).
+     */
+    private function stampReturnCost(SaleReturnLine $line, float $cost, \Illuminate\Support\Collection $affectedReturnIds): void
+    {
+        $cost = round($cost, 4);
+
+        if ($line->unit_cost === null || abs((float) $line->unit_cost - $cost) >= 0.00005) {
+            $affectedReturnIds->push($line->sale_return_id);
+        }
+
+        $line->forceFill(['unit_cost' => $cost])->save();
+    }
+
+    /**
+     * A sales return's Cost of Goods Sold reversal = the sum of its
+     * lines' (base qty x the cost they went back into stock at). The
+     * mirror image of repriceSaleCogs(): reposts only if the total
+     * actually differs from what is on the books.
+     */
+    private function repriceSaleReturnCogs(int $companyId, int $returnId): void
+    {
+        $return = SaleReturn::query()->with('lines')->find($returnId);
+
+        if (! $return) {
+            return;
+        }
+
+        $newTotal = round((float) $return->lines
+            ->filter(fn (SaleReturnLine $line) => $line->unit_cost !== null && $line->item_id)
+            ->sum(fn (SaleReturnLine $line) => self::lineCost($line->baseQty(), (float) $line->unit_cost)), 2);
+
+        $currentlyPosted = (float) DB::table('journal_lines')
+            ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
+            ->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
+            ->where('journal_entries.source_type', SaleReturn::class)
+            ->where('journal_entries.source_id', $return->id)
+            ->where('accounts.code', Account::COST_OF_GOODS_SOLD)
+            ->selectRaw('COALESCE(SUM(journal_lines.credit) - SUM(journal_lines.debit), 0) as net')
+            ->value('net');
+
+        if (abs($newTotal - $currentlyPosted) < 0.01) {
+            return;
+        }
+
+        $this->journal->reverseCostOfGoodsSoldFor($return);
+
+        if ($newTotal > 0) {
+            $this->journal->postSaleReturnCostReversal($return, $newTotal);
         }
     }
 

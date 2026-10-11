@@ -26,10 +26,14 @@ const props = defineProps({
 const emit = defineEmits(['update:open', 'confirm']);
 
 function cancel() {
+    if (!props.open) return;
     emit('update:open', false);
 }
 
 function confirm() {
+    // A fast double click used to fire "confirm" twice (the dialog
+    // takes a moment to fade out), e.g. two delete requests.
+    if (!props.open) return;
     emit('update:open', false);
     emit('confirm');
 }

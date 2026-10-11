@@ -31,6 +31,9 @@ return [
     // Inventory purchase quantities — see App\Rules\HalfStepQuantity.
     'half_step_qty' => 'Quantity must be a whole or half number (e.g. 1, 1.5, 2, 2.5).',
 
+    // Sales Invoice with no customer — see StoreSaleRequest::messages().
+    'sale_customer_required' => 'Please choose a customer for this Sales Invoice. (For a sale with no customer, use Cash Sales.)',
+
     // Sales date — see StoreSaleRequest::messages().
     'sale_date_not_future' => 'A sale can be recorded for today or any past date. Future dates are not allowed.',
 

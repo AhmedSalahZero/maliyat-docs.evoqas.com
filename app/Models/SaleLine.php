@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SaleLine extends Model
 {
@@ -39,6 +40,12 @@ class SaleLine extends Model
     public function sale(): BelongsTo
     {
         return $this->belongsTo(Sale::class);
+    }
+
+    /** Quantities of this line already sent back (see SaleReturn). */
+    public function returnLines(): HasMany
+    {
+        return $this->hasMany(SaleReturnLine::class);
     }
 
     public function item(): BelongsTo

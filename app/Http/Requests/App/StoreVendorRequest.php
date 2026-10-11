@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests\App;
 
+use App\Http\Requests\Concerns\NormalizesName;
+use App\Models\Vendor;
+use App\Rules\UniqueNameInCompany;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -12,6 +15,8 @@ use Illuminate\Validation\Rule;
 // ══════════════════════════════════════════════════════════════════
 class StoreVendorRequest extends FormRequest
 {
+    use NormalizesName;
+
     public function authorize(): bool
     {
         return (bool) $this->user()?->company_id;
@@ -20,7 +25,12 @@ class StoreVendorRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:150'],
+            'name' => [
+                'required', 'string', 'max:150',
+                // Suppliers and employees share one list, so the name
+                // must be new across both (same company only).
+                new UniqueNameInCompany(Vendor::class, $this->user()?->company_id, 'errors.duplicate_vendor'),
+            ],
             'type' => ['required', Rule::in(['vendor', 'employee'])],
         ];
     }

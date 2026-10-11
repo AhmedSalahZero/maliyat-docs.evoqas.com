@@ -57,6 +57,9 @@ return [
     // Inventory purchase quantities — see App\Rules\HalfStepQuantity.
     'half_step_qty' => 'يجب أن تكون الكمية رقماً صحيحاً أو نصفاً (مثل 1 أو 1.5 أو 2 أو 2.5).',
 
+    // Sales Invoice with no customer — see StoreSaleRequest::messages().
+    'sale_customer_required' => 'من فضلك اختر العميل لفاتورة المبيعات هذه. (للبيع بدون عميل استخدم البيع النقدي.)',
+
     // Sales date — see StoreSaleRequest::messages().
     'sale_date_not_future' => 'يمكن تسجيل البيع بتاريخ اليوم أو أي تاريخ سابق. لا يُسمح بتاريخ مستقبلي.',
 

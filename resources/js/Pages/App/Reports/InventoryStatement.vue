@@ -124,6 +124,8 @@ function historyTypeLabel(type) {
         sale: t('saleLbl'),
         produced: t('producedLbl'),
         consumed: t('consumedLbl'),
+        sale_return: t('saleReturnHistLbl'),
+        purchase_return: t('purchaseReturnHistLbl'),
     }[type] ?? type;
 }
 
@@ -136,6 +138,8 @@ function priceLabelForRow(type) {
         sale: t('sellingPriceLbl'),
         produced: t('productionCostLbl'),
         consumed: t('consumptionCostLbl'),
+        sale_return: t('sellingPriceLbl'),
+        purchase_return: t('purchasePriceLbl'),
     }[type] ?? t('unitPriceLbl');
 }
 </script>

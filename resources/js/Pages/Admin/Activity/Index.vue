@@ -43,6 +43,13 @@ function paginationLabel(label) {
 }
 
 function applyFilters() {
+    // The server swaps a backwards range (From after To) before filtering.
+    // Do the same in the boxes, so they show the range the table is
+    // really showing instead of the backwards one the user typed.
+    if (form.value.from && form.value.to && form.value.from > form.value.to) {
+        form.value = { ...form.value, from: form.value.to, to: form.value.from };
+    }
+
     router.get(route('admin.activity.index'), {
         from:       form.value.from,
         to:         form.value.to,

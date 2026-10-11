@@ -96,7 +96,9 @@ class PaymentController extends Controller
             ->withSum('payments as payments_total', 'amount')
             ->whereRaw('COALESCE((select sum(p.amount) from payments p'
                 .' where p.payable_type = ? and p.payable_id = sales.id'
-                .' and p.company_id = sales.company_id), 0) < sales.amount - '.FinancialRules::AMOUNT_TOLERANCE, [Sale::class]);
+                // Returns that reduced what is owed come off the amount,
+                // exactly like a payment (see Sale::balance()).
+                .' and p.company_id = sales.company_id), 0) < sales.amount - sales.returns_applied - '.FinancialRules::AMOUNT_TOLERANCE, [Sale::class]);
 
         if ($search !== '') {
             $query->whereHas('customer', fn ($q) => $q->where('name', 'like', '%'.$search.'%'));
@@ -119,7 +121,7 @@ class PaymentController extends Controller
                 'customer' => $sale->customer?->name,
                 'customer_credit' => (float) ($credits[(int) $sale->customer_id] ?? 0),
                 'amount'   => (float) $sale->amount,
-                'balance'  => round((float) $sale->amount - (float) $sale->payments_total, 2),
+                'balance'  => round((float) $sale->amount - (float) $sale->returns_applied - (float) $sale->payments_total, 2),
                 'due_date' => $sale->due_date?->toDateString(),
                 'date'     => $sale->date->toDateString(),
             ])->values(),
@@ -150,12 +152,15 @@ class PaymentController extends Controller
         $bills = collect();
 
         foreach ($sources as [$type, $model, $table]) {
+            // Only inventory purchases can have returns on them.
+            $returnsApplied = $table === 'inventory_purchases' ? " - {$table}.returns_applied" : '';
+
             $query = $model::query()
                 ->with('vendor:id,name')
                 ->withSum('payments as payments_total', 'amount')
                 ->whereRaw('COALESCE((select sum(p.amount) from payments p'
                     ." where p.payable_type = ? and p.payable_id = {$table}.id"
-                    ." and p.company_id = {$table}.company_id), 0) < {$table}.amount - ".FinancialRules::AMOUNT_TOLERANCE, [$model]);
+                    ." and p.company_id = {$table}.company_id), 0) < {$table}.amount{$returnsApplied} - ".FinancialRules::AMOUNT_TOLERANCE, [$model]);
 
             // Opening-balance stock and equipment were already owned
             // (booked against Owner's Equity) — they are not bills and
@@ -536,7 +541,7 @@ class PaymentController extends Controller
             'amount'       => (float) $bill->amount,
             // From the withSum alias, not balance() — calling that
             // here would fire one SUM per row again.
-            'balance'      => round((float) $bill->amount - (float) $bill->payments_total, 2),
+            'balance'      => round((float) $bill->amount - (float) ($bill->returns_applied ?? 0) - (float) $bill->payments_total, 2),
             'due_date'     => $bill->due_date?->toDateString(),
             'date'         => $bill->date->toDateString(),
         ];

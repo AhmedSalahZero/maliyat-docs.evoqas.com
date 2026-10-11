@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests\App;
 
+use App\Http\Requests\Concerns\NormalizesName;
+use App\Models\Customer;
+use App\Rules\UniqueNameInCompany;
 use Illuminate\Foundation\Http\FormRequest;
 
 // ══════════════════════════════════════════════════════════════════
@@ -11,6 +14,8 @@ use Illuminate\Foundation\Http\FormRequest;
 // ══════════════════════════════════════════════════════════════════
 class UpdateCustomerRequest extends FormRequest
 {
+    use NormalizesName;
+
     public function authorize(): bool
     {
         return (bool) $this->user()?->company_id;
@@ -19,7 +24,10 @@ class UpdateCustomerRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name'  => ['required', 'string', 'max:150'],
+            'name'  => [
+                'required', 'string', 'max:150',
+                new UniqueNameInCompany(Customer::class, $this->user()?->company_id, 'errors.duplicate_customer', $this->route('customer')?->id),
+            ],
             'phone' => ['nullable', 'string', 'max:30'],
         ];
     }

@@ -55,7 +55,7 @@ class InventoryPurchaseController extends Controller
     public function index(): Response
     {
         $purchases = InventoryPurchase::query()
-            ->with(['vendor:id,name', 'lines.item:id,name', 'payments'])
+            ->with(['vendor:id,name', 'lines.item:id,name', 'lines.returnLines:id,inventory_purchase_line_id,qty', 'returns:id,inventory_purchase_id,date,amount,refund_amount,refund_method', 'payments'])
             ->latest('date')
             ->latest('id')
             ->paginate(20)
@@ -66,6 +66,10 @@ class InventoryPurchaseController extends Controller
                 'vendor_id'   => $purchase->vendor_id,
                 'vendor'      => $purchase->vendor?->name,
                 'lines'       => $purchase->lines->map(fn ($line) => [
+                    // Needed by the "Apply quantity return" pop-up: which
+                    // line, and how much of it can still go back.
+                    'id'             => $line->id,
+                    'returned_qty'   => round((float) $line->returnLines->sum('qty'), 2),
                     'item_id'        => $line->item_id,
                     'item'           => $line->item?->name,
                     'qty'            => (float) $line->qty,
@@ -77,6 +81,16 @@ class InventoryPurchaseController extends Controller
                     'vat_rate'         => (float) $line->vat_rate,
                     'withholding_rate' => (float) $line->withholding_rate,
                 ]),
+                // Goods sent back to the supplier after this purchase —
+                // shown under it, and they lock it against edit/delete.
+                'is_opening_balance' => (bool) $purchase->is_opening_balance,
+                'returns'        => $purchase->returns->map(fn ($r) => [
+                    'id'            => $r->id,
+                    'date'          => $r->date->toDateString(),
+                    'amount'        => (float) $r->amount,
+                    'refund_amount' => (float) $r->refund_amount,
+                    'refund_method' => $r->refund_method,
+                ])->values(),
                 'vat_rate'       => (float) $purchase->vat_rate,
                 'subtotal'       => (float) $purchase->subtotal,
                 'vat_amount'     => (float) $purchase->vat_amount,
@@ -180,6 +194,13 @@ class InventoryPurchaseController extends Controller
      */
     public function update(UpdateInventoryPurchaseRequest $request, InventoryPurchase $inventoryPurchase): RedirectResponse
     {
+        // A purchase with returns on it is part of those returns'
+        // history (their quantities and prices) — it can no longer be
+        // changed. Delete the returns first if it was entered wrongly.
+        if ($inventoryPurchase->returns()->exists()) {
+            return back()->with('error', __('errors.purchase_has_returns'));
+        }
+
         $data = $request->validated();
 
         $tax = LineTax::compute($data['lines'], (float) ($data['vat_rate'] ?? 0));
@@ -242,6 +263,10 @@ class InventoryPurchaseController extends Controller
     public function destroy(InventoryPurchase $inventoryPurchase): RedirectResponse
     {
         $this->authorizeDelete();
+
+        if ($inventoryPurchase->returns()->exists()) {
+            return back()->with('error', __('errors.purchase_has_returns'));
+        }
 
         // Refused if this purchase's stock was already sold or used —
         // those sales would be left with nothing to take a cost from

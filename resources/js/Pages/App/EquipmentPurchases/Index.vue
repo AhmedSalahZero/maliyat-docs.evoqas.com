@@ -16,7 +16,7 @@
 //  Same Edit/Delete/rename/date-field patterns as the other pages.
 // ══════════════════════════════════════════════════════════════════
 
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -86,24 +86,39 @@ const defaultFormState = () => ({
     due_in_days: 14,
     installment_count: 3,
     installment_interval_days: 30,
+    // Listed so an edit save sends the saved due date instead of wiping it.
+    due_date: null,
 });
 
 const form = useForm(defaultFormState());
 
-const total = computed(() => (Number(form.qty) || 0) * (Number(form.unit_price) || 0));
+// Same rounding as the server (PHP round: 1.005 -> 1.01).
+const r2 = (n) => Math.round((Number(n) + 1e-9) * 100) / 100;
+
+const total = computed(() => r2((Number(form.qty) || 0) * (Number(form.unit_price) || 0)));
+
+// Fields that have their own message under them. Any OTHER problem the
+// server reports is shown above the Save button, so a refused save is
+// never silent.
+const shownErrorKeys = ['date', 'vendor_id', 'category_id', 'name', 'unit_price', 'amount_now', 'due_date'];
+const otherErrors = computed(() =>
+    [...new Set(Object.entries(form.errors)
+        .filter(([key]) => !shownErrorKeys.includes(key))
+        .map(([, message]) => message))]
+);
 
 const installmentSchedule = computed(() => {
     if (form.mode !== 'installment' || total.value <= 0) return [];
     const count = Math.max(2, Number(form.installment_count) || 2);
     const interval = Math.max(1, Number(form.installment_interval_days) || 1);
-    const per = Math.round((total.value / count) * 100) / 100;
+    const per = r2(total.value / count);
     let allocated = 0;
     // Counted from the document's own date, not today — the server
     // does the same, so the preview matches what is saved (audit M13).
     const startDate = form.date || todayIso();
     return Array.from({ length: count }, (_, i) => {
         const isLast = i === count - 1;
-        const amt = isLast ? Math.round((total.value - allocated) * 100) / 100 : per;
+        const amt = isLast ? r2(total.value - allocated) : per;
         allocated += amt;
         return { sequence: i + 1, due_date: addDaysIso(startDate, interval * (i + 1)), amount: amt };
     });
@@ -166,6 +181,15 @@ async function saveRename(newName) {
     }
 }
 
+// After a payment is added/corrected/removed inside the edit form the
+// page data is refreshed, but the record held here was an old copy, so
+// the payment list and balance kept showing the old figures.
+watch(() => props.purchases.data, (rows) => {
+    if (!editingPurchase.value) return;
+    const fresh = rows.find((row) => row.id === editingPurchase.value.id);
+    if (fresh) editingPurchase.value = fresh;
+});
+
 function startEdit(purchase) {
     editingPurchase.value = purchase;
     form.vendor_id = purchase.vendor_id;
@@ -185,7 +209,13 @@ function cancelEdit() {
     form.clearErrors();
 }
 
+// What the "… recorded." line says. Captured when Save is pressed,
+// because the form is emptied the moment the save succeeds (the line
+// used to print a blank name and "EGP 0.00").
+const recordedLine = ref('');
+
 function submit() {
+    recordedLine.value = `${form.name} — ${currency.value} ${money(total.value)}`;
     if (editingPurchase.value) {
         prepareEditSubmit();
     } else {
@@ -396,14 +426,18 @@ function onConfirmDialogConfirm() {
                 @create-channel="createChannel"
             />
 
+            <div v-if="otherErrors.length" class="alert warning" style="margin-top: 12px;">
+                <div v-for="message in otherErrors" :key="message">{{ message }}</div>
+            </div>
+
             <div class="submit-row" style="display: flex; gap: 10px;">
                 <button type="button" class="btn btn-ghost" v-if="editingPurchase" @click="cancelEdit">{{ t('cancelEditBtn') }}</button>
                 <button type="button" :disabled="form.processing" @click="submit">
                     {{ editingPurchase ? t('saveChangesBtn') : t('recordEquipmentBtn') }}
                 </button>
             </div>
-            <div v-if="form.recentlySuccessful" class="status-line">
-                {{ form.name }} — {{ currency }} {{ money(total) }} {{ t('recordedNote') }}
+            <div v-if="form.recentlySuccessful && recordedLine" class="status-line">
+                {{ recordedLine }} {{ t('recordedNote') }}
             </div>
         </div>
 

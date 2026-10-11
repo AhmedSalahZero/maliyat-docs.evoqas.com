@@ -158,7 +158,9 @@ const materialErrors = computed(() =>
 function submit() {
     const shaped = form.transform((data) => ({
         ...data,
-        materials: data.materials.filter((m) => m.item_id && Number(m.qty) > 0),
+        // A negative quantity is kept so the server refuses it with a
+        // message; it used to be dropped silently.
+        materials: data.materials.filter((m) => m.item_id && Number(m.qty) !== 0),
         // PARKED with the repeater.
         // other_costs: data.other_costs.filter((o) => o.category_id && Number(o.amount) > 0),
     }));

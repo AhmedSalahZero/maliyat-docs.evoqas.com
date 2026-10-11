@@ -231,6 +231,12 @@ function startCategoryEdit(category) {
     editingCategoryId.value = category.id;
 }
 
+function cancelCategoryEdit() {
+    editingCategoryId.value = null;
+    categoryForm.reset();
+    categoryForm.clearErrors();
+}
+
 function saveCategory() {
     categoryForm.patch(route('app.categories.update', editingCategoryId.value), {
         preserveScroll: true,
@@ -374,8 +380,7 @@ function paginationLabel(label) {
                             </div>
 
                             <p v-if="isItems" class="form-hint lookup-hint">{{ t('lookup_unit_hint') }}</p>
-                            <div v-if="createForm.errors.name" class="form-error">{{ createForm.errors.name }}</div>
-                            <div v-if="createForm.errors.type" class="form-error">{{ createForm.errors.type }}</div>
+                            <div v-for="(msg, key) in createForm.errors" :key="key" class="form-error">{{ msg }}</div>
 
                             <div class="lookup-actions" style="margin-top: 10px;">
                                 <button type="button" class="btn btn-primary btn-sm" :disabled="createForm.processing" @click="createRow">
@@ -452,8 +457,7 @@ function paginationLabel(label) {
                                 </div>
 
                                 <p v-if="isItems" class="form-hint lookup-hint">{{ t('lookup_unit_hint') }}</p>
-                                <div v-if="form.errors.qty_per_uom" class="form-error">{{ form.errors.qty_per_uom }}</div>
-                                <div v-if="form.errors.name" class="form-error">{{ form.errors.name }}</div>
+                                <div v-for="(msg, key) in form.errors" :key="key" class="form-error">{{ msg }}</div>
                             </td>
                             <td>
                                 <div class="lookup-actions">
@@ -515,7 +519,7 @@ function paginationLabel(label) {
                                     </select>
                                 </div>
                             </div>
-                            <div v-if="createCategoryForm.errors.name" class="form-error">{{ createCategoryForm.errors.name }}</div>
+                            <div v-for="(msg, key) in createCategoryForm.errors" :key="key" class="form-error">{{ msg }}</div>
                         </td>
                         <td>
                             <div class="lookup-actions">
@@ -532,7 +536,10 @@ function paginationLabel(label) {
                     <tr v-for="category in props.categories.data" :key="category.id">
                         <td>
                             <span v-if="editingCategoryId !== category.id">{{ category.name }}</span>
-                            <input v-else v-model="categoryForm.name" type="text" required>
+                            <template v-else>
+                                <input v-model="categoryForm.name" type="text" required>
+                                <div v-for="(msg, key) in categoryForm.errors" :key="key" class="form-error">{{ msg }}</div>
+                            </template>
                         </td>
                         <td>
                             {{ category.kind === 'equipment' ? t('lookup_category_kind_equipment') : t('lookup_category_kind_expense') }}
@@ -543,7 +550,7 @@ function paginationLabel(label) {
                                     <button type="button" class="btn btn-primary btn-sm" :disabled="categoryForm.processing" @click="saveCategory">
                                         {{ t('profile_save') }}
                                     </button>
-                                    <button type="button" class="btn btn-ghost btn-sm" @click="editingCategoryId = null">
+                                    <button type="button" class="btn btn-ghost btn-sm" @click="cancelCategoryEdit">
                                         {{ t('cancelBtn') }}
                                     </button>
                                 </template>

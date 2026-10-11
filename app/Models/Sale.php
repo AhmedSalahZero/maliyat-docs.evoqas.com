@@ -16,7 +16,7 @@ class Sale extends Model
 
     protected $fillable = [
         'company_id', 'customer_id', 'sales_channel_id', 'date', 'subtotal',
-        'vat_rate', 'vat_amount', 'withholding_amount', 'amount', 'due_date', 'created_by',
+        'vat_rate', 'vat_amount', 'withholding_amount', 'amount', 'returns_applied', 'due_date', 'created_by',
         'is_opening_balance',
     ];
 
@@ -37,6 +37,7 @@ class Sale extends Model
         'vat_amount' => 'decimal:2',
         'withholding_amount' => 'decimal:2',
         'amount' => 'decimal:2',
+        'returns_applied' => 'decimal:2',
     ];
 
     // IMPORTANT — `amount` is what the customer actually OWES:
@@ -65,6 +66,24 @@ class Sale extends Model
     public function payments(): MorphMany
     {
         return $this->morphMany(Payment::class, 'payable');
+    }
+
+    public function returns(): HasMany
+    {
+        return $this->hasMany(SaleReturn::class);
+    }
+
+    /**
+     * Keeps `returns_applied` — the part of all this sale's returns
+     * that simply reduced what the customer still owed (the rest was
+     * refunded or kept as credit) — equal to the returns on file.
+     * Call after a return is recorded or deleted.
+     */
+    public function refreshReturnsApplied(): void
+    {
+        $this->forceFill([
+            'returns_applied' => round((float) $this->returns()->sum('applied_amount'), 2),
+        ])->save();
     }
 
     public function installments(): MorphMany
@@ -100,7 +119,9 @@ class Sale extends Model
 
     public function balance(): float
     {
-        return (float) $this->amount - $this->paidAmount();
+        // Returns that reduced what is owed (see SaleReturn) come off
+        // the amount, exactly like a payment does.
+        return (float) $this->amount - (float) $this->returns_applied - $this->paidAmount();
     }
 
     public function isPaid(): bool

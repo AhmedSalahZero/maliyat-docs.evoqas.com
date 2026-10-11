@@ -40,9 +40,20 @@ watch(() => props.email, (val) => {
     }
 });
 
+// An Arabic phone keyboard types ٠١٢٣٤٥٦٧٨٩ (or ۰۱۲۳۴۵۶۷۸۹). The code the
+// server sent is 0-9, so turn those into the ordinary digits first —
+// otherwise the box shows a digit that is silently never sent.
+function toLatinDigits(text) {
+    return String(text)
+        .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+        .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06F0));
+}
+
 function onDigitInput(index, event) {
-    const value = event.target.value.replace(/\D/g, '').slice(-1);
+    const value = toLatinDigits(event.target.value).replace(/\D/g, '').slice(-1);
     digits.value[index] = value;
+    // Keep what the box shows equal to what will be sent.
+    event.target.value = value;
     if (value && index < codeLength - 1) {
         inputRefs.value[index + 1]?.focus();
     }
@@ -56,7 +67,7 @@ function onDigitKeydown(index, event) {
 
 function onPaste(event) {
     event.preventDefault();
-    const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, codeLength);
+    const pasted = toLatinDigits(event.clipboardData.getData('text')).replace(/\D/g, '').slice(0, codeLength);
     pasted.split('').forEach((char, i) => { digits.value[i] = char; });
     inputRefs.value[Math.min(pasted.length, codeLength - 1)]?.focus();
 }

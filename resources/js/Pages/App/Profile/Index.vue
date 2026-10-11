@@ -53,7 +53,7 @@ const businessTypeForm = useForm({
     business_types: [...props.businessTypes],
 });
 
-function toggleBusinessType(type) {
+function toggleBusinessType(type, event) {
     const set = new Set(businessTypeForm.business_types);
     if (set.has(type)) {
         set.delete(type);
@@ -61,6 +61,11 @@ function toggleBusinessType(type) {
         set.add(type);
     }
     businessTypeForm.business_types = set.size > 0 ? Array.from(set) : ['trading'];
+
+    // When the fallback puts the same box back, Vue sees no change and
+    // leaves the box looking empty while the form still holds Trading.
+    // Re-sync the tick the user sees with what will really be sent.
+    if (event?.target) event.target.checked = businessTypeForm.business_types.includes(type);
 }
 
 function saveBusinessTypes() {
@@ -144,15 +149,15 @@ function savePassword() {
             <form @submit.prevent="saveBusinessTypes">
                 <div style="display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0;">
                     <label style="display: flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer;">
-                        <input type="checkbox" :checked="businessTypeForm.business_types.includes('service')" @change="toggleBusinessType('service')">
+                        <input type="checkbox" :checked="businessTypeForm.business_types.includes('service')" @change="toggleBusinessType('service', $event)">
                         {{ t('businessTypeServiceLbl') }}
                     </label>
                     <label style="display: flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer;">
-                        <input type="checkbox" :checked="businessTypeForm.business_types.includes('trading')" @change="toggleBusinessType('trading')">
+                        <input type="checkbox" :checked="businessTypeForm.business_types.includes('trading')" @change="toggleBusinessType('trading', $event)">
                         {{ t('businessTypeTradingLbl') }}
                     </label>
                     <label style="display: flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer;">
-                        <input type="checkbox" :checked="businessTypeForm.business_types.includes('production')" @change="toggleBusinessType('production')">
+                        <input type="checkbox" :checked="businessTypeForm.business_types.includes('production')" @change="toggleBusinessType('production', $event)">
                         {{ t('businessTypeProductionLbl') }}
                     </label>
                 </div>

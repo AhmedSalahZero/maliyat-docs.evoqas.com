@@ -19,7 +19,7 @@
 //  which field to display — defaults to "name".
 // ══════════════════════════════════════════════════════════════════
 
-import { ref, computed, nextTick } from 'vue';
+import { ref, computed, nextTick, watch } from 'vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
 
 const props = defineProps({
@@ -69,16 +69,42 @@ const selectValue = computed({
     },
 });
 
+// True from the moment a name is sent until the parent has answered.
+// Pressing Enter fires "create" and then the box loses focus, which
+// used to fire "create" a second time (two identical records).
+let submitted = false;
+let submittedTimer = null;
+
 function confirmNewName() {
     const name = newName.value.trim();
     if (!name) {
         addingNew.value = false;
         return;
     }
+    if (submitted || props.creating) return;
+    submitted = true;
+    clearTimeout(submittedTimer);
+    // Safety net for pages that do not pass :creating.
+    submittedTimer = setTimeout(() => { submitted = false; }, 2000);
     emit('create', name);
 }
 
+// A successful create makes the parent select the new record: close the
+// text box then. If the create failed, the selection does not change,
+// so the box stays open with the typed name and the user can retry.
+watch(() => props.modelValue, () => {
+    if (submitted) {
+        addingNew.value = false;
+        newName.value = '';
+        submitted = false;
+    }
+});
+watch(() => props.creating, (now, before) => {
+    if (before && !now) submitted = false;
+});
+
 function cancelNewName() {
+    if (submitted || props.creating) return;
     addingNew.value = false;
     newName.value = '';
 }

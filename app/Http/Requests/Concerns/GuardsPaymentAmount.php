@@ -68,7 +68,7 @@ trait GuardsPaymentAmount
             return;
         }
 
-        $remaining = round((float) $payable->amount - $payable->paidAmount() + $creditBack, 2);
+        $remaining = round((float) $payable->amount - (float) ($payable->returns_applied ?? 0) - $payable->paidAmount() + $creditBack, 2);
 
         if ($amount <= $remaining + FinancialRules::AMOUNT_TOLERANCE) {
             return;

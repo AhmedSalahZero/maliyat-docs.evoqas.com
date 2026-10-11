@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests\App;
 
+use App\Http\Requests\Concerns\NormalizesName;
+use App\Models\Customer;
+use App\Rules\UniqueNameInCompany;
 use Illuminate\Foundation\Http\FormRequest;
 
 // ══════════════════════════════════════════════════════════════════
@@ -13,6 +16,8 @@ use Illuminate\Foundation\Http\FormRequest;
 // ══════════════════════════════════════════════════════════════════
 class StoreCustomerRequest extends FormRequest
 {
+    use NormalizesName;
+
     public function authorize(): bool
     {
         return (bool) $this->user()?->company_id;
@@ -21,7 +26,12 @@ class StoreCustomerRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name'  => ['required', 'string', 'max:150'],
+            'name'  => [
+                'required', 'string', 'max:150',
+                // No second customer with the same name in this company
+                // (spaces and capitals ignored) — see UniqueNameInCompany.
+                new UniqueNameInCompany(Customer::class, $this->user()?->company_id, 'errors.duplicate_customer'),
+            ],
             'phone' => ['nullable', 'string', 'max:30'],
         ];
     }

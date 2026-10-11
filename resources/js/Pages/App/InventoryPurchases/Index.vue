@@ -21,7 +21,7 @@
 //  Same Edit/Delete/rename patterns as Sales/Expenses.
 // ══════════════════════════════════════════════════════════════════
 
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -32,6 +32,7 @@ import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
 import EditPaymentsPanel from '@/Components/App/EditPaymentsPanel.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
+import ReturnModal from '@/Components/App/ReturnModal.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
 import { useMoneyFormat } from '@/composables/useMoneyFormat';
 import { todayIso, addDaysIso } from '@/Utils/date';
@@ -104,9 +105,27 @@ const defaultFormState = () => ({
     due_in_days: 14,
     installment_count: 3,
     installment_interval_days: 30,
+    // Listed so an edit save sends the saved due date instead of wiping it.
+    due_date: null,
 });
 
 const form = useForm(defaultFormState());
+
+// Fields that have their own message under them. Problems on single
+// lines (quantity, price, item) are shown together under the table:
+// blank rows are dropped before sending, so the server's row numbers
+// do not always match the rows on screen. Anything else is shown above
+// the Save button, so a refused save is never silent.
+const shownErrorKeys = ['date', 'vendor_id', 'lines', 'amount_now', 'due_date'];
+const isLineError = (key) => /^lines\.\d+\./.test(key);
+const lineErrors = computed(() =>
+    [...new Set(Object.entries(form.errors).filter(([key]) => isLineError(key)).map(([, message]) => message))]
+);
+const otherErrors = computed(() =>
+    [...new Set(Object.entries(form.errors)
+        .filter(([key]) => !shownErrorKeys.includes(key) && !isLineError(key))
+        .map(([, message]) => message))]
+);
 
 // ── VAT and Credit Withholding Tax — per product line ────────────
 // Same rules as the server (App\Support\LineTax):
@@ -146,14 +165,14 @@ const installmentSchedule = computed(() => {
     if (form.mode !== 'installment' || total.value <= 0) return [];
     const count = Math.max(2, Number(form.installment_count) || 2);
     const interval = Math.max(1, Number(form.installment_interval_days) || 1);
-    const per = Math.round((total.value / count) * 100) / 100;
+    const per = r2(total.value / count);
     let allocated = 0;
     // Counted from the document's own date, not today — the server
     // does the same, so the preview matches what is saved (audit M13).
     const startDate = form.date || todayIso();
     return Array.from({ length: count }, (_, i) => {
         const isLast = i === count - 1;
-        const amt = isLast ? Math.round((total.value - allocated) * 100) / 100 : per;
+        const amt = isLast ? r2(total.value - allocated) : per;
         allocated += amt;
         return { sequence: i + 1, due_date: addDaysIso(startDate, interval * (i + 1)), amount: amt };
     });
@@ -277,6 +296,15 @@ async function saveRenameVendor(newName) {
     }
 }
 
+// After a payment is added/corrected/removed inside the edit form the
+// page data is refreshed, but the record held here was an old copy, so
+// the payment list and balance kept showing the old figures.
+watch(() => props.purchases.data, (rows) => {
+    if (!editingPurchase.value) return;
+    const fresh = rows.find((row) => row.id === editingPurchase.value.id);
+    if (editingPurchase.value && fresh) editingPurchase.value = fresh;
+});
+
 function startEdit(purchase) {
     editingPurchase.value = purchase;
     form.vendor_id = purchase.vendor_id;
@@ -299,7 +327,13 @@ function cancelEdit() {
     form.clearErrors();
 }
 
+// What the "… recorded." line says. Captured when Save is pressed,
+// because the form is emptied the moment the save succeeds (the line
+// used to print a blank name and "EGP 0.00").
+const recordedLine = ref('');
+
 function submit() {
+    recordedLine.value = `${selectedVendor.value?.name ?? ''} — ${currency.value} ${money(total.value)}`;
     if (editingPurchase.value) {
         prepareEditSubmit();
     } else {
@@ -310,7 +344,7 @@ function submit() {
 function submitCreate() {
     form.transform((data) => ({
         ...data,
-        lines: data.lines.filter((l) => l.item_id && Number(l.qty) > 0),
+        lines: data.lines.filter((l) => l.item_id && Number(l.qty) !== 0),
     })).post(route('app.inventory-purchases.store'), {
         preserveScroll: true,
         onSuccess: () => Object.assign(form, defaultFormState()),
@@ -321,7 +355,7 @@ function doSubmitEdit(id) {
     form.transform((data) => ({
         vendor_id: data.vendor_id,
         date: data.date,
-        lines: data.lines.filter((l) => l.item_id && Number(l.qty) > 0),
+        lines: data.lines.filter((l) => l.item_id && Number(l.qty) !== 0),
             due_date: data.due_date || null,
     })).put(route('app.inventory-purchases.update', id), {
         preserveScroll: true,
@@ -358,6 +392,34 @@ function confirmDelete(purchase) {
     confirmDialog.value = {
         open: true, title: t('deleteBtn'), message, danger: true,
         action: () => router.delete(route('app.inventory-purchases.destroy', purchase.id), { preserveScroll: true }),
+    };
+}
+
+// ── Purchase returns — "Apply quantity return" ──────────────────
+const showReturn = ref(false);
+const returnPurchase = ref(null);
+
+function openReturn(purchase) {
+    returnPurchase.value = purchase;
+    showReturn.value = true;
+}
+
+// Something on the purchase can still go back (opening stock can't
+// have returns at all).
+function canReturn(purchase) {
+    return !purchase.is_opening_balance
+        && (purchase.lines || []).some((line) => Number(line.qty) - Number(line.returned_qty || 0) > 0.0049);
+}
+
+function returnRefundLabel(r) {
+    if (!(r.refund_amount > 0)) return '';
+    return r.refund_method === 'credit' ? t('returnKeptCreditLbl') : t('returnRefundedLbl');
+}
+
+function confirmDeleteReturn(r) {
+    confirmDialog.value = {
+        open: true, title: t('returnDeleteBtn'), message: t('returnDeleteConfirm'), danger: true,
+        action: () => router.delete(route('app.purchase-returns.destroy', r.id), { preserveScroll: true }),
     };
 }
 
@@ -503,6 +565,7 @@ function onConfirmDialogConfirm() {
             </table>
             <button type="button" class="addline-btn" @click="addLine">{{ t('addLineBtn') }}</button>
             <div v-if="form.errors.lines" class="form-error">{{ form.errors.lines }}</div>
+            <div v-for="message in lineErrors" :key="message" class="form-error">{{ message }}</div>
 
             <div class="form-hint" style="margin-top: 10px;">{{ t('lineTaxHintPurch') }}</div>
 
@@ -603,14 +666,21 @@ function onConfirmDialogConfirm() {
                 @create-channel="createChannel"
             />
 
+            <!-- Any server problem with no message of its own above
+                 (e.g. instalment count, payment method) — so a refused
+                 save is never silent. -->
+            <div v-if="otherErrors.length" class="alert warning" style="margin-top: 12px;">
+                <div v-for="message in otherErrors" :key="message">{{ message }}</div>
+            </div>
+
             <div class="submit-row" style="display: flex; gap: 10px;">
                 <button type="button" class="btn btn-ghost" v-if="editingPurchase" @click="cancelEdit">{{ t('cancelEditBtn') }}</button>
                 <button type="button" :disabled="form.processing" @click="submit">
                     {{ editingPurchase ? t('saveChangesBtn') : t('recordPurchaseBtn') }}
                 </button>
             </div>
-            <div v-if="form.recentlySuccessful" class="status-line">
-                {{ selectedVendor?.name }} — {{ currency }} {{ money(total) }} {{ t('recordedNote') }}
+            <div v-if="form.recentlySuccessful && recordedLine" class="status-line">
+                {{ recordedLine }} {{ t('recordedNote') }}
             </div>
         </div>
 
@@ -631,8 +701,21 @@ function onConfirmDialogConfirm() {
                     </div>
                     <div>
                         <span class="amt">{{ currency }} {{ money(purchase.amount) }}</span>
-                        <button type="button" class="btn btn-ghost btn-sm" @click="startEdit(purchase)">{{ t('editBtn') }}</button>
-                        <button v-if="canDelete" type="button" class="btn btn-ghost btn-sm" style="color: var(--color-danger);" @click="confirmDelete(purchase)">{{ t('deleteBtn') }}</button>
+                        <button v-if="canReturn(purchase)" type="button" class="btn btn-ghost btn-sm" @click="openReturn(purchase)">{{ t('returnBtn') }}</button>
+                        <button type="button" class="btn btn-ghost btn-sm" :disabled="purchase.returns?.length > 0" :title="purchase.returns?.length > 0 ? t('returnLockedHint') : ''" @click="startEdit(purchase)">{{ t('editBtn') }}</button>
+                        <button v-if="canDelete" type="button" class="btn btn-ghost btn-sm" style="color: var(--color-danger);" :disabled="purchase.returns?.length > 0" :title="purchase.returns?.length > 0 ? t('returnLockedHint') : ''" @click="confirmDelete(purchase)">{{ t('deleteBtn') }}</button>
+                    </div>
+                </div>
+
+                <!-- Goods sent back to the supplier after this purchase -->
+                <div v-if="purchase.returns?.length" class="return-rows">
+                    <div v-for="r in purchase.returns" :key="r.id" class="return-row">
+                        <span>
+                            {{ t('purchaseReturnRowLbl') }} · {{ r.date }} ·
+                            <strong>{{ currency }} {{ money(r.amount) }}</strong>
+                            <template v-if="returnRefundLabel(r)"> · {{ returnRefundLabel(r) }} {{ currency }} {{ money(r.refund_amount) }}</template>
+                        </span>
+                        <button v-if="canDelete" type="button" class="btn btn-ghost btn-sm" style="color: var(--color-danger);" @click="confirmDeleteReturn(r)">{{ t('deleteBtn') }}</button>
                     </div>
                 </div>
             </div>
@@ -652,6 +735,13 @@ function onConfirmDialogConfirm() {
             @confirm="onConfirmDialogConfirm"
         />
 
+        <ReturnModal
+            v-model:open="showReturn"
+            kind="purchase"
+            :doc="returnPurchase"
+            :channels="channelList"
+        />
+
         <RenameModal
             :open="showRenameVendor"
             :title="t('renameVendorTitle')"
@@ -669,7 +759,9 @@ function onConfirmDialogConfirm() {
     display: flex; flex-direction: column; gap: 4px;
     font-size: 12.5px; color: var(--color-text-secondary); font-family: var(--font-mono);
 }
-.settle-top > div:last-child { display: flex; align-items: center; gap: 6px; }
+.settle-top > div:last-child { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.return-rows { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--color-border-input); display: flex; flex-direction: column; gap: 4px; }
+.return-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--color-text-secondary); }
 .raw-material-check {
     display: flex; align-items: center; gap: 4px;
     margin-top: 4px; font-size: 11.5px; color: var(--color-text-secondary);

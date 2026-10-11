@@ -32,6 +32,7 @@ import PaymentMethodField from '@/Components/App/PaymentMethodField.vue';
 import EditPaymentsPanel from '@/Components/App/EditPaymentsPanel.vue';
 import ConfirmDialog from '@/Components/App/ConfirmDialog.vue';
 import RenameModal from '@/Components/App/RenameModal.vue';
+import ReturnModal from '@/Components/App/ReturnModal.vue';
 import { useAppTranslations } from '@/composables/useAppTranslations';
 import { useMoneyFormat } from '@/composables/useMoneyFormat';
 import { todayIso, addDaysIso } from '@/Utils/date';
@@ -198,6 +199,10 @@ const defaultFormState = () => ({
     due_in_days: 14,
     installment_count: 3,
     installment_interval_days: 30,
+    // Must be listed here: Inertia only sends fields that exist in the
+    // starting data, so without it an edit save always sent an empty
+    // due date and wiped the saved one.
+    due_date: null,
 });
 
 const form = useForm(defaultFormState());
@@ -233,18 +238,26 @@ const installmentSchedule = computed(() => {
     if (form.mode !== 'installment' || total.value <= 0) return [];
     const count = Math.max(2, Number(form.installment_count) || 2);
     const interval = Math.max(1, Number(form.installment_interval_days) || 1);
-    const per = Math.round((total.value / count) * 100) / 100;
+    const per = r2(total.value / count);
     let allocated = 0;
     // Counted from the document's own date, not today — the server
     // does the same, so the preview matches what is saved (audit M13).
     const startDate = form.date || todayIso();
     return Array.from({ length: count }, (_, i) => {
         const isLast = i === count - 1;
-        const amount = isLast ? Math.round((total.value - allocated) * 100) / 100 : per;
+        const amount = isLast ? r2(total.value - allocated) : per;
         allocated += amount;
         return { sequence: i + 1, due_date: addDaysIso(startDate, interval * (i + 1)), amount };
     });
 });
+
+// A row counts as filled when it has a quantity (other than 0) and a
+// price. A NEGATIVE quantity is kept on purpose so the server refuses
+// it with a message; before, such a row was silently dropped while the
+// on-screen total still counted it.
+function isFilledLine(line) {
+    return Number(line.qty) !== 0 && line.unit_price !== null && line.unit_price !== '';
+}
 
 function addLine() {
     // A new line starts with the same VAT % as the line above it
@@ -348,6 +361,15 @@ async function createSalesChannel(name) {
     }
 }
 
+// After a payment is added/corrected/removed from inside the edit form
+// the page data is refreshed, but the sale held here was an old copy,
+// so the payment list and balance kept showing the old figures.
+watch(() => props.sales.data, (rows) => {
+    if (!editingSale.value) return;
+    const fresh = rows.find((row) => row.id === editingSale.value.id);
+    if (fresh) editingSale.value = fresh;
+});
+
 function startEdit(sale) {
     activeDraftId.value = null;
     lastRecorded.value = null;
@@ -381,6 +403,16 @@ function cancelEdit() {
 }
 
 function submit() {
+    // A Sales Invoice must name its customer — only a Cash Sale may
+    // go without one (it is filed under "Cash Customer"). Stop here
+    // with a message next to the customer box instead of quietly
+    // booking the sale to Cash Customer.
+    if (!isCashSale.value && !form.customer_id) {
+        form.setError('customer_id', t('saleCustomerRequired'));
+        scrollToForm(formCard);
+        return;
+    }
+
     if (editingSale.value) {
         prepareEditSubmit();
     } else {
@@ -398,6 +430,13 @@ function submitCreate() {
 
     form.transform((data) => ({
         ...data,
+        // A cash sale has no customer. If one was picked and then the
+        // user switched to "Cash Sale", that old choice used to be sent
+        // along and the sale was booked to the customer.
+        customer_id: isCashSale.value ? null : data.customer_id,
+        // Tells the server which kind of sale this is, so it can
+        // insist on a customer for an invoice.
+        sale_kind: isCashSale.value ? 'cash' : 'invoice',
         // A line only needs qty + unit price to be real — the item
         // is optional (a lump-sum/no-catalog-item line is valid;
         // see postCogsForLines()'s doc comment). Previously this
@@ -405,7 +444,7 @@ function submitCreate() {
         // where no specific product was picked — exactly the case
         // for a Cash Sale with no item selected, so the sale ended
         // up with zero lines and was rejected.
-        lines: data.lines.filter((line) => Number(line.qty) > 0 && line.unit_price !== null && line.unit_price !== ''),
+        lines: data.lines.filter(isFilledLine),
         // Recording a saved draft — the server removes the draft
         // once the sale is saved (SaleController::store()).
         draft_id: activeDraftId.value,
@@ -427,7 +466,7 @@ function doSubmitEdit(saleId) {
         customer_id: data.customer_id,
         sales_channel_id: data.sales_channel_id,
         date: data.date,
-        lines: data.lines.filter((line) => Number(line.qty) > 0 && line.unit_price !== null && line.unit_price !== ''),
+        lines: data.lines.filter(isFilledLine),
             due_date: data.due_date || null,
     })).put(route('app.sales.update', saleId), {
         preserveScroll: true,
@@ -654,6 +693,37 @@ function confirmDelete(sale) {
         message,
         danger: true,
         action: () => router.delete(route('app.sales.destroy', sale.id), { preserveScroll: true }),
+    };
+}
+
+// ── Sales returns — "Apply quantity return" ─────────────────────
+const showReturn = ref(false);
+const returnSale = ref(null);
+
+function openReturn(sale) {
+    returnSale.value = sale;
+    showReturn.value = true;
+}
+
+// Something on the sale can still come back (opening balances can't
+// have returns at all).
+function canReturn(sale) {
+    return !sale.is_opening_balance
+        && (sale.lines || []).some((line) => Number(line.qty) - Number(line.returned_qty || 0) > 0.0049);
+}
+
+function returnRefundLabel(r) {
+    if (!(r.refund_amount > 0)) return '';
+    return r.refund_method === 'credit' ? t('returnKeptCreditLbl') : t('returnRefundedLbl');
+}
+
+function confirmDeleteReturn(r) {
+    confirmDialog.value = {
+        open: true,
+        title: t('returnDeleteBtn'),
+        message: t('returnDeleteConfirm'),
+        danger: true,
+        action: () => router.delete(route('app.sale-returns.destroy', r.id), { preserveScroll: true }),
     };
 }
 
@@ -1003,8 +1073,21 @@ function saleItemsLabel(sale) {
                     </div>
                     <div>
                         <span class="amt">{{ currency }} {{ money(sale.amount) }}</span>
-                        <button type="button" class="btn btn-ghost btn-sm" @click="startEdit(sale)">{{ t('editBtn') }}</button>
-                        <button v-if="canDelete" type="button" class="btn btn-ghost btn-sm" style="color: var(--color-danger);" @click="confirmDelete(sale)">{{ t('deleteBtn') }}</button>
+                        <button v-if="canReturn(sale)" type="button" class="btn btn-ghost btn-sm" @click="openReturn(sale)">{{ t('returnBtn') }}</button>
+                        <button type="button" class="btn btn-ghost btn-sm" :disabled="sale.returns?.length > 0" :title="sale.returns?.length > 0 ? t('returnLockedHint') : ''" @click="startEdit(sale)">{{ t('editBtn') }}</button>
+                        <button v-if="canDelete" type="button" class="btn btn-ghost btn-sm" style="color: var(--color-danger);" :disabled="sale.returns?.length > 0" :title="sale.returns?.length > 0 ? t('returnLockedHint') : ''" @click="confirmDelete(sale)">{{ t('deleteBtn') }}</button>
+                    </div>
+                </div>
+
+                <!-- Goods the customer sent back after this sale -->
+                <div v-if="sale.returns?.length" class="return-rows">
+                    <div v-for="r in sale.returns" :key="r.id" class="return-row">
+                        <span>
+                            {{ t('saleReturnRowLbl') }} · {{ r.date }} ·
+                            <strong>{{ currency }} {{ money(r.amount) }}</strong>
+                            <template v-if="returnRefundLabel(r)"> · {{ returnRefundLabel(r) }} {{ currency }} {{ money(r.refund_amount) }}</template>
+                        </span>
+                        <button v-if="canDelete" type="button" class="btn btn-ghost btn-sm" style="color: var(--color-danger);" @click="confirmDeleteReturn(r)">{{ t('deleteBtn') }}</button>
                     </div>
                 </div>
             </div>
@@ -1022,6 +1105,13 @@ function saleItemsLabel(sale) {
             :message="confirmDialog.message"
             :danger="confirmDialog.danger"
             @confirm="onConfirmDialogConfirm"
+        />
+
+        <ReturnModal
+            v-model:open="showReturn"
+            kind="sale"
+            :doc="returnSale"
+            :channels="channelList"
         />
 
         <RenameModal
@@ -1063,9 +1153,14 @@ function saleItemsLabel(sale) {
     padding-inline-start: 10px;
 }
 
+.return-rows { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--color-border-input); display: flex; flex-direction: column; gap: 4px; }
+.return-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--color-text-secondary); }
+
 .settle-top > div:last-child {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 6px;
 }
 </style>

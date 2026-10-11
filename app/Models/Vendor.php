@@ -72,4 +72,10 @@ class Vendor extends Model
     {
         return $this->hasMany(Payment::class)->whereNull('payable_type');
     }
+
+    /** Goods we sent back to this supplier (see PurchaseReturn). */
+    public function purchaseReturns(): HasMany
+    {
+        return $this->hasMany(PurchaseReturn::class);
+    }
 }

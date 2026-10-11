@@ -16,7 +16,7 @@
 //  to redo the whole thing if the first attempt had mistakes.
 // ══════════════════════════════════════════════════════════════════
 
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Head, useForm, usePage, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -89,8 +89,23 @@ function removeRow(list, idx) {
     if (list.length > 1) list.splice(idx, 1);
 }
 
-const inventoryLineTotal = (row) => (Number(row.qty) || 0) * (Number(row.unit_price) || 0);
-const inventoryTotal = computed(() => form.inventory.reduce((sum, row) => sum + inventoryLineTotal(row), 0));
+// Rounded like the server: each line is rounded to 2 decimals on its own
+// (PHP round: 1.005 -> 1.01) and the total is the sum of those rounded
+// lines. The screen used to add up the unrounded lines, so two lines of
+// 2.88 could show a total of 5.75 instead of 5.76.
+const r2 = (n) => Math.round((Number(n) + 1e-9) * 100) / 100;
+const inventoryLineTotal = (row) => r2((Number(row.qty) || 0) * (Number(row.unit_price) || 0));
+const inventoryTotal = computed(() => r2(form.inventory.reduce((sum, row) => sum + inventoryLineTotal(row), 0)));
+
+// An equipment row's date may not be later than the opening date. If the
+// opening date is moved earlier, rows still holding a later date kept it,
+// and Save then did nothing (the browser silently refused the date).
+watch(() => form.opening_date, (openingDate) => {
+    if (!openingDate) return;
+    form.equipment.forEach((row) => {
+        if (!row.date || row.date > openingDate) row.date = openingDate;
+    });
+});
 
 const showResetConfirm = ref(false);
 

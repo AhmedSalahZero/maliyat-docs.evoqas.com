@@ -42,6 +42,11 @@ function submit() {
             <input type="hidden" v-model="form.token" />
             <input type="hidden" v-model="form.email" />
 
+            <!-- An expired or already-used link is refused with an error on
+                 the (hidden) email / token fields — without this the person
+                 pressed the button, the boxes emptied, and nothing was said. -->
+            <p v-if="form.errors.email || form.errors.token" class="ip-login__error" role="alert">{{ form.errors.email || form.errors.token }}</p>
+
             <div class="ip-form-group">
                 <label class="ip-login__label" for="password">{{ t('new_password') }}</label>
                 <PasswordInput

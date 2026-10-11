@@ -35,7 +35,7 @@
 //  nothing for a launcher sheet to add.
 // ══════════════════════════════════════════════════════════════════
 
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { usePage, Link } from '@inertiajs/vue3';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useAppTranslations } from '@/composables/useAppTranslations';
@@ -147,19 +147,35 @@ const showFlash    = ref(false);
 const flashMessage = ref('');
 const flashType    = ref('success');
 
-function showFlashToast(message, type = 'success') {
+let flashTimer = null;
+
+function showFlashToast(message, type = 'success', duration = 3500) {
     flashMessage.value = message;
     flashType.value    = type;
     showFlash.value    = true;
-    setTimeout(() => { showFlash.value = false; }, 3500);
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { showFlash.value = false; }, duration);
+}
+
+// Messages sent from anywhere in the app (see bootstrap.js — e.g. "a
+// customer with this name already exists" from the quick add boxes).
+function onToastEvent(event) {
+    const { message, type } = event.detail ?? {};
+    if (message) showFlashToast(message, type ?? 'danger', 6000);
 }
 
 onMounted(() => {
+    window.addEventListener('maliyat:toast', onToastEvent);
     if (auth.value?.user) authStore.init(auth.value.user);
 
     const flash = page.props.flash ?? {};
     if (flash.success) showFlashToast(flash.success, 'success');
     if (flash.error)   showFlashToast(flash.error, 'danger');
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener('maliyat:toast', onToastEvent);
+    clearTimeout(flashTimer);
 });
 
 watch(() => page.props.flash, (flash) => {

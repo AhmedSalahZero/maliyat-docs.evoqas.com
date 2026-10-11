@@ -79,11 +79,15 @@ function methodLabel(method) {
 const adding = ref(false);
 const editingId = ref(null);
 const submitting = ref(false);
+// Problem to show under the payment form (server refusal, or a zero
+// amount). Before this, a refused payment simply did nothing visible.
+const errorMsg = ref('');
 const draft = ref({ date: todayIso(), amount: null, method: 'cash', payment_channel_id: null });
 
 const formOpen = computed(() => adding.value || editingId.value !== null);
 
 function openAdd() {
+    errorMsg.value = '';
     editingId.value = null;
     draft.value = {
         date: todayIso(),
@@ -96,6 +100,7 @@ function openAdd() {
 }
 
 function openEdit(payment) {
+    errorMsg.value = '';
     adding.value = false;
     editingId.value = payment.id;
     draft.value = {
@@ -107,6 +112,7 @@ function openEdit(payment) {
 }
 
 function closeForm() {
+    errorMsg.value = '';
     adding.value = false;
     editingId.value = null;
 }
@@ -137,13 +143,21 @@ watch(
 );
 
 function submitPayment() {
-    if (!draft.value.amount || draft.value.amount <= 0) return;
+    if (submitting.value) return;
+    if (!draft.value.amount || draft.value.amount <= 0) {
+        errorMsg.value = t('amountMustBePositive');
+        return;
+    }
 
+    errorMsg.value = '';
     submitting.value = true;
 
     const options = {
         preserveScroll: true,
         onSuccess: () => closeForm(),
+        onError: (errors) => {
+            errorMsg.value = Object.values(errors ?? {})[0] || t('paymentNotSaved');
+        },
         onFinish: () => { submitting.value = false; },
     };
 
@@ -282,6 +296,8 @@ function applyRemove() {
                     />
                 </div>
             </div>
+
+            <div v-if="errorMsg" class="form-error" role="alert">{{ errorMsg }}</div>
 
             <div class="edit-payments__actions">
                 <button type="button" class="btn btn-primary btn-sm" :disabled="submitting" @click="submitPayment">
