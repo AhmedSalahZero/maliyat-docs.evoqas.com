@@ -42,6 +42,13 @@ class CompanyController extends Controller
     {
         $companies = Company::query()
             ->withCount(['users'])
+            // Powers the "Users" popup next to each company. Only the
+            // columns the popup shows are loaded (company_id is needed
+            // for Eloquent to match users back to their company).
+            ->with(['users' => fn ($query) => $query
+                ->select(['id', 'company_id', 'name', 'email', 'phone', 'role', 'is_active', 'last_login_at'])
+                ->orderBy('role')
+                ->orderBy('name')])
             ->orderByDesc('id')
             ->paginate(30)
             ->through(fn (Company $company) => [
@@ -52,6 +59,15 @@ class CompanyController extends Controller
                 'is_active'  => $company->is_active,
                 'users_count'=> $company->users_count,
                 'created_at' => $company->created_at->toDateString(),
+                'users'      => $company->users->map(fn (User $user) => [
+                    'id'            => $user->id,
+                    'name'          => $user->name,
+                    'email'         => $user->email,
+                    'phone'         => $user->phone,
+                    'role'          => $user->role,
+                    'is_active'     => $user->is_active,
+                    'last_login_at' => $user->last_login_at?->toDateTimeString(),
+                ])->values(),
             ]);
 
         return Inertia::render('Admin/Companies/Index', ['companies' => $companies]);

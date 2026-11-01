@@ -67,6 +67,15 @@ function confirmDelete() {
     });
 }
 
+// ── Company users popup ──────────────────────────────────────────
+// The users come with each company row (CompanyController::index), so
+// opening the popup needs no extra request.
+const usersTarget = ref(null); // the company object, or null when the popup is closed
+
+function roleLabel(role) {
+    return role === 'company_admin' ? 'Admin' : 'Employee';
+}
+
 const form = useForm({
     name: '',
     name_ar: '',
@@ -137,6 +146,9 @@ function toggleActive(company) {
                             </td>
                             <td>
                                 <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                                    <button type="button" class="btn btn-ghost btn-sm" @click="usersTarget = company">
+                                        Users
+                                    </button>
                                     <button type="button" class="btn btn-ghost btn-sm" @click="toggleActive(company)">
                                         {{ company.is_active ? 'Deactivate' : 'Reactivate' }}
                                     </button>
@@ -225,6 +237,54 @@ function toggleActive(company) {
                             </button>
                         </div>
                     </form>
+                </div>
+            </div>
+        </transition>
+
+        <!-- ── Company users popup ──────────────────────────────── -->
+        <transition name="fade-in">
+            <div v-if="usersTarget" class="modal-backdrop" @mousedown="pressedOnBackdrop = $event.target === $event.currentTarget" @click.self="pressedOnBackdrop && (usersTarget = null)">
+                <div class="modal-sheet slide-up adm-companies__sheet adm-companies__sheet--wide">
+                    <div class="modal-sheet__handle"></div>
+                    <h2 class="adm-companies__sheet-title">
+                        {{ usersTarget.name }} — Users ({{ usersTarget.users.length }})
+                    </h2>
+
+                    <div class="report-table-wrap">
+                        <table class="report-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Phone</th>
+                                    <th>Role</th>
+                                    <th>Last login</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="user in usersTarget.users" :key="user.id">
+                                    <td class="adm-companies__name">{{ user.name }}</td>
+                                    <td>{{ user.email }}</td>
+                                    <td>{{ user.phone || '—' }}</td>
+                                    <td>{{ roleLabel(user.role) }}</td>
+                                    <td>{{ user.last_login_at || 'Never' }}</td>
+                                    <td>
+                                        <span class="badge" :class="user.is_active ? 'ok' : 'warn'">
+                                            {{ user.is_active ? 'Active' : 'Inactive' }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr v-if="usersTarget.users.length === 0">
+                                    <td colspan="6" class="adm-companies__empty">No users in this company.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="submit-row" style="display: flex; gap: 10px; margin-top: 14px;">
+                        <button type="button" class="btn btn-ghost btn-block" @click="usersTarget = null">Close</button>
+                    </div>
                 </div>
             </div>
         </transition>
@@ -324,5 +384,6 @@ function toggleActive(company) {
 .adm-companies__page-link--disabled { opacity: 0.4; }
 
 .adm-companies__sheet { max-width: 460px; margin: 0 auto; max-height: 88vh; overflow-y: auto; }
+.adm-companies__sheet--wide { max-width: 820px; }
 .adm-companies__sheet-title { font-family: var(--font-heading); font-size: 17px; font-weight: 700; margin-bottom: 14px; }
 </style>
